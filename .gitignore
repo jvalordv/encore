@@ -1,0 +1,28 @@
+# Node
+node_modules/
+dist/
+.vite/
+*.local
+
+# Python
+service/.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+service/cache/
+
+# Audio files (except test fixtures)
+*.mp3
+*.wav
+*.flac
+*.m4a
+*.ogg
+*.aac
+!test/fixtures/**
+!service/tests/fixtures/**
+
+# Environment and logs
+.env
+*.log
+.DS_Store
+Thumbs.db

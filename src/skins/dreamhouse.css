@@ -1,0 +1,60 @@
+/*
+ * Dreamhouse skin tokens (docs/SKINS.md). Hot pink, lavender and gold on a
+ * blush background, rounded everything, soft pink shadows, a script display
+ * font paired with a clean rounded body font. A light skin, so text is a deep
+ * plum to hold AA contrast on the pastels.
+ */
+:root[data-skin='dreamhouse'] {
+  color-scheme: light;
+
+  --color-bg: #ffe3f1;
+  --color-surface: #fff6fb;
+  --color-surface-2: #f1e4ff;
+  --color-text: #4a1646;
+  --color-text-muted: #85407a;
+  --color-accent: #c8106e;
+  --color-accent-2: #e3a600;
+  --color-singer-a: #c8106e;
+  --color-singer-b: #7b4bd1;
+  --color-hit: #12a66a;
+  --color-okay: #e3a600;
+  --color-miss: #e8573a;
+  --color-reference: #9a8fb8;
+
+  --font-display: 'Pacifico', 'Segoe Script', 'Brush Script MT', cursive;
+  --font-body: 'Nunito', ui-rounded, 'Segoe UI', system-ui, -apple-system,
+    sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+
+  --radius: 22px;
+  --border-width: 2px;
+  --shadow: 0 8px 24px rgba(200, 16, 110, 0.22);
+
+  --motion-fast: 160ms;
+  --motion-slow: 420ms;
+  --easing: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --lane-bg: #fff2fa;
+  --lane-grid: rgba(200, 16, 110, 0.2);
+  --lane-ribbon-width: 6px;
+}
+
+:root[data-skin='dreamhouse'] .wordmark {
+  font-size: 2rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* Script faces are hard to read in capitals at small sizes, so the panel
+   labels drop the uppercase treatment the other skins use. */
+:root[data-skin='dreamhouse'] .panel-title {
+  font-size: 1.05rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+:root[data-skin='dreamhouse'] button {
+  font-family: var(--font-body);
+}

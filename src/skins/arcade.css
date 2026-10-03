@@ -1,0 +1,71 @@
+/*
+ * Arcade skin tokens (docs/SKINS.md). Neon on black: magenta and cyan accents,
+ * chunky borders, a glow instead of a soft shadow, a pixel display font with
+ * monospace fallbacks, and a scanline texture over the pitch lane.
+ */
+:root[data-skin='arcade'] {
+  color-scheme: dark;
+
+  --color-bg: #05030f;
+  --color-surface: #0d0922;
+  --color-surface-2: #1a1040;
+  --color-text: #f5f1ff;
+  --color-text-muted: #b4a9e6;
+  --color-accent: #ff2bd6;
+  --color-accent-2: #19f5ff;
+  --color-singer-a: #19f5ff;
+  --color-singer-b: #ff2bd6;
+  --color-hit: #39ff88;
+  --color-okay: #ffe500;
+  --color-miss: #ff3b5c;
+  --color-reference: #a07bff;
+
+  --font-display: 'Press Start 2P', ui-monospace, 'SF Mono', Menlo, Consolas,
+    'Courier New', monospace;
+  --font-body: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+
+  --radius: 2px;
+  --border-width: 3px;
+  --shadow: 0 0 16px rgba(255, 43, 214, 0.45);
+
+  --motion-fast: 80ms;
+  --motion-slow: 220ms;
+  --easing: cubic-bezier(0.3, 1.6, 0.5, 1);
+
+  --lane-bg: #02010a;
+  --lane-grid: rgba(25, 245, 255, 0.24);
+  --lane-ribbon-width: 5px;
+}
+
+/* The pixel font is very wide, so the wordmark and labels shrink to fit. */
+:root[data-skin='arcade'] .wordmark {
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px var(--color-accent);
+}
+
+:root[data-skin='arcade'] .panel-title,
+:root[data-skin='arcade'] button {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+}
+
+/* Scanlines over the lane; the overlay ignores the pointer so it never
+   blocks the canvas. */
+:root[data-skin='arcade'] #pitch-lane::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.28) 0,
+    rgba(0, 0, 0, 0.28) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}

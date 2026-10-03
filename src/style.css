@@ -1,0 +1,227 @@
+/*
+ * Layout for the app shell in index.html. Colour, type, radius, borders,
+ * shadows and motion come only from the skin tokens defined in
+ * src/skins/<id>.css (docs/SKINS.md); nothing here names a literal colour,
+ * so adding a skin never touches this file.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Reduced motion zeroes the motion tokens, so every transition below becomes
+   instant. The extra `html` raises specificity above the skin rules, which
+   set the same tokens on :root[data-skin] and would otherwise win. */
+@media (prefers-reduced-motion: reduce) {
+  html:root[data-skin] {
+    --motion-fast: 0ms;
+    --motion-slow: 0ms;
+  }
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.45;
+  transition:
+    background-color var(--motion-slow) var(--easing),
+    color var(--motion-slow) var(--easing);
+}
+
+#app {
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'topbar topbar'
+    'song   lane'
+    'ctrl   ctrl'
+    'status status';
+  gap: 12px;
+  height: 100%;
+  min-height: 420px;
+  padding: 12px;
+}
+
+#topbar,
+#song-panel,
+#pitch-lane,
+#controls {
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  transition:
+    background-color var(--motion-slow) var(--easing),
+    border-color var(--motion-slow) var(--easing),
+    box-shadow var(--motion-slow) var(--easing);
+}
+
+#topbar {
+  grid-area: topbar;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 16px;
+}
+
+.wordmark {
+  margin: 0;
+  color: var(--color-accent);
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+}
+
+.skin-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+}
+
+#song-panel {
+  grid-area: song;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 16px;
+}
+
+.panel-title {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dropzone {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--color-surface-2);
+  border: var(--border-width) dashed var(--color-accent-2);
+  border-radius: var(--radius);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* The canvas is taken out of flow so its size can never feed back into the
+   grid cell; PitchLane measures the cell and sizes the bitmap to match. */
+#pitch-lane {
+  grid-area: lane;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--lane-bg);
+}
+
+#lane-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#controls {
+  grid-area: ctrl;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+button,
+select {
+  padding: 8px 16px;
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-accent);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font: inherit;
+  transition:
+    background-color var(--motion-fast) var(--easing),
+    border-color var(--motion-fast) var(--easing),
+    transform var(--motion-fast) var(--easing);
+}
+
+button {
+  min-width: 112px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--color-surface);
+  border-color: var(--color-accent-2);
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+select {
+  padding-block: 6px;
+  cursor: pointer;
+}
+
+button:focus-visible,
+select:focus-visible {
+  outline: calc(var(--border-width) + 1px) solid var(--color-accent-2);
+  outline-offset: 2px;
+}
+
+#statusbar {
+  grid-area: status;
+  padding: 2px 4px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 900px) {
+  #app {
+    grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  }
+}
+
+/* Narrow windows are not a design target; the song panel just stacks above
+   the lane so nothing overflows. */
+@media (max-width: 720px) {
+  #app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(240px, 1fr) auto auto;
+    grid-template-areas:
+      'topbar'
+      'song'
+      'lane'
+      'ctrl'
+      'status';
+    height: auto;
+    min-height: 100%;
+  }
+}
