@@ -69,7 +69,9 @@ owner can move between projects without friction.
   logic.
 - **Dependencies:** add one only when it saves real work. Audio DSP in the
   browser is hand-written and tested; heavy models live in the service.
-- **No model identifiers** in commits, code or docs pushed to the repo.
+- **No model identifiers** in code, code comments, or commit subjects.
+  Planning docs may name tiers (Sonnet, Haiku); the harness-added
+  `Co-Authored-By` trailer on commits is the one exception.
 
 ## Commands
 
@@ -80,7 +82,7 @@ npm run check          typecheck + unit tests (run before every commit)
 npm run build          typecheck + production build
 cd service && uv sync  install service (CPU deps); see service/README.md for GPU
 cd service && uv run uvicorn encore_service.app:app --reload --port 8765
-cd service && uv run ruff check . && uv run pytest
+cd service && uv run ruff check . && uv run ruff format --check . && uv run pytest
 ```
 
 ## Layout

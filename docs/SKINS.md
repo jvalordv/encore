@@ -33,7 +33,7 @@ interface Skin {
   tagline: string;
   fx: { particles: 'none' | 'sparks' | 'sparkles'; hitEffect: 'none' | 'flash' | 'hearts';
         streakShake: boolean; confettiOnGrade: boolean };
-  copy: Copy;            // every user-facing string, keyed
+  copy: Partial<Copy>;   // every user-facing string, keyed; Studio is complete
 }
 ```
 

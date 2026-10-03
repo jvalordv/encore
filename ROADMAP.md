@@ -7,12 +7,23 @@ resume protocol in `CLAUDE.md`.
 
 ## Current state
 
-- **Last done:** P0-T1 planning docs (this file, `CLAUDE.md`, `docs/`).
-- **In progress:** P0 scaffold (P0-T2 to P0-T5), being built by workers in
-  the first session. If any of those boxes is unticked, that task was cut off.
-- **Blockers:** none.
-- **Next:** finish P0, then P1-T1. Heavy phases start after the owner's usage
-  reset (see `docs/SESSIONS.md`).
+- **Last done:** Phase 0 complete (P0-T1 to P0-T5). Front end: 21 tests,
+  build green. Service: 25 tests, ruff clean. CI runs both on push.
+- **In progress:** nothing.
+- **Blockers:** none. Owner-side checks pending (see below); they do not
+  block P1-T1.
+- **Next:** P1-T1 (audio engine core). Start after the owner's usage reset
+  (`docs/SESSIONS.md`).
+- **Owner-side, when convenient:**
+  - Run `npm run dev` and flip through Studio, Arcade, Dreamhouse. Nothing
+    visual has been seen by a human yet: check the lane gutter, Dreamhouse
+    key colours, Arcade scanlines, and that a saved non-Studio skin does
+    not flash dark on reload.
+  - On the GPU machine: install uv and ffmpeg, `uv sync` in `service/`,
+    then follow `service/README.md` to enable the PyTorch CUDA index and
+    `uv sync --extra gpu`. Confirm `GET /gpu` shows `cuda_available: true`.
+    The gpu extra has never been resolved; torch pins across demucs,
+    whisperx and speechbrain may need loosening.
 
 ---
 
@@ -21,7 +32,7 @@ resume protocol in `CLAUDE.md`.
 Goal: a repo any session can clone, check, and extend. No features yet.
 
 - [x] **P0-T1** (F) Planning docs: `CLAUDE.md`, `ROADMAP.md`, `docs/*`.
-- [ ] **P0-T2** (S) Front-end skeleton. Vite + strict TS + vitest matching
+- [x] **P0-T2** (S) Front-end skeleton. Vite + strict TS + vitest matching
   `4th-dimension`. `index.html` with the app shell regions (top bar with skin
   switcher, song panel, pitch lane, controls, status bar), `src/main.ts`
   mounting them, and the skin token system from `docs/SKINS.md` with the three
@@ -30,7 +41,7 @@ Goal: a repo any session can clone, check, and extend. No features yet.
   registry. *Done when:* `npm run check` and `npm run build` pass, the dev
   server shows the shell, and switching skins visibly changes it.
   *Verify:* `npm run check && npm run build`.
-- [ ] **P0-T3** (S) Service skeleton under `service/`. `pyproject.toml` with
+- [x] **P0-T3** (S) Service skeleton under `service/`. `pyproject.toml` with
   CPU deps and a `gpu` extra listing the heavy models (not installed in CI).
   FastAPI app with `GET /health`, `GET /gpu` (reports torch and CUDA status
   without failing if torch is absent), CORS for `localhost:5173`, pydantic
@@ -38,18 +49,21 @@ Goal: a repo any session can clone, check, and extend. No features yet.
   routers for `/songs`, `/analyze`, `/duet` returning 501. `service/README.md`
   with Windows and Linux GPU setup. One pytest hitting `/health`.
   *Done when:* `uv run ruff check .` and `uv run pytest` pass.
-  *Verify:* `cd service && uv run ruff check . && uv run pytest`.
-- [ ] **P0-T4** (H) Repo plumbing: `.gitignore` (node, python, `service/cache/`,
+  *Verify:* `cd service && uv run ruff check . && uv run ruff format --check . && uv run pytest`.
+- [x] **P0-T4** (H) Repo plumbing: `.gitignore` (node, python, `service/cache/`,
   audio files), `.editorconfig`, `README.md` (what it is, screenshots later,
   setup in five lines), GitHub Actions CI running the front-end checks and
   the service lint and tests on push. *Done when:* CI config is valid YAML
   and mirrors the local commands. *Verify:* `npm run check` locally; CI on
   first push.
-- [ ] **P0-T5** (S) Scaffold review. Fresh-eyes pass over P0-T2 to P0-T4
+- [x] **P0-T5** (S) Scaffold review. Fresh-eyes pass over P0-T2 to P0-T4
   against `CLAUDE.md` conventions: comment headers, import order, strictness,
   no stray TODOs, commands in docs match `package.json` and `pyproject.toml`.
   Fix what is small, list what is not under this task.
   *Verify:* all checks green.
+  - Follow-up: Starlette's TestClient warns that `httpx` is deprecated in
+    favour of `httpx2` in the dev group. Only a warning; swap when it bites.
+  - Follow-up: `numpy` and `soundfile` sit in base deps unused until P2-T1.
 
 ## Phase 1: Solo practice loop (browser only)
 
@@ -86,6 +100,9 @@ Works with no service running.
   by the active skin, with a piano-key gutter, octave lines, and a playhead.
   Reference contour overlay slot (empty until Phase 2). Sized to its container
   with `ResizeObserver` and device pixel ratio.
+  - Note: the P0 placeholder lane does not redraw on a bare
+    `devicePixelRatio` change (window dragged between monitors). Add a
+    `matchMedia('(resolution: ...)')` listener here.
 - [ ] **P1-T6** (S) Take recording. `src/audio/recorder.ts`: record the mic to
   a WAV blob aligned to song time with the latency offset applied. Takes
   stored in IndexedDB with song hash, date, duration, and the live f0 frames.
@@ -125,6 +142,10 @@ lyrics, and scores each take against it.
   reachable, show prep progress in the song panel, and swap in the stems:
   mix slider between original, karaoke, and vocal-only guide; reference
   contour drawn in the pitch lane; lyrics line with word highlight.
+  - Note: `schemas.py` nests `Features` by group (`features.intonation.
+    bias_cents`, `features.timing.onset_bias_s`, ...). Mirror those helper
+    models (`MidiRange`, `SongSteps`, `Alignment`, `Evidence`, the
+    `*Features` groups, `VowelFormants`) in `types.ts`.
 - [ ] **P2-T6** (S) Live scoring. `src/analysis/score.ts`: per-frame cents
   error against the reference (octave-invariant option for singers in a
   different register), per-note accuracy, streaks, phrase stars. Pure
@@ -132,6 +153,8 @@ lyrics, and scores each take against it.
 - [ ] **P2-T7** (S) Report card v1. End-of-take overlay: overall score, notes
   in tune, best streak, worst phrase (with jump-to), using the skin's
   personality copy. Stored with the take.
+  - Note: add a `newRecord` copy key (Arcade's flashing "NEW RECORD") to
+    `COPY_KEYS` with a Studio line when the card needs it.
 - [ ] **P2-T8** (F) Phase review and Phase 3 briefs.
 
 ## Phase 3: Coaching
@@ -198,6 +221,11 @@ Goal: two singers, scored separately, with harmony detection. Design in
   Dreamhouse sparkles, hearts on perfect notes, glitter trail. Respects
   `prefers-reduced-motion`.
 - [ ] **P5-T2** (H) Two more skins (e.g. Lounge, Y2K) via the token contract.
+- [ ] **P5-T2b** (H) Self-host the Arcade and Dreamhouse display fonts
+  (`@fontsource/press-start-2p`, `@fontsource/pacifico`, `@fontsource/nunito`)
+  so the app matches the no-cloud rule and renders offline without a blocking
+  stylesheet request. Until then `index.html` uses Google Fonts with system
+  fallbacks.
 - [ ] **P5-T3** (S) Settings panel: devices, calibration, skin, scoring
   tolerance, octave-invariant toggle, service URL.
 - [ ] **P5-T4** (S) Export a report card as PNG for sharing.
