@@ -29,17 +29,30 @@ reference melody, lyrics, scoring, and coaching when it is up.
   `autoGainControl` are all `false`. Browser defaults flatten dynamics and
   smear pitch onsets.
 - **Clock.** Song time is the master clock. Every mic frame is stamped with
-  `context.currentTime` and shifted by the calibrated round-trip latency so
-  that what the singer heard at time *t* and what they sang at *t* line up.
+  `context.currentTime` (the centre of its analysis window) and shifted by the
+  calibrated round-trip latency so that what the singer heard at time *t* and
+  what they sang at *t* line up. The shift is applied once, in
+  `frameToSongTime` (`src/app/session.ts`): song time = song position now
+  minus the frame's age minus the latency. A take's WAV is stored unshifted,
+  with `startedAtSongS` and `latencyS` beside it, so a better calibration can
+  re-align it later (`songTimeOfSample` in `src/audio/wav.ts`); its f0 frames
+  are stored already on song time.
 - **Live pitch.** McLeod Pitch Method (normalised square difference) in an
   AudioWorklet, 2048 window, 480 hop (10 ms), clarity gate at 0.9 for
   voiced. Hand-written and unit-tested; no DSP dependency. Accuracy target
   5 cents on clean tones. The service re-runs a stronger tracker after the
   take; the live one only has to be good enough for display and streaks.
 - **Storage.** `localStorage` for settings, skin, calibration per device
-  pair. IndexedDB for takes (WAV blob, f0 frames, scores, analysis). Songs
-  are not stored in the browser; the file is re-dropped or re-read from the
-  service cache by hash.
+  pair: one JSON object under `encore.settings` (devices, service URL,
+  clarity gate, `latencyByDevicePair`) and the skin id under `encore.skin`.
+  IndexedDB database `encore`, store `takes`, for takes (WAV blob, f0 frames,
+  alignment fields, later scores and analysis). Songs are not stored in the
+  browser; the file is re-dropped or re-read from the service cache by hash.
+  Both stores sit behind adapters and fall back to memory when the browser
+  refuses them.
+- **Testing.** Vitest covers the DSP and logic against synthetic signals.
+  `npm run e2e` drives the built app in headless Chromium with a fake mic
+  (see `e2e/`); it is the only test that runs the worklets for real.
 - **Rendering.** Canvas 2D for the pitch lane and FX. DOM for everything
   else. Skins are CSS custom properties plus a TS personality object
   (`docs/SKINS.md`).
@@ -107,8 +120,10 @@ DuetSplit    { singers: {id, contour, confidence: number[]}[],
     are Chromium/WebView2 features; degrade, do not crash, on WebKit.
   - The service is optional. Every feature that needs it checks
     reachability and says what is missing; nothing blocks on it.
-  - Service URL, device ids, calibration, and skin live in one settings
-    object with a storage adapter, so a native shell can own storage later.
+  - Service URL, device ids, and calibration live in one settings object
+    with a storage adapter, so a native shell can own storage later. The skin
+    sits beside it under its own key because `index.html` applies it before
+    any script runs.
   - CORS allow list includes `tauri://localhost` and `http://tauri.localhost`.
   - Model weights are downloaded at first use into a user data directory,
     never bundled.

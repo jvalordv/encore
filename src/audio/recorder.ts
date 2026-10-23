@@ -19,17 +19,19 @@ export interface TakeRecording {
   startedAtSongS: number;
   /** Context time of pcm[0], for lining the take up with live pitch frames. */
   startedAtContextS: number;
-  /** Round-trip latency passed to start(), applied when mapping to song time. */
+  /** Round-trip latency given to start(), used when mapping to song time. */
   latencyS: number;
   durationS: number;
 }
 
 /**
- * The slices of the engine, mic and capture the recorder uses. Real instances
- * satisfy them; tests hand in small fakes instead of a worklet.
+ * The slice of the engine the recorder reads: the clock. Real instances
+ * satisfy these three slice types; tests hand in small fakes instead.
  */
 export type RecorderEngine = Pick<AudioEngine, 'now'>;
+/** The slice of the mic the recorder reads: its source node. */
 export type RecorderMic = Pick<MicCapture, 'source'>;
+/** The slice of the PCM capture the recorder drives. */
 export type RecorderCapture = Pick<PcmCapture, 'load' | 'start' | 'stop'>;
 
 type RecorderState = 'idle' | 'starting' | 'recording';

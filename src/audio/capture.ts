@@ -169,9 +169,16 @@ export class PcmCapture {
 
     node.port.onmessage = null;
     node.port.close();
-    if (this.input) this.input.disconnect(node);
-    node.disconnect();
-    this.sink?.disconnect();
+    // A mic closed or swapped mid-take has already cut these links, and a
+    // second disconnect throws; that must not cost the singer the take.
+    const { input, sink } = this;
+    for (const cut of [() => input?.disconnect(node), () => node.disconnect(), () => sink?.disconnect()]) {
+      try {
+        cut();
+      } catch {
+        // Already disconnected, which is the state we wanted.
+      }
+    }
     const take: PcmTake = {
       pcm: concatChunks(this.chunks),
       sampleRate: this.engine.context.sampleRate,

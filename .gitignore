@@ -26,3 +26,6 @@ service/cache/
 *.log
 .DS_Store
 Thumbs.db
+
+# End-to-end run output
+e2e/.tmp/

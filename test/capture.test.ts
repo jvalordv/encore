@@ -310,6 +310,25 @@ describe('PcmCapture', () => {
     expect(capture.recording).toBe(false);
   });
 
+  it('still returns the take when the source was already disconnected', async () => {
+    const { engine } = fakeEngine();
+    const capture = new PcmCapture(engine);
+    await capture.load();
+    const source = fakeSource();
+    source.disconnect.mockImplementation(() => {
+      throw new Error('InvalidAccessError: not connected');
+    });
+    capture.start(source as unknown as AudioNode);
+    const node = FakeNode.last!;
+    node.emit({ type: 'chunk', t: 1, samples: ramp(4, 0) });
+
+    const take = await capture.stop();
+
+    expect(Array.from(take.pcm)).toEqual(Array.from(ramp(4)));
+    expect(node.disconnected).toBe(true);
+    expect(capture.recording).toBe(false);
+  });
+
   it('shares one stop between concurrent callers', async () => {
     const { engine } = fakeEngine();
     const capture = new PcmCapture(engine);

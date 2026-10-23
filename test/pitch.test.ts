@@ -23,8 +23,8 @@ import {
   rms,
 } from '../src/analysis/pitch';
 import type { PitchFrame } from '../src/analysis/pitch';
-import { PITCH_PROCESSOR_NAME, PitchWindower } from '../src/analysis/pitch-worklet';
 import { PitchTracker, RateMeter, applyVoicing } from '../src/analysis/pitch-tracker';
+import { PITCH_PROCESSOR_NAME, PitchWindower } from '../src/analysis/pitch-worklet';
 import type { AudioEngine } from '../src/audio/engine';
 
 const RATE = 48000;
@@ -316,7 +316,7 @@ describe('estimatePitch speed', () => {
 });
 
 describe('PitchWindower', () => {
-  /** Streams `x` through a windower in 128-sample quanta from context time t0. */
+  /** Streams `x` through a windower in 128-sample quanta from time t0. */
   function run(x: Float32Array, t0 = 0, opts = {}): PitchFrame[] {
     const frames: PitchFrame[] = [];
     const windower = new PitchWindower(RATE, (f) => frames.push(f), opts);

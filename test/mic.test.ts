@@ -6,6 +6,7 @@
  * covered by the Playwright smoke test in a later phase.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AudioEngine } from '../src/audio/engine';
 import {
   MIC_CONSTRAINTS,
   MicCapture,
@@ -17,7 +18,6 @@ import {
   onDeviceChange,
   peak,
 } from '../src/audio/mic';
-import type { AudioEngine } from '../src/audio/engine';
 
 afterEach(() => {
   vi.unstubAllGlobals();

@@ -50,7 +50,7 @@ export class AudioEngine {
     return contextCtor() !== null;
   }
 
-  /** Starts the context. Must be called from a user gesture in most browsers. */
+  /** Starts the context; most browsers require a user gesture for this. */
   async resume(): Promise<void> {
     if (this.context.state === 'closed') return;
     await this.context.resume();

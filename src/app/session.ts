@@ -180,7 +180,9 @@ export class Session {
   private readonly settingsStore: KeyValueStore;
   private current: Settings;
   private readonly takesReady: Promise<TakeStore>;
-  private readonly trackerSupported = PitchTracker.isSupported();
+  // Both worklet users have to be available, or live pitch and recording are
+  // off together and the status line says why.
+  private readonly trackerSupported = PitchTracker.isSupported() && PcmCapture.isSupported();
   private lane: LaneSink | null = null;
   private devices: DeviceLists = { inputs: [], outputs: [] };
   private readonly deviceListeners = new Set<(devices: DeviceLists) => void>();
@@ -370,7 +372,13 @@ export class Session {
     const player = this.parts?.player;
     if (!player || !this.hasSong() || !this.canEditLoop()) return;
     const { durationS } = this.store.state;
-    this.applyLoop(loopWithPoint(which, player.position(), player.loop, durationS));
+    const region = loopWithPoint(which, player.position(), player.loop, durationS);
+    if (!this.applyLoop(region)) return;
+    // B is pressed at the playhead, so the loop ends where the song already
+    // is. A run that starts past a loop's end plays on, so without this jump
+    // the loop would never engage and the passage could not be repeated.
+    const loop = player.loop;
+    if (which === 'b' && loop && player.position() >= loop.endS) player.seek(loop.startS);
   }
 
   // ---- Devices and latency ------------------------------------------------
@@ -428,6 +436,13 @@ export class Session {
       );
     } else if (tracking !== 'unsupported') {
       this.store.setStatus(`Microphone ready: ${parts.mic.label || 'default input'}.`);
+    } else if (!this.trackerSupported) {
+      // A failed worklet load has already said why; with no AudioWorklet at
+      // all nothing has, and "Opening the microphone…" would stay up for ever.
+      this.store.setStatus(
+        'Microphone open, but this browser has no AudioWorklet, so live pitch and recording are off.',
+        'warn',
+      );
     }
   }
 
@@ -779,15 +794,17 @@ export class Session {
     return false;
   }
 
-  private applyLoop(region: LoopRegion | null): void {
+  /** Applies a loop and says so; false when it was refused as too short. */
+  private applyLoop(region: LoopRegion | null): boolean {
     const player = this.parts?.player;
-    if (!player) return;
+    if (!player) return false;
     if (!region) {
       this.store.setStatus('That loop is too short; move the other end further away.', 'warn');
-      return;
+      return false;
     }
     player.setLoop(region);
     this.store.setStatus(`Loop ${formatClock(region.startS)} to ${formatClock(region.endS)}.`);
+    return true;
   }
 
   private pairKey(): string {
@@ -840,6 +857,9 @@ export class Session {
       this.store.setStatus('Clear the loop (L) to record; looped passes cannot be recorded yet.', 'warn');
       return;
     }
+    // A take still replaying would sit under the new one in the headphones and
+    // keep the lane showing its trace instead of the live pitch.
+    if (state.playingTakeId !== null) this.stopTake();
     this.startingRecord = true;
     try {
       if (!(await this.ensureInput())) return;
