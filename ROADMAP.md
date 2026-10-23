@@ -7,31 +7,18 @@ resume protocol in `CLAUDE.md`.
 
 ## Current state
 
-- **Last done:** Phase 1 complete (P1-T1 to P1-T8). 446 unit tests, build
-  green, and an 11-test Playwright E2E suite (`npm run e2e`) proving in real
-  headless Chromium that the worklet loads from the built bundle, the
-  tracker reads a 440 Hz fake mic at 100 fps with browser voice processing
-  off, recording stores WAV plus frames, take playback aligns, and a
-  loopback calibration recovers a known 87 ms delay.
-- **In progress:** nothing.
-- **Blockers:** none. No human has used the app with a real mic yet.
-- **Next:** P2-T1 (song intake in the service). P2-T2 to P2-T4 need the
-  owner's GPU machine to run the models; workers can write and unit-test
-  them against small fixtures first.
-- **Owner-side, when convenient (the real smoke test):**
-  - `npm run dev`, drop an mp3, Open mic with headphones on, sing a vowel.
-    Note and cents readout and the lane ribbon should feel steady. If your
-    voice reads unvoiced often, lower the Voicing threshold and report
-    where it settles.
-  - Calibrate with the mic able to hear the headphones (hold an earcup to
-    it) or on speakers. Expect roughly 30 to 150 ms wired, 150 to 300 ms
-    Bluetooth, repeatable within a few ms.
-  - Record a take over a clear melody, play it back; your syllables should
-    land where you sang them. A fixed offset in ms is a calibration bug.
-  - Try A and B loop keys, Space, R, L, arrows. Flip skins with everything
-    on screen, especially Dreamhouse (light).
-  - Status bar should read "Raw input: processing off". If it says the
-    browser kept processing on, try another mic or Chrome/Edge.
+- **Last done:** Phase 1 complete and smoke-tested by the owner on Windows
+  (Chrome, webcam mic, Logitech speakers): mic opens, processing off,
+  tracker 100 fps. Calibration through speakers failed with "No echo
+  detected" (P1-T9). The owner wants to practise without a headset (P1-T10).
+- **In progress:** P1-T9 then P1-T10, by workers.
+- **Blockers:** none.
+- **Next:** owner re-tests calibration and speaker mode, then Phase 2.
+- **Owner-side, when convenient:**
+  - After P1-T9/T10 land: `git pull`, `npm run dev`, Speakers mode on,
+    Calibrate twice; report the values and the status line. Then sing a
+    vowel over the song with speakers and say whether the ribbon follows
+    you or the song.
   - GPU machine: install uv and ffmpeg, `uv sync` in `service/`, enable the
     PyTorch CUDA index per `service/README.md`, `uv sync --extra gpu`, and
     confirm `GET /gpu` shows `cuda_available: true`.
@@ -152,6 +139,25 @@ built bundle and the tracker reports the right pitch. `e2e` stays out of
   - Follow-up: PitchLane throws without a 2D context; degrade like audio.
   - Follow-up: settings UI for `serviceUrl` and `octaveInvariant` (P2-T5 or
     P5-T3).
+
+- [ ] **P1-T9** (S) Calibration that survives a real room. The confidence
+  test compared the correlation peak with the second-highest peak, which
+  room reflections defeat. Use GCC-PHAT for the lag with a first-arrival
+  rule, confidence as peak over background, a longer and louder chirp with
+  a pre-roll that measures the noise floor so "mic did not hear the chirp"
+  is reported separately from "echo unstable", three trials that must
+  agree, and the per-trial numbers in the status line. Tests with a
+  synthetic room (reflections, noise, hum).
+- [ ] **P1-T10** (S) Speaker mode. Monitor setting `headphones | speakers`
+  with a toggle beside the mic picker. In speaker mode the mic opens with
+  browser echo cancellation on (it references Chrome's own playback, so
+  it strips the song from the mic) while noise suppression and auto gain
+  stay off. Status bar reports the mode and whether the browser honoured
+  it. Default stays headphones. Documented in `docs/ARCHITECTURE.md`.
+  - Phase 2 note (P2-T6): in speaker mode, gate scored frames by mic level
+    above the noise floor measured at mic open, so residual bleed is not
+    scored as singing. Phase 3 may add our own cancellation in the worklet
+    from the known song signal and latency.
 
 ## Phase 2: Song preparation and scoring
 
