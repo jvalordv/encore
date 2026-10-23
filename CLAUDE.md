@@ -6,6 +6,18 @@ absolute terms and relative to the original vocal. Solo or duet. Three visual
 skins from utilitarian to Barbie Dreamhouse. Runs locally: a browser app plus
 a Python service that uses the local GPU for the heavy models.
 
+## Purpose, in priority order
+
+1. **Get better at singing.** Measured, specific, honest feedback is the
+   product. When a choice trades coaching quality against anything else,
+   coaching wins.
+2. **Make it fun.** Skins, streaks, duets, and personality exist to keep
+   people practising. They never change what is measured.
+3. **Become an app.** Build so the browser front end can ship inside a
+   desktop shell later (see Decisions in `docs/ARCHITECTURE.md`): web
+   platform APIs only, feature-detected; the service optional and reached
+   by a configurable URL; one state store the UI reads from.
+
 Read `ROADMAP.md` for what to do next and `docs/ARCHITECTURE.md` for how the
 pieces fit. `docs/` holds the design decisions; do not re-derive them, extend
 them.

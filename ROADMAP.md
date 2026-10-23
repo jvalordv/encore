@@ -7,23 +7,18 @@ resume protocol in `CLAUDE.md`.
 
 ## Current state
 
-- **Last done:** Phase 0 complete (P0-T1 to P0-T5). Front end: 21 tests,
-  build green. Service: 25 tests, ruff clean. CI runs both on push.
-- **In progress:** nothing.
-- **Blockers:** none. Owner-side checks pending (see below); they do not
-  block P1-T1.
-- **Next:** P1-T1 (audio engine core). Start after the owner's usage reset
-  (`docs/SESSIONS.md`).
+- **Last done:** Phase 0 complete. Purpose and app-packaging decisions
+  recorded (`CLAUDE.md`, `docs/ARCHITECTURE.md`).
+- **In progress:** Phase 1 (P1-T1 to P1-T7), built by workers in waves.
+  Any unticked P1 box below was cut off; its files may exist uncommitted.
+- **Blockers:** none.
+- **Next:** P1-T8 phase review, then Phase 2.
 - **Owner-side, when convenient:**
-  - Run `npm run dev` and flip through Studio, Arcade, Dreamhouse. Nothing
-    visual has been seen by a human yet: check the lane gutter, Dreamhouse
-    key colours, Arcade scanlines, and that a saved non-Studio skin does
-    not flash dark on reload.
+  - Run `npm run dev`, flip through the skins, then drop an mp3, pick a
+    mic, calibrate, and sing. Report what feels wrong.
   - On the GPU machine: install uv and ffmpeg, `uv sync` in `service/`,
     then follow `service/README.md` to enable the PyTorch CUDA index and
     `uv sync --extra gpu`. Confirm `GET /gpu` shows `cuda_available: true`.
-    The gpu extra has never been resolved; torch pins across demucs,
-    whisperx and speechbrain may need loosening.
 
 ---
 
@@ -69,6 +64,12 @@ Goal: a repo any session can clone, check, and extend. No features yet.
 
 Goal: drop an mp3, pick a mic, sing, see your pitch live against the song.
 Works with no service running.
+
+Verification for this phase: unit tests on the DSP, plus an end-to-end
+smoke in headless Chromium (`npm run e2e`, Playwright with a fake audio
+capture device fed a known tone) that proves the worklet loads from the
+built bundle and the tracker reports the right pitch. `e2e` stays out of
+`check` and CI until Phase 5 adds a browser to CI.
 
 - [ ] **P1-T1** (S) Audio engine core. `src/audio/engine.ts`: one
   `AudioContext` at 48 kHz, master gain, output device selection via
@@ -229,6 +230,18 @@ Goal: two singers, scored separately, with harmony detection. Design in
 - [ ] **P5-T3** (S) Settings panel: devices, calibration, skin, scoring
   tolerance, octave-invariant toggle, service URL.
 - [ ] **P5-T4** (S) Export a report card as PNG for sharing.
-- [ ] **P5-T5** (S) Optional desktop wrapper (Tauri) that launches the service
-  and the app together. Only if the two-process setup proves annoying.
-- [ ] **P5-T6** (F) Retrospective; next roadmap.
+- [ ] **P5-T5** (F) Retrospective; Phase 6 briefs.
+
+## Phase 6: Packaging
+
+Goal: one installable thing. Design constraints in `docs/ARCHITECTURE.md`.
+
+- [ ] **P6-T1** (S) Tauri shell around the built front end; settings storage
+  adapter backed by the app data directory; `tauri://localhost` CORS.
+- [ ] **P6-T2** (S) Service as a sidecar: bundled Python environment or a
+  first-run installer that creates it; health check and start/stop from the
+  app; model weights downloaded to the app data directory on first use.
+- [ ] **P6-T3** (S) Installer builds for Windows first (the owner's GPU
+  machine), then macOS and Linux. CI produces artifacts on tag.
+- [ ] **P6-T4** (F) Retrospective; decide whether in-process ONNX models
+  replace the service for a GPU-less tier.

@@ -98,3 +98,19 @@ DuetSplit    { singers: {id, contour, confidence: number[]}[],
 - **No cloud.** Everything runs on the owner's machine. Stems never leave it.
 - **Vanilla TS.** Same stack as `4th-dimension`; cheapest for workers, no
   framework churn.
+- **Built to become an app.** The target shell is Tauri (Windows, macOS,
+  Linux) wrapping this front end, with the Python service launched as a
+  sidecar or replaced module by module with in-process ONNX models. Mobile
+  is out of scope while the service needs a desktop GPU. Constraints that
+  apply from Phase 1 on:
+  - Web platform APIs only, feature-detected. `setSinkId` and AudioWorklet
+    are Chromium/WebView2 features; degrade, do not crash, on WebKit.
+  - The service is optional. Every feature that needs it checks
+    reachability and says what is missing; nothing blocks on it.
+  - Service URL, device ids, calibration, and skin live in one settings
+    object with a storage adapter, so a native shell can own storage later.
+  - CORS allow list includes `tauri://localhost` and `http://tauri.localhost`.
+  - Model weights are downloaded at first use into a user data directory,
+    never bundled.
+  - No Node-only or Vite-only runtime assumptions in `src/`; build-time
+    helpers (`?worker&url`) are fine.
