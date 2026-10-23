@@ -7,14 +7,32 @@ resume protocol in `CLAUDE.md`.
 
 ## Current state
 
-- **Last done:** P1-T9 (room-robust calibration: GCC-PHAT lag, first
-  arrival ranked by matched-filter height, noise-floor pre-roll, errors
-  that quote their numbers) and P1-T10 (speaker mode: echo cancellation on,
-  NS/AGC off; calibration reopens the mic raw for the measurement). 470
-  unit tests, 12 E2E tests green. Nothing tried on real speakers yet.
-- **In progress:** nothing.
+- **Last done:** P1-T9 and P1-T10 (calibration that survives a room;
+  speaker mode), then a Windows fix: `test/skins.test.ts` failed on CRLF
+  checkouts (`core.autocrlf`), now `\r?\n` (`b462609`). 491 unit tests
+  green; `npm run e2e` not re-run this session since nothing touched audio
+  or UI. Nothing tried on real speakers yet.
+- **In progress:** no code. The owner is running the speaker/calibration
+  checklist below on real hardware and has not reported results yet. When
+  they do: fix what the status lines and their notes show, as `P1-T10`
+  follow-up commits, before taking P2 work that edits `src/`.
 - **Blockers:** none.
-- **Next:** owner re-test on speakers (below), then Phase 2 (P2-T1).
+- **Owner priority, stated in session:** load a YouTube link and have it
+  parsed, same as a dropped mp3 ("very important"). Specified in
+  `docs/ARCHITECTURE.md` (Song sources, Decisions) and tasked as **P2-T1,
+  P2-T1b (service), P2-T1c (browser)**, ahead of the rest of Phase 2.
+- **Next:** orchestrator pass (Opus): brief Sonnet workers on P2-T1, then
+  P2-T1b, then P2-T1c, one task per commit, in that order. P2-T1 and
+  P2-T1b touch only `service/`, so they are safe while the owner tests.
+- **Machine facts (checked 2026-10-23):** Windows 10, `uv` 0.11.16 and
+  `ffmpeg` 9.0.2 (winget) are on PATH; `node` yes, `deno` no. `service/`
+  has `uv.lock` but no `.venv` yet (`uv sync` not run) and nothing is
+  listening on :8765. The Vite dev server is on :5173 (the owner's).
+- **Repo hygiene done this session:** repo-local git identity set to
+  `Claude <noreply@anthropic.com>` to match history (plain `git commit`
+  works; `git -c ...` does not match the allow rule and prompts). Read-only
+  MCP tools added to `.claude/settings.json`. Edit/Write/PowerShell still
+  prompt unless the owner sets the app's permission mode; not ours to flip.
 - **Owner-side, when convenient:**
   - `git pull`, `npm run dev`. Pick the webcam mic, choose Speakers under
     the mic picker, read the status line: expect "Speaker mode: echo
@@ -186,9 +204,47 @@ lyrics, and scores each take against it.
 
 - [ ] **P2-T1** (S) Song intake. Service `POST /songs` accepts an audio file,
   hashes it, stores under `service/cache/<hash>/`, returns `song_id`.
-  `GET /songs/{id}` reports status per step (separation, reference analysis,
-  lyrics) with progress. Work runs in a background task queue, one job at a
-  time to protect VRAM.
+  `GET /songs/{id}` reports status per step (fetch, separation, reference
+  analysis, lyrics) with progress; `fetch` is `skipped` for uploads. Add
+  `GET /songs/{id}/audio` serving `source.<ext>` so the browser can reload a
+  cached song. Work runs in a background task queue, one job at a time to
+  protect VRAM; the queue takes any callable job so P2-T1b can enqueue a
+  download. Persist `meta.json` and `status.json` per `docs/ARCHITECTURE.md`
+  (Song sources). Extend `SongSteps`/`SongStatus` in `schemas.py` (`fetch`,
+  `title`, `duration_s`, `source`) and mirror in `types.ts` later (P2-T5).
+  Tests with a tiny synthetic WAV; no models needed.
+- [ ] **P2-T1b** (S) **YouTube intake, service. Owner priority.**
+  `POST /songs/url` with `{url}` per "Song sources" in
+  `docs/ARCHITECTURE.md`: host allow list, metadata lookup through yt-dlp's
+  Python API without downloading, reject live and over-long videos
+  (`ENCORE_MAX_SONG_S`, default 900, added to `Settings` and the README
+  table), id `yt-<video id>`, repeat links are cache hits. The download is a
+  queued job that fills the `fetch` step with progress (yt-dlp progress
+  hook) and ends with ffmpeg writing `source.flac`. Add `yt-dlp` to base
+  dependencies (pure Python, installs in CI). Check the installed yt-dlp's
+  docs for its JavaScript-runtime requirement and wire the runtime on PATH
+  (this machine has Node, no Deno). Errors surface in the step's `error`
+  with the update hint. Tests inject a fake extractor/downloader: URL
+  validation table (watch, youtu.be, shorts, music.youtube, playlist link,
+  http, other hosts, junk), over-length and live rejection, cache hit,
+  failure path. One manual run against a real, short, freely licensed video
+  recorded in the task notes. `service/README.md` gets a YouTube section
+  with the personal-use note.
+- [ ] **P2-T1c** (S) **YouTube intake, browser. Owner priority.** A link box
+  in the song panel under the dropzone: paste a YouTube URL, press Load.
+  New `src/service/client.ts` (service URL from settings; typed wrappers
+  `createSongFromUrl`, `getSong`, `fetchSongAudio`; poll with backoff).
+  Flow: POST the link, show per-step progress in the status bar and song
+  panel, then fetch `/songs/{id}/audio` and hand it to the existing
+  `session.loadSong` path so decoding, transport and the lane are untouched.
+  The song panel shows the video title. Service down or unreachable says so
+  and points at the README; the dropzone keeps working with no service.
+  Pasting a link anywhere on the page (not just in the box) also works.
+  Unit tests for the client against a stubbed `fetch` (progress, failure,
+  cache hit, abort on a second load via `loadToken`); one e2e that stubs the
+  service routes with Playwright and loads a song from a link.
+  Editing `src/` and `index.html` triggers a full reload on a running dev
+  server; do it while the owner is not mid-test.
 - [ ] **P2-T2** (S) Separation. Demucs (`htdemucs_ft`) producing
   `vocals.wav` and `no_vocals.wav`. Configurable model id. Honour
   `ENCORE_DEVICE` env (`cuda` default when available).
@@ -196,12 +252,15 @@ lyrics, and scores each take against it.
   `vocals.wav` at 10 ms hop with Viterbi decoding and a confidence gate.
   Median filter for octave errors. Segment into notes (`docs/COACHING.md`
   rules). Save `reference.json` using the contour and notes schemas.
+  - Follow-up (from P2-T1b): when `vocals.wav` is near silent (a karaoke
+    upload linked from YouTube), mark the step `skipped` with a reason the
+    browser can show, not a flat contour.
 - [ ] **P2-T4** (S) Lyrics. WhisperX on `vocals.wav` for word-level
   timestamps, saved as `lyrics.json`. Language auto-detected. Degrade
   gracefully when no words are found (instrumental, rap flagged as
   unpitched).
-- [ ] **P2-T5** (S) Browser integration. `src/service/client.ts` typed
-  fetch wrappers with status polling. On song load, upload to the service if
+- [ ] **P2-T5** (S) Browser integration. Extend `src/service/client.ts`
+  (created in P2-T1c) with the rest of the status and stem fetches. On song load, upload to the service if
   reachable, show prep progress in the song panel, and swap in the stems:
   mix slider between original, karaoke, and vocal-only guide; reference
   contour drawn in the pitch lane; lyrics line with word highlight.

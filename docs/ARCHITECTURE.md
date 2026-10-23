@@ -62,7 +62,8 @@ reference melody, lyrics, scoring, and coaching when it is up.
   clarity gate, `latencyByDevicePair`) and the skin id under `encore.skin`.
   IndexedDB database `encore`, store `takes`, for takes (WAV blob, f0 frames,
   alignment fields, later scores and analysis). Songs are not stored in the
-  browser; the file is re-dropped or re-read from the service cache by hash.
+  browser; the file is re-dropped, or re-read from the service cache by song
+  id (`GET /songs/{id}/audio`).
   Both stores sit behind adapters and fall back to memory when the browser
   refuses them.
 - **Testing.** Vitest covers the DSP and logic against synthetic signals.
@@ -81,9 +82,43 @@ reference melody, lyrics, scoring, and coaching when it is up.
 - **Jobs.** One worker thread, FIFO. A 4070 Ti (12 GB) handles demucs,
   crepe, and whisper comfortably one at a time, not concurrently. Status is
   polled; no websockets needed.
-- **Cache.** `service/cache/<sha256-of-file>/` holds `source.<ext>`,
-  `vocals.wav`, `no_vocals.wav`, `reference.json`, `lyrics.json`,
-  `status.json`. Deleting the folder re-prepares the song. Never committed.
+- **Cache.** `service/cache/<song_id>/` holds `source.<ext>`, `meta.json`
+  (title, source, url, duration), `vocals.wav`, `no_vocals.wav`,
+  `reference.json`, `lyrics.json`, `status.json`. Deleting the folder
+  re-prepares the song. Never committed.
+- **Song sources.** A song enters as an uploaded file or a YouTube link;
+  everything after intake is identical.
+  - *File:* `POST /songs`, id is the sha256 of the bytes.
+  - *Link:* `POST /songs/url` with `{url}`. The route checks the host
+    against an allow list (`youtube.com`, `www.`/`m.`/`music.youtube.com`,
+    `youtu.be`; https only; a playlist link means its one video), asks
+    yt-dlp for metadata without downloading (video id, title, duration,
+    live flag), rejects live streams and anything longer than
+    `ENCORE_MAX_SONG_S` (default 900), and answers with a `SongStatus`
+    whose id is `yt-<video id>`. A repeat of the same video is a cache hit.
+    The metadata lookup runs in the request (a second or two); the download
+    is the first job in the queue.
+  - *Fetch step:* `SongStatus.steps` gains `fetch` (`skipped` for uploads).
+    yt-dlp takes the best audio stream and ffmpeg normalises it to
+    `source.flac`: lossless from whatever YouTube served, decodable by every
+    browser, about half the size of WAV. The browser polls one status for
+    fetch, separation, reference and lyrics.
+  - *Safety:* yt-dlp is driven through its Python API with a fixed option
+    set, never options from the request. Output goes to
+    `source.%(ext)s` inside the song's own cache folder, so titles never
+    become paths. `noplaylist` is always on.
+  - *Failure:* YouTube changes break yt-dlp every few weeks. Its message
+    goes verbatim into the fetch step's `error` with the hint to update it
+    (`uv lock --upgrade-package yt-dlp && uv sync`). Tests inject a fake
+    extractor, so CI never touches the network.
+  - *JS runtime:* recent yt-dlp releases may need an external JavaScript
+    runtime to solve YouTube's player challenges. The owner's machine has
+    Node, not Deno. The worker checks the installed yt-dlp's documentation,
+    wires whichever runtime is on PATH, and fails with a plain message if
+    there is none.
+  - *Karaoke uploads* download fine but contain no vocal. The reference
+    step reports `skipped` with a reason when `vocals.wav` is near silent
+    (P2-T3 follow-up) instead of drawing a flat contour.
 - **Models are loaded lazily** on first use and kept resident. A `/gpu`
   endpoint reports device, VRAM, and which models are loaded.
 
@@ -101,7 +136,8 @@ Vibrato      { rate_hz, extent_cents, regularity }
 Reference    { contour: Contour, notes: Note[], range: {low_midi, high_midi},
                unpitched_regions: [start_s, end_s][] }
 Lyrics       { words: {start_s, end_s, text, line: number}[], language }
-SongStatus   { song_id, steps: {separation|reference|lyrics:
+SongStatus   { song_id, title?, duration_s?, source: file|youtube,
+               steps: {fetch|separation|reference|lyrics:
                {state: queued|running|done|failed|skipped, progress, error?}} }
 TakeAnalysis { contour, notes, alignment: {offset_s, dtw_path?},
                features: Features, recommendations: Recommendation[] }
@@ -117,6 +153,13 @@ DuetSplit    { singers: {id, contour, confidence: number[]}[],
 - **Separation over karaoke videos.** Demucs on the owner's own mp3 gives a
   backing track and the reference vocal in one step. Karaoke videos give
   neither a reference nor analysable audio.
+- **YouTube links are a first-class source.** Dropping an mp3 is not the
+  only way in: pasting a link to the original recording must work and run
+  the same pipeline (owner priority, "very important"). Link the original
+  track, not a karaoke upload: separation needs a real vocal to produce the
+  reference. It is for the owner's own practice on their own machine:
+  nothing is redistributed, the cache is never committed, and YouTube's
+  terms restrict downloading, which `service/README.md` says plainly.
 - **Two trackers.** A light live tracker in the browser for immediacy and a
   heavy one in the service for truth. Scores shown live are provisional and
   replaced by the post-take analysis.
