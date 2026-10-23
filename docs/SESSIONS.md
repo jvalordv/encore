@@ -4,6 +4,16 @@ The owner's weekly usage is limited and resets Tuesday at midnight. This
 file is the playbook for getting the most out of each session and never
 losing work to a cut-off.
 
+## Where work happens
+
+Local first. The owner runs Claude Desktop (or `claude remote-control`) in
+the Encore folder on the GPU machine; that session edits the working copy
+directly, runs the app, uses the mic, speakers and GPU, and pushes to
+`main` when a task is done or when a backup is wanted. The cloud session
+is optional: use it for large build phases that fan out to many parallel
+workers, and only after pushing. After cloud work, `git pull` before the
+next local session. Never run both against `main` at the same time.
+
 ## Principles
 
 - **The repo is the memory.** Nothing lives only in chat. Plans, decisions,

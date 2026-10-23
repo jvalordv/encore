@@ -25,7 +25,7 @@ them.
 ## Resume protocol (every session starts here)
 
 Sessions are short and get cut off by usage limits. The repo is the only
-memory. Follow this exactly so any model can pick up where the last one left:
+memory. Work is local first (`docs/SESSIONS.md`); pull before you start. Follow this exactly so any model can pick up where the last one left:
 
 1. Read the **Current state** block at the top of `ROADMAP.md`.
 2. If it names a task **in progress**, finish that task first. Its notes say
