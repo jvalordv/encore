@@ -29,8 +29,9 @@ resume protocol in `CLAUDE.md`.
   fetching its data by other means (sections III.E.1.a, III.I.7, III.I.14
   of the developer policies). Prepare-for-scoring (yt-dlp, separation)
   does exactly that. The design keeps the two paths separable and the
-  prepare path opt-in, but whether to ship both together is the owner's
-  call; do not paper over it in the README.
+  prepare path opt-in, and the README must not paper over it. **Owner
+  decision (2026-10-23): keep the prepare path, opt-in and off by
+  default, as specced.** Do not re-ask.
 - **Next:** orchestrator pass (Opus). Two tracks can run at once because
   they touch different trees: service (P2-T1, then P2-T1b; only
   `service/`, safe while the owner tests) and browser (P2-T1c, spike
