@@ -7,18 +7,32 @@ resume protocol in `CLAUDE.md`.
 
 ## Current state
 
-- **Last done:** Phase 1 complete and smoke-tested by the owner on Windows
-  (Chrome, webcam mic, Logitech speakers): mic opens, processing off,
-  tracker 100 fps. Calibration through speakers failed with "No echo
-  detected" (P1-T9). The owner wants to practise without a headset (P1-T10).
-- **In progress:** P1-T9 then P1-T10, by workers.
+- **Last done:** P1-T9 (room-robust calibration: GCC-PHAT lag, first
+  arrival ranked by matched-filter height, noise-floor pre-roll, errors
+  that quote their numbers) and P1-T10 (speaker mode: echo cancellation on,
+  NS/AGC off; calibration reopens the mic raw for the measurement). 470
+  unit tests, 12 E2E tests green. Nothing tried on real speakers yet.
+- **In progress:** nothing.
 - **Blockers:** none.
-- **Next:** owner re-tests calibration and speaker mode, then Phase 2.
+- **Next:** owner re-test on speakers (below), then Phase 2 (P2-T1).
 - **Owner-side, when convenient:**
-  - After P1-T9/T10 land: `git pull`, `npm run dev`, Speakers mode on,
-    Calibrate twice; report the values and the status line. Then sing a
-    vowel over the song with speakers and say whether the ribbon follows
-    you or the song.
+  - `git pull`, `npm run dev`. Pick the webcam mic, choose Speakers under
+    the mic picker, read the status line: expect "Speaker mode: echo
+    cancellation on, NS/AGC off". If it says the browser kept echo
+    cancellation off, report it.
+  - Calibrate twice with speakers on and report both status lines. Success
+    reads "Latency N ms (trials ...; confidence ...)". A failure now says
+    which knob to turn (speaker volume, mic distance) or lists the trial
+    delays if they disagree.
+  - Play the song through the speakers and sing a held vowel. Does the
+    ribbon follow you or the song? Try normal and loud song volume, then a
+    few seconds in Headphones mode with speakers still playing to hear the
+    difference. If the ribbon lags the song by a fixed amount in speaker
+    mode, the canceller's buffering adds a few ms a raw calibration does
+    not see; nudge the latency field and report the value.
+  - If bleed persists only when a specific Output is chosen in the picker,
+    try System default: Chrome's canceller may not reference a non-default
+    output.
   - GPU machine: install uv and ffmpeg, `uv sync` in `service/`, enable the
     PyTorch CUDA index per `service/README.md`, `uv sync --extra gpu`, and
     confirm `GET /gpu` shows `cuda_available: true`.
@@ -140,7 +154,7 @@ built bundle and the tracker reports the right pitch. `e2e` stays out of
   - Follow-up: settings UI for `serviceUrl` and `octaveInvariant` (P2-T5 or
     P5-T3).
 
-- [ ] **P1-T9** (S) Calibration that survives a real room. The confidence
+- [x] **P1-T9** (S) Calibration that survives a real room. The confidence
   test compared the correlation peak with the second-highest peak, which
   room reflections defeat. Use GCC-PHAT for the lag with a first-arrival
   rule, confidence as peak over background, a longer and louder chirp with
@@ -148,7 +162,7 @@ built bundle and the tracker reports the right pitch. `e2e` stays out of
   is reported separately from "echo unstable", three trials that must
   agree, and the per-trial numbers in the status line. Tests with a
   synthetic room (reflections, noise, hum).
-- [ ] **P1-T10** (S) Speaker mode. Monitor setting `headphones | speakers`
+- [x] **P1-T10** (S) Speaker mode. Monitor setting `headphones | speakers`
   with a toggle beside the mic picker. In speaker mode the mic opens with
   browser echo cancellation on (it references Chrome's own playback, so
   it strips the song from the mic) while noise suppression and auto gain
@@ -158,6 +172,12 @@ built bundle and the tracker reports the right pitch. `e2e` stays out of
     above the noise floor measured at mic open, so residual bleed is not
     scored as singing. Phase 3 may add our own cancellation in the worklet
     from the known song signal and latency.
+  - Follow-up: README still says headphones are required for calibration;
+    reword once speaker mode is confirmed on real hardware.
+  - Follow-up: an `input.opening` flag in state so Record and Calibrate
+    wait during the 100 to 300 ms of a mic reopen instead of failing.
+  - Follow-up: `loadLatency`/`saveLatency` in `src/audio/latency.ts` remain
+    unused; delete with their tests (P1-T8 note).
 
 ## Phase 2: Song preparation and scoring
 
