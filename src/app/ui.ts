@@ -9,7 +9,7 @@
  * intents as the buttons. Importing the file touches no DOM; mountUI does.
  */
 import type { Session } from './session';
-import { describeHealth, describePitch, formatClock, meterFraction } from './state';
+import { describeHealth, describeMonitor, describePitch, formatClock, meterFraction } from './state';
 import type { AppState } from './state';
 import type { TakeSummary } from './takes';
 
@@ -74,6 +74,7 @@ export function mountUI(session: Session, root: Document = document): UI {
   const outputSelect = get<HTMLSelectElement>('output-select');
   const refreshButton = get<HTMLButtonElement>('refresh-devices');
   const micToggle = get<HTMLButtonElement>('mic-toggle');
+  const monitorButtons = [...get('monitor-mode').querySelectorAll<HTMLButtonElement>('button[data-mode]')];
   const meter = get('mic-meter');
   const meterFill = get('mic-meter-fill');
   const processing = get('mic-processing');
@@ -158,12 +159,10 @@ export function mountUI(session: Session, root: Document = document): UI {
     meter.setAttribute('aria-valuenow', level.toFixed(2));
   }
 
-  function describeProcessing(state: AppState): string {
-    if (!state.input.open) return '';
-    const { aec, ns, agc } = state.input.processing;
-    const on = [aec && 'echo cancel', ns && 'noise suppression', agc && 'auto gain'].filter(Boolean);
-    if (on.length > 0) return `Browser processing on: ${on.join(', ')}`;
-    return aec === false && ns === false && agc === false ? 'Raw input: processing off' : '';
+  function renderMonitor(state: AppState): void {
+    for (const button of monitorButtons) {
+      button.setAttribute('aria-pressed', String(button.dataset.mode === state.input.monitor));
+    }
   }
 
   function hidePitch(): void {
@@ -267,6 +266,9 @@ export function mountUI(session: Session, root: Document = document): UI {
       outputSelect.disabled = busy || !state.output.selectable;
       outputSelect.title = state.output.selectable ? '' : 'This browser cannot pick an output device';
       micToggle.disabled = busy;
+      // Switching reopens the mic, which would cut the stream a take or a
+      // calibration is reading; the Session refuses it too.
+      for (const button of monitorButtons) button.disabled = busy;
     }
 
     if (has('positionS', 'durationS')) {
@@ -284,7 +286,8 @@ export function mountUI(session: Session, root: Document = document): UI {
     if (has('input')) {
       setText(micToggle, state.input.open ? 'Close mic' : 'Open mic');
       renderMeter(state.input.level);
-      setText(processing, describeProcessing(state));
+      renderMonitor(state);
+      setText(processing, describeMonitor(state.input)?.text ?? '');
       const signature = `${state.input.deviceId}|${state.input.open}|${state.input.label}`;
       if (signature !== inputSignature) {
         inputSignature = signature;
@@ -358,6 +361,11 @@ export function mountUI(session: Session, root: Document = document): UI {
   listen(outputSelect, 'change', () => {
     void session.chooseOutput(outputSelect.value === DEFAULT ? null : outputSelect.value);
   });
+  for (const button of monitorButtons) {
+    listen(button, 'click', () => {
+      void session.setMonitor(button.dataset.mode === 'speakers' ? 'speakers' : 'headphones');
+    });
+  }
   listen(refreshButton, 'click', () => void session.refreshDevices());
   listen(micToggle, 'click', () => {
     if (store.state.input.open) void session.closeInput();

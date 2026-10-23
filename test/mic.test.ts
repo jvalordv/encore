@@ -11,10 +11,12 @@ import {
   MIC_CONSTRAINTS,
   MicCapture,
   MicError,
+  SPEAKER_MIC_CONSTRAINTS,
   buildMicConstraints,
   classifyMicError,
   levelWindowSamples,
   listInputDevices,
+  micConstraints,
   onDeviceChange,
   peak,
 } from '../src/audio/mic';
@@ -30,6 +32,53 @@ describe('MIC_CONSTRAINTS', () => {
     expect(MIC_CONSTRAINTS.autoGainControl).toBe(false);
     expect(MIC_CONSTRAINTS.channelCount).toEqual({ ideal: 1 });
     expect(MIC_CONSTRAINTS.sampleRate).toEqual({ ideal: 48000 });
+  });
+});
+
+describe('SPEAKER_MIC_CONSTRAINTS', () => {
+  it('is the raw set with only echo cancellation switched on', () => {
+    expect(SPEAKER_MIC_CONSTRAINTS).toEqual({ ...MIC_CONSTRAINTS, echoCancellation: true });
+    expect(SPEAKER_MIC_CONSTRAINTS.noiseSuppression).toBe(false);
+    expect(SPEAKER_MIC_CONSTRAINTS.autoGainControl).toBe(false);
+  });
+
+  it('leaves the headphone constants alone', () => {
+    expect(MIC_CONSTRAINTS.echoCancellation).toBe(false);
+    expect(Object.isFrozen(SPEAKER_MIC_CONSTRAINTS)).toBe(true);
+  });
+});
+
+describe('micConstraints', () => {
+  it('headphones: echo cancellation, noise suppression and auto gain all off', () => {
+    const { audio } = micConstraints('headphones') as { audio: MediaTrackConstraints };
+    expect(audio.echoCancellation).toBe(false);
+    expect(audio.noiseSuppression).toBe(false);
+    expect(audio.autoGainControl).toBe(false);
+  });
+
+  it('speakers: only echo cancellation on, so the song leaves the mic', () => {
+    const { audio } = micConstraints('speakers') as { audio: MediaTrackConstraints };
+    expect(audio.echoCancellation).toBe(true);
+    expect(audio.noiseSuppression).toBe(false);
+    expect(audio.autoGainControl).toBe(false);
+  });
+
+  it('keeps the device, channel count and rate whatever the mode', () => {
+    for (const mode of ['headphones', 'speakers'] as const) {
+      const { audio } = micConstraints(mode, 'abc', 2) as { audio: MediaTrackConstraints };
+      expect(audio.deviceId, mode).toEqual({ exact: 'abc' });
+      expect(audio.channelCount, mode).toEqual({ ideal: 2 });
+      expect(audio.sampleRate, mode).toEqual({ ideal: 48000 });
+    }
+  });
+
+  it('defaults to the system mic in mono and never edits the shared constants', () => {
+    const { audio } = micConstraints('speakers', null) as { audio: MediaTrackConstraints };
+    expect(audio.deviceId).toBeUndefined();
+    expect(audio.channelCount).toEqual({ ideal: 1 });
+    expect(micConstraints('headphones', '').audio).toEqual(buildMicConstraints(null));
+    expect(SPEAKER_MIC_CONSTRAINTS.deviceId).toBeUndefined();
+    expect(SPEAKER_MIC_CONSTRAINTS.channelCount).toEqual({ ideal: 1 });
   });
 });
 
@@ -295,6 +344,71 @@ describe('MicCapture', () => {
     // The mic feeds the analyser and nothing else.
     expect(source.connect).toHaveBeenCalledTimes(1);
     expect(source.connect).toHaveBeenCalledWith(analyser);
+  });
+
+  it('asks for echo cancellation only in speaker mode and remembers the mode', async () => {
+    const track = fakeTrack('Studio Mic', { deviceId: 'a', echoCancellation: true });
+    const getUserMedia = stubGetUserMedia(async () => fakeStream(track));
+    const mic = new MicCapture(fakeEngine().engine);
+    expect(mic.mode).toBe('headphones');
+
+    await mic.open('a', 1, 'speakers');
+
+    expect(getUserMedia).toHaveBeenCalledWith({
+      audio: expect.objectContaining({
+        echoCancellation: true,
+        noiseSuppression: false,
+        autoGainControl: false,
+      }),
+    });
+    expect(mic.mode).toBe('speakers');
+    // The browser's answer, not the request, is what settings reports.
+    expect(mic.settings?.echoCancellation).toBe(true);
+  });
+
+  it('opens in headphone mode when no mode is given, and reopens in another', async () => {
+    const queue = [fakeTrack('One', { deviceId: '1' }), fakeTrack('One', { deviceId: '1' })];
+    const getUserMedia = stubGetUserMedia(async () => fakeStream(queue.shift()!));
+    const mic = new MicCapture(fakeEngine().engine);
+
+    await mic.open('1');
+    expect(mic.mode).toBe('headphones');
+    expect(getUserMedia.mock.calls[0][0]).toEqual(micConstraints('headphones', '1'));
+
+    await mic.open('1', 1, 'speakers');
+    expect(mic.mode).toBe('speakers');
+    expect(getUserMedia.mock.calls[1][0]).toEqual(micConstraints('speakers', '1'));
+  });
+
+  it('cuts every connection of the old mic when it is reopened', async () => {
+    const sources = [
+      { connect: vi.fn(), disconnect: vi.fn() },
+      { connect: vi.fn(), disconnect: vi.fn() },
+    ];
+    const analysers = [
+      { fftSize: 0, connect: vi.fn(), disconnect: vi.fn(), getFloatTimeDomainData: vi.fn() },
+      { fftSize: 0, connect: vi.fn(), disconnect: vi.fn(), getFloatTimeDomainData: vi.fn() },
+    ];
+    const tracks = [fakeTrack('One', { deviceId: '1' }), fakeTrack('One', { deviceId: '1' })];
+    stubGetUserMedia(async () => fakeStream(tracks.shift()!));
+    const first = tracks[0];
+    const { engine, context } = fakeEngine();
+    context.createMediaStreamSource.mockImplementation(() => sources.shift()!);
+    context.createAnalyser.mockImplementation(() => analysers.shift() as never);
+    const used = [...sources];
+    const usedAnalysers = [...analysers];
+    const mic = new MicCapture(engine);
+
+    await mic.open('1', 1, 'headphones');
+    await mic.open('1', 1, 'speakers');
+
+    // The first source took the tracker and recorder links with it, and its
+    // analyser and track are gone; the second is the only live path.
+    expect(used[0].disconnect).toHaveBeenCalledTimes(1);
+    expect(usedAnalysers[0].disconnect).toHaveBeenCalledTimes(1);
+    expect(first.stopped).toBe(true);
+    expect(used[1].disconnect).not.toHaveBeenCalled();
+    expect(mic.source).toBe(used[1]);
   });
 
   it('closes the previous stream when a new one is opened', async () => {

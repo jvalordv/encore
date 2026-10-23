@@ -28,6 +28,7 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS).toEqual({
       inputDeviceId: null,
       outputDeviceId: null,
+      monitor: 'headphones',
       serviceUrl: 'http://localhost:8765',
       clarityThreshold: 0.9,
       octaveInvariant: false,
@@ -70,6 +71,7 @@ describe('loadSettings', () => {
         JSON.stringify({
           inputDeviceId: 'mic-1',
           outputDeviceId: 7,
+          monitor: 'loudspeakers',
           serviceUrl: 'ftp://nope',
           clarityThreshold: 0.75,
           octaveInvariant: 'yes',
@@ -80,6 +82,7 @@ describe('loadSettings', () => {
     expect(s).toEqual({
       inputDeviceId: 'mic-1',
       outputDeviceId: null,
+      monitor: 'headphones',
       serviceUrl: DEFAULT_SETTINGS.serviceUrl,
       clarityThreshold: 0.75,
       octaveInvariant: false,
@@ -91,6 +94,19 @@ describe('loadSettings', () => {
     const s = sanitizeSettings({ inputDeviceId: '', outputDeviceId: '' });
     expect(s.inputDeviceId).toBeNull();
     expect(s.outputDeviceId).toBeNull();
+  });
+
+  it('accepts the two monitor modes and falls back to headphones for the rest', () => {
+    expect(sanitizeSettings({ monitor: 'speakers' }).monitor).toBe('speakers');
+    expect(sanitizeSettings({ monitor: 'headphones' }).monitor).toBe('headphones');
+    for (const bad of ['Speakers', '', 'both', 1, true, null, undefined, {}]) {
+      expect(sanitizeSettings({ monitor: bad }).monitor, String(bad)).toBe('headphones');
+    }
+  });
+
+  it('reads settings saved before speaker mode existed as headphones', () => {
+    const old = JSON.stringify({ inputDeviceId: 'mic-1', clarityThreshold: 0.8 });
+    expect(loadSettings(storeWith(old)).monitor).toBe('headphones');
   });
 
   it('accepts only http(s) URLs and strips whitespace and trailing slashes', () => {
@@ -149,6 +165,7 @@ describe('saveSettings', () => {
   const custom: Settings = {
     inputDeviceId: 'in-1',
     outputDeviceId: 'out-1',
+    monitor: 'speakers',
     serviceUrl: 'http://127.0.0.1:9999',
     clarityThreshold: 0.8,
     octaveInvariant: true,

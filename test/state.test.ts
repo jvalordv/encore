@@ -17,6 +17,7 @@ import {
 import { loadSettings } from '../src/app/settings';
 import {
   describeHealth,
+  describeMonitor,
   describePitch,
   formatClock,
   formatLatency,
@@ -47,6 +48,8 @@ describe('initialState', () => {
         open: false,
         level: 0,
         processing: { aec: null, ns: null, agc: null },
+        monitor: 'headphones',
+        requestedAec: false,
       },
       output: { deviceId: null, label: '', selectable: false },
       latencyS: null,
@@ -200,7 +203,20 @@ describe('StateStore.patchSection', () => {
       open: true,
       level: 0,
       processing: { aec: null, ns: null, agc: null },
+      monitor: 'headphones',
+      requestedAec: false,
     });
+  });
+
+  it('notices a change of monitor mode or of the echo cancellation request', () => {
+    const store = new StateStore();
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.patchSection('input', { monitor: 'speakers', requestedAec: true });
+    store.patchSection('input', { monitor: 'speakers', requestedAec: true });
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(store.state.input.monitor).toBe('speakers');
+    expect(store.state.input.requestedAec).toBe(true);
   });
 
   it('notifies once with the section key', () => {
@@ -324,6 +340,80 @@ describe('describeHealth', () => {
     s.tracker = 'unsupported';
     expect(describeHealth(s)).toContain('mic: open');
     expect(describeHealth(s)).toContain('tracker: unavailable');
+  });
+});
+
+describe('describeMonitor', () => {
+  /** The input section once a mic has opened and the browser has answered. */
+  function opened(
+    requestedAec: boolean,
+    processing: AppState['input']['processing'],
+  ): AppState['input'] {
+    return { ...initialState().input, open: true, requestedAec, processing };
+  }
+  const off = { aec: false, ns: false, agc: false };
+
+  it('says nothing while no mic is open', () => {
+    expect(describeMonitor(initialState().input)).toBeNull();
+    expect(describeMonitor({ ...opened(true, off), open: false })).toBeNull();
+  });
+
+  it('headphones: raw input when the browser left everything off', () => {
+    expect(describeMonitor(opened(false, off))).toEqual({
+      text: 'Raw input: processing off',
+      kind: 'info',
+    });
+  });
+
+  it('headphones: warns, naming what the browser kept on', () => {
+    expect(describeMonitor(opened(false, { aec: true, ns: false, agc: true }))).toEqual({
+      text: 'Browser processing on: echo cancel, auto gain',
+      kind: 'warn',
+    });
+    expect(describeMonitor(opened(false, { aec: false, ns: true, agc: false }))?.kind).toBe('warn');
+  });
+
+  it('headphones: says nothing when the browser reports nothing', () => {
+    expect(describeMonitor(opened(false, { aec: null, ns: null, agc: null }))).toBeNull();
+  });
+
+  it('speakers: confirms echo cancellation on with noise suppression and gain off', () => {
+    expect(describeMonitor(opened(true, { aec: true, ns: false, agc: false }))).toEqual({
+      text: 'Speaker mode: echo cancellation on, NS/AGC off',
+      kind: 'info',
+    });
+  });
+
+  it('speakers: warns that the song may bleed when the browser refused', () => {
+    expect(describeMonitor(opened(true, off))).toEqual({
+      text:
+        'Speaker mode requested but this browser kept echo cancellation off: ' +
+        'the song may bleed into your pitch',
+      kind: 'warn',
+    });
+  });
+
+  it('speakers: warns when noise suppression or gain came along with the cancelling', () => {
+    const both = describeMonitor(opened(true, { aec: true, ns: true, agc: true }));
+    expect(both?.kind).toBe('warn');
+    expect(both?.text).toContain('noise suppression and auto gain');
+    const one = describeMonitor(opened(true, { aec: true, ns: false, agc: true }));
+    expect(one?.kind).toBe('warn');
+    expect(one?.text).toContain('auto gain');
+    expect(one?.text).not.toContain('noise suppression');
+  });
+
+  it('speakers: does not claim a result the browser did not report', () => {
+    const report = describeMonitor(opened(true, { aec: null, ns: null, agc: null }));
+    expect(report?.kind).toBe('info');
+    expect(report?.text).toContain('does not say');
+  });
+
+  it('reads a raw calibration pass as raw even in speaker mode', () => {
+    // Calibration reopens the mic without echo cancellation; the saved mode is
+    // still speakers, but the open mic was not asked for cancelling.
+    const input = { ...opened(false, off), monitor: 'speakers' as const };
+    expect(describeMonitor(input)?.text).toBe('Raw input: processing off');
   });
 });
 
@@ -489,6 +579,7 @@ describe('Session without Web Audio', () => {
     session.toggleLoop();
     session.setLoopPoint('a');
     await session.chooseInput('mic');
+    await session.setMonitor('speakers');
     await session.chooseOutput('out');
     await session.calibrate();
     await session.toggleRecord();

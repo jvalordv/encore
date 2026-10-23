@@ -324,6 +324,37 @@ input[type='range'] {
   padding-inline: 8px;
 }
 
+/* Two joined buttons; the pressed one is the chosen mode. */
+.segmented {
+  display: flex;
+}
+
+.segmented button {
+  flex: 1;
+  min-width: 0;
+  padding-inline: 8px;
+}
+
+.segmented button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.segmented button:last-child {
+  margin-left: calc(var(--border-width) * -1);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+/* A filled segment, so the active mode reads at a glance in every skin. */
+.segmented button[aria-pressed='true'] {
+  position: relative;
+  z-index: 1;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-bg);
+}
+
 .latency-row input {
   flex: 1;
   width: 0;

@@ -23,11 +23,26 @@ reference melody, lyrics, scoring, and coaching when it is up.
 - **Audio graph.** One `AudioContext` at 48 kHz. Song playback from decoded
   `AudioBuffer`s (original, or stems once prepared) through per-stem gains
   into a master gain. Mic `MediaStreamSource` into the pitch `AudioWorklet`
-  and a recorder node. Mic is never routed to the output (headphones carry
-  the song; speaker bleed would poison the analysis).
-- **Mic constraints.** `echoCancellation`, `noiseSuppression`, and
-  `autoGainControl` are all `false`. Browser defaults flatten dynamics and
-  smear pitch onsets.
+  and a recorder node. Mic is never routed to the output. The song reaches
+  the singer through headphones, or through speakers in speaker mode (see
+  Mic constraints).
+- **Mic constraints.** Two modes, picked by the Monitoring toggle and saved
+  as `monitor` in settings (`micConstraints` in `src/audio/mic.ts`).
+  *Headphones*, the default, opens the mic raw: `echoCancellation`,
+  `noiseSuppression`, and `autoGainControl` all `false`, the most accurate
+  input. *Speakers* turns on `echoCancellation` alone. Chrome's canceller
+  references the audio the page itself plays, so it takes the song out of
+  the mic and leaves the voice, which lets someone practise without a
+  headset. `noiseSuppression` and `autoGainControl` are `false` in both
+  modes because they flatten dynamics and smear pitch onsets. The status bar
+  says which mode is active and whether the browser honoured it
+  (`describeMonitor` in `src/app/state.ts`). Switching reopens the mic and is
+  refused while recording. Calibration always measures on a raw mic, since
+  the canceller would remove the chirp too, and restores speaker mode
+  afterwards. In speaker mode Phase 2 (P2-T6) gates scored frames by mic
+  level above the noise floor measured at mic open, so residual bleed is not
+  scored as singing, and Phase 3 may add our own cancellation in the
+  worklet from the known song signal and latency.
 - **Clock.** Song time is the master clock. Every mic frame is stamped with
   `context.currentTime` (the centre of its analysis window) and shifted by the
   calibrated round-trip latency so that what the singer heard at time *t* and

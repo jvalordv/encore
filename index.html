@@ -58,6 +58,12 @@
           <h3 class="group-title">Devices</h3>
           <label class="field" for="input-select">Microphone</label>
           <select id="input-select" data-testid="input-select"></select>
+          <span id="monitor-label" class="field">Monitoring</span>
+          <div id="monitor-mode" class="segmented" data-testid="monitor-mode" role="group" aria-labelledby="monitor-label">
+            <button type="button" id="monitor-headphones" data-testid="monitor-headphones" data-mode="headphones" aria-pressed="true">Headphones</button>
+            <button type="button" id="monitor-speakers" data-testid="monitor-speakers" data-mode="speakers" aria-pressed="false">Speakers</button>
+          </div>
+          <div id="monitor-help" class="song-meta">Speakers: echo cancellation on so the song is removed from the mic. Headphones: raw input, most accurate.</div>
           <div id="mic-meter" class="meter" data-testid="mic-meter" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0">
             <div id="mic-meter-fill" class="meter-fill"></div>
           </div>

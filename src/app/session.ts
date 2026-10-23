@@ -20,8 +20,9 @@ import { PitchTracker } from '../analysis/pitch-tracker';
 import { PcmCapture } from '../audio/capture';
 import { AudioEngine, listOutputDevices } from '../audio/engine';
 import { CalibrationError, describeLatency, latencyKey, measureLatency } from '../audio/latency';
+import type { LatencyResult } from '../audio/latency';
 import { classifyMicError, listInputDevices, MicCapture, onDeviceChange } from '../audio/mic';
-import type { InputDevice } from '../audio/mic';
+import type { InputDevice, MonitorMode } from '../audio/mic';
 import { normaliseLoop, Player } from '../audio/player';
 import type { LoopRegion, SongInfo } from '../audio/player';
 import { Recorder } from '../audio/recorder';
@@ -30,7 +31,7 @@ import { decodeWav, encodeWavBlob, songTimeOfSample } from '../audio/wav';
 import type { PitchLane } from '../render/pitch-lane';
 import { loadSettings, MAX_LATENCY_S, saveSettings } from './settings';
 import type { Settings } from './settings';
-import { formatClock, StateStore } from './state';
+import { describeMonitor, formatClock, StateStore } from './state';
 import type { AppState } from './state';
 import { localStorageStore } from './storage';
 import type { KeyValueStore } from './storage';
@@ -58,6 +59,9 @@ const REPLAY_BACK_S = 6;
 const REPLAY_SLACK_S = 0.05;
 /** Calibrations under this confidence are reported with a warning. */
 const LOW_CONFIDENCE = 0.6;
+/** Said when headphone mode opened a mic the browser still processes. */
+const PROCESSING_KEPT_ON =
+  'This browser kept voice processing on for that mic, which flattens dynamics. Try another input.';
 
 /**
  * Song time of a pitch frame. The frame was stamped `frameT` on the context
@@ -143,6 +147,12 @@ export interface SessionOptions {
   store?: StateStore;
 }
 
+/** What openInput says once open: the plain line, the mode's line, or none. */
+type Announce = 'ready' | 'monitor' | 'none';
+
+/** How openInput ended; a failure has already put its reason on screen. */
+type OpenOutcome = 'open' | 'failed' | 'superseded';
+
 /** Devices the browser currently offers. */
 export interface DeviceLists {
   inputs: InputDevice[];
@@ -213,7 +223,10 @@ export class Session {
 
     const sinkCapable = typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;
     this.store.patch({ tracker: this.trackerSupported ? 'idle' : 'unsupported' });
-    this.store.patchSection('input', { deviceId: this.current.inputDeviceId });
+    this.store.patchSection('input', {
+      deviceId: this.current.inputDeviceId,
+      monitor: this.current.monitor,
+    });
     this.store.patchSection('output', { selectable: this.parts !== null && sinkCapable });
     this.refreshLatency();
     if (this.parts) this.wire(this.parts);
@@ -318,6 +331,9 @@ export class Session {
       this.store.setStatus('Drop an audio file on the page to start.');
       return;
     }
+    // The song would drown the chirps; the Play button is already disabled,
+    // and this keeps the Space key from starting it anyway.
+    if (this.store.state.calibrating) return;
     parts.player.play();
     this.reopenSavedInput();
   }
@@ -384,36 +400,83 @@ export class Session {
   // ---- Devices and latency ------------------------------------------------
 
   /**
-   * Opens a microphone (null or '' for the system default) and points the
-   * pitch tracker at it. Call from a click or key press.
+   * Opens a microphone (null or '' for the system default) in the saved
+   * monitor mode and points the pitch tracker at it. Call from a click or key
+   * press.
    */
   async chooseInput(id: string | null): Promise<void> {
+    if (!this.parts) return;
+    await this.openInput(id === '' ? null : id, this.current.monitor, 'ready');
+  }
+
+  /**
+   * Chooses how the singer hears the song: headphones (raw mic) or speakers
+   * (the browser cancels the song out of the mic). The choice is saved; an
+   * open mic is reopened with the new constraints and handed back to the
+   * tracker the way a device change is. Reopening cuts the stream a recording
+   * or a calibration is reading, so both refuse it.
+   */
+  async setMonitor(mode: MonitorMode): Promise<void> {
     const parts = this.parts;
-    if (!parts) return;
-    const deviceId = id === '' ? null : id;
+    if (!parts || (mode !== 'headphones' && mode !== 'speakers')) return;
+    const { input, recording, calibrating } = this.store.state;
+    if (recording || this.startingRecord) {
+      this.store.setStatus('Stop recording before changing the monitor mode.', 'warn');
+      return;
+    }
+    if (calibrating) {
+      this.store.setStatus('Wait for calibration to finish before changing the monitor mode.', 'warn');
+      return;
+    }
+    if (mode === this.current.monitor) return;
+    this.current.monitor = mode;
+    this.persist();
+    this.store.patchSection('input', { monitor: mode });
+    if (!input.open && !this.opening) {
+      this.store.setStatus(
+        mode === 'speakers'
+          ? 'Speaker mode: echo cancellation will be on when the microphone opens.'
+          : 'Headphone mode: the microphone will open raw.',
+      );
+      return;
+    }
+    await this.openInput(input.deviceId, mode, 'monitor');
+  }
+
+  /**
+   * Opens `deviceId` with `mode`'s constraints, connects the tracker and
+   * writes the result into the state. A newer open or close overtakes this
+   * one, which then reports 'superseded' and leaves the state to its rival.
+   */
+  private async openInput(
+    deviceId: string | null,
+    mode: MonitorMode,
+    announce: Announce,
+  ): Promise<OpenOutcome> {
+    const parts = this.parts;
+    if (!parts) return 'failed';
     const token = ++this.inputToken;
     this.opening = true;
     this.store.patchSection('input', { deviceId });
-    this.store.setStatus('Opening the microphone…');
+    if (announce !== 'none') this.store.setStatus('Opening the microphone…');
     try {
-      await parts.mic.open(deviceId);
+      await parts.mic.open(deviceId, 1, mode);
     } catch (error) {
-      if (token === this.inputToken) {
-        this.opening = false;
-        this.markInputClosed();
-        this.store.setStatus(classifyMicError(error).message, 'error');
-      }
-      return;
+      if (token !== this.inputToken) return 'superseded';
+      this.opening = false;
+      this.markInputClosed();
+      this.store.setStatus(classifyMicError(error).message, 'error');
+      return 'failed';
     }
-    if (token !== this.inputToken) return;
+    if (token !== this.inputToken) return 'superseded';
     const source = parts.mic.source;
     if (!source) {
       this.opening = false;
       this.markInputClosed();
-      return;
+      return 'failed';
     }
     const tracking = await this.attachTracker(parts, source, token);
-    if (token !== this.inputToken) return;
+    if (token !== this.inputToken) return 'superseded';
     this.opening = false;
 
     const settings = parts.mic.settings;
@@ -422,20 +485,33 @@ export class Session {
       ns: settings?.noiseSuppression ?? null,
       agc: settings?.autoGainControl ?? null,
     };
-    this.store.patchSection('input', { deviceId, label: parts.mic.label, open: true, processing });
+    this.store.patchSection('input', {
+      deviceId,
+      label: parts.mic.label,
+      open: true,
+      processing,
+      requestedAec: mode === 'speakers',
+    });
     this.store.patch({ tracker: tracking });
     this.current.inputDeviceId = deviceId;
     this.persist();
     this.refreshLatency();
     void this.refreshDevices();
-    const raw = processing.aec || processing.ns || processing.agc;
-    if (raw) {
-      this.store.setStatus(
-        'This browser kept voice processing on for that mic, which flattens dynamics. Try another input.',
-        'warn',
-      );
+    if (announce !== 'none') this.announceOpen(parts, tracking, announce);
+    return 'open';
+  }
+
+  /** Puts the outcome of an open on the status line. */
+  private announceOpen(parts: SessionParts, tracking: AppState['tracker'], announce: Announce): void {
+    const { input } = this.store.state;
+    const report = describeMonitor(input);
+    if (report?.kind === 'warn') {
+      this.store.setStatus(input.requestedAec ? report.text : PROCESSING_KEPT_ON, 'warn');
     } else if (tracking !== 'unsupported') {
-      this.store.setStatus(`Microphone ready: ${parts.mic.label || 'default input'}.`);
+      // A plain open names the mic; after a mode switch the mode's own line is
+      // the answer to what the singer just did.
+      const line = announce === 'monitor' || input.requestedAec ? report?.text : undefined;
+      this.store.setStatus(line ?? `Microphone ready: ${parts.mic.label || 'default input'}.`);
     } else if (!this.trackerSupported) {
       // A failed worklet load has already said why; with no AudioWorklet at
       // all nothing has, and "Opening the microphone…" would stay up for ever.
@@ -491,30 +567,56 @@ export class Session {
   async calibrate(): Promise<void> {
     const parts = this.parts;
     const state = this.store.state;
-    if (!parts || state.calibrating || state.recording) return;
+    if (!parts || state.calibrating || state.recording || this.startingRecord) return;
     if (!(await this.ensureInput())) return;
     const resume = state.player === 'playing';
     if (resume) parts.player.pause();
     this.store.patch({ calibrating: true });
     this.store.setStatus('Calibrating: keep quiet and listen for the chirps.');
     try {
-      const result = await measureLatency(parts.engine, parts.mic, parts.capture, {
-        onProgress: (done, total) => this.store.setStatus(`Calibrating… ${done} of ${total}`),
-      });
-      this.setLatency(result.delayS);
-      const text = describeLatency(result);
-      if (result.confidence < LOW_CONFIDENCE) {
-        this.store.setStatus(`${text}. Confidence is low; try again somewhere quieter.`, 'warn');
-      } else {
-        this.store.setStatus(text);
-      }
+      const result = await this.measureOnRawMic(parts);
+      if (result) this.reportCalibration(result);
     } catch (error) {
-      this.store.setStatus(messageOf(error), error instanceof CalibrationError ? 'warn' : 'error');
+      // A mic that closed meanwhile has put its own reason on the status line.
+      if (this.store.state.input.open) {
+        this.store.setStatus(messageOf(error), error instanceof CalibrationError ? 'warn' : 'error');
+      }
     } finally {
       this.store.patch({ calibrating: false });
       // Only a song still paused where calibration left it is resumed; one the
       // singer replaced or stopped meanwhile is left alone.
       if (resume && parts.player.state === 'paused') parts.player.play();
+    }
+  }
+
+  /**
+   * Runs the chirp measurement on a raw mic. Echo cancellation exists to
+   * remove what this page plays, so in speaker mode it would remove the chirp
+   * and every run would read "not heard". The mic is reopened without it for
+   * the run and put back in the saved mode afterwards, whatever the outcome.
+   * Null when the swap itself failed; openInput has said why.
+   */
+  private async measureOnRawMic(parts: SessionParts): Promise<LatencyResult | null> {
+    const { deviceId, requestedAec } = this.store.state.input;
+    if (requestedAec && (await this.openInput(deviceId, 'headphones', 'none')) !== 'open') return null;
+    try {
+      return await measureLatency(parts.engine, parts.mic, parts.capture, {
+        onProgress: (done, total) => this.store.setStatus(`Calibrating… ${done} of ${total}`),
+      });
+    } finally {
+      if (requestedAec) await this.openInput(deviceId, this.current.monitor, 'none');
+    }
+  }
+
+  private reportCalibration(result: LatencyResult): void {
+    this.setLatency(result.delayS);
+    // A mic that would not reopen has put its own reason on the status line.
+    if (!this.store.state.input.open) return;
+    const text = describeLatency(result);
+    if (result.confidence < LOW_CONFIDENCE) {
+      this.store.setStatus(`${text}. Confidence is low; try again somewhere quieter.`, 'warn');
+    } else {
+      this.store.setStatus(text);
     }
   }
 
@@ -744,6 +846,7 @@ export class Session {
       open: false,
       level: 0,
       processing: { aec: null, ns: null, agc: null },
+      requestedAec: false,
     });
     this.store.patch({
       tracker: this.trackerSupported ? 'idle' : 'unsupported',

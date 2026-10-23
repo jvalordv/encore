@@ -1,6 +1,7 @@
 /**
- * Persistent user settings: the devices last chosen, the service address, the
- * voicing threshold and the round-trip latency measured for each device pair.
+ * Persistent user settings: the devices last chosen, how the singer monitors
+ * the song, the service address, the voicing threshold and the round-trip
+ * latency measured for each device pair.
  * One object under one storage key, behind the KeyValueStore interface, so a
  * native shell can own storage later (see "Built to become an app" in
  * docs/ARCHITECTURE.md). Loading never throws and never trusts what it reads:
@@ -9,6 +10,7 @@
  * here; it lives under `encore.skin` because index.html reads it before any
  * script runs.
  */
+import type { MonitorMode } from '../audio/mic';
 import type { KeyValueStore } from './storage';
 
 /** Everything the user has chosen that should survive a reload. */
@@ -17,6 +19,8 @@ export interface Settings {
   inputDeviceId: string | null;
   /** Last chosen output device; null means the system default. */
   outputDeviceId: string | null;
+  /** Headphones open the mic raw; speakers add echo cancellation. */
+  monitor: MonitorMode;
   /** Base URL of the optional Python service, without a trailing slash. */
   serviceUrl: string;
   /** Clarity at or above which a pitch frame counts as voiced, 0..1. */
@@ -37,6 +41,7 @@ export const MAX_LATENCY_S = 2;
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
   inputDeviceId: null,
   outputDeviceId: null,
+  monitor: 'headphones',
   serviceUrl: 'http://localhost:8765',
   clarityThreshold: 0.9,
   octaveInvariant: false,
@@ -50,6 +55,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** A usable device id, or null for anything else (the empty id included). */
 function deviceId(value: unknown): string | null {
   return typeof value === 'string' && value !== '' ? value : null;
+}
+
+/** The stored mode if it is one we know; headphones for anything else. */
+function monitorMode(value: unknown): MonitorMode {
+  return value === 'speakers' ? 'speakers' : DEFAULT_SETTINGS.monitor;
 }
 
 /** An http(s) URL without trailing slashes, or null when it is not one. */
@@ -94,6 +104,7 @@ export function sanitizeSettings(value: unknown): Settings {
   return {
     inputDeviceId: deviceId(raw.inputDeviceId),
     outputDeviceId: deviceId(raw.outputDeviceId),
+    monitor: monitorMode(raw.monitor),
     serviceUrl: serviceUrl(raw.serviceUrl) ?? DEFAULT_SETTINGS.serviceUrl,
     clarityThreshold: clarity(raw.clarityThreshold),
     octaveInvariant:

@@ -1,13 +1,14 @@
 /**
  * End-to-end proof of the Phase 1 solo loop in real Chromium, against the
  * production bundle: shell and skins, loading a song, transport, the live
- * pitch tracker on a fake microphone, recording a take, playing it back, and
- * calibration (the failure path, then a loopback of known delay). It is the
- * only test that runs the audio worklets and Web Audio for real. The tests
- * share one page and run in order, each building on the state the last left
- * behind; the page is driven through `window.encore` (see src/main.ts) and
- * the data-testid hooks in index.html. Any uncaught page error fails the
- * test that was running when it happened.
+ * pitch tracker on a fake microphone, recording a take, playing it back,
+ * calibration (the failure path, then a loopback of known delay) and speaker
+ * mode (the mic reopened with echo cancellation, and back). It is the only
+ * test that runs the audio worklets and Web Audio for real. The tests share
+ * one page and run in order, each building on the state the last left behind;
+ * the page is driven through `window.encore` (see src/main.ts) and the
+ * data-testid hooks in index.html. Any uncaught page error fails the test
+ * that was running when it happened.
  */
 import { expect, test } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
@@ -534,4 +535,212 @@ test('11. a browser missing AudioWorklet or the mic API degrades with a message'
     expect(errors, name).toEqual([]);
     await other.close();
   }
+});
+
+/** The constraints getUserMedia was called with, recorded by watchMicOpens. */
+interface OpenedAudio {
+  audio: { echoCancellation?: boolean; noiseSuppression?: boolean; autoGainControl?: boolean };
+}
+
+/** Starts recording every getUserMedia call the page makes from now on. */
+async function watchMicOpens(): Promise<void> {
+  await page.evaluate(() => {
+    const devices = navigator.mediaDevices;
+    const original = devices.getUserMedia.bind(devices);
+    const calls: unknown[] = [];
+    (window as unknown as { micOpens: unknown[] }).micOpens = calls;
+    devices.getUserMedia = (constraints) => {
+      calls.push(JSON.parse(JSON.stringify(constraints)));
+      return original(constraints);
+    };
+  });
+}
+
+/** The getUserMedia calls seen since watchMicOpens; stops watching. */
+async function micOpens(): Promise<OpenedAudio[]> {
+  return page.evaluate(() => {
+    delete (navigator.mediaDevices as { getUserMedia?: unknown }).getUserMedia;
+    return (window as unknown as { micOpens: OpenedAudio[] }).micOpens;
+  });
+}
+
+/** Id of the live mic track, to tell a reopened mic from the old one. */
+async function micTrackId(): Promise<string | undefined> {
+  return page.evaluate(() => window.encore!.session.parts!.mic.stream?.getAudioTracks()[0]?.id);
+}
+
+/** Waits for the tracker to report the fake microphone's 440 Hz again. */
+async function expectTracking440(): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const { tracker, framesPerSecond, lastFrame: f } = window.encore!.store.state;
+      return (
+        tracker === 'running' &&
+        framesPerSecond > 50 &&
+        f !== null &&
+        Math.abs(f.f0 - 440) / 440 < 0.02 &&
+        f.clarity >= 0.9
+      );
+    },
+    undefined,
+    { timeout: 15_000 },
+  );
+}
+
+test('12. speaker mode reopens the mic with echo cancellation and switching back restores raw input', async () => {
+  await page.getByTestId('stop').click();
+  const before = await appState();
+  expect(before.input.open).toBe(true);
+  expect(before.input.monitor).toBe('headphones');
+  expect(before.input.requestedAec).toBe(false);
+  const headphones = page.getByTestId('monitor-headphones');
+  const speakers = page.getByTestId('monitor-speakers');
+  await expect(headphones).toHaveAttribute('aria-pressed', 'true');
+  await expect(speakers).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByTestId('monitor-mode')).toBeVisible();
+  await expect(page.getByTestId('mic-processing')).toHaveText('Raw input: processing off');
+  const oldTrack = await micTrackId();
+  expect(oldTrack).toBeDefined();
+  // Choices made before the switch must still stand after it.
+  const picked = await page.locator('#input-select').inputValue();
+  await page.evaluate(() => window.encore!.session.setClarity(0.83));
+
+  await watchMicOpens();
+  await speakers.click();
+  await page.waitForFunction(() => window.encore!.store.state.input.requestedAec === true, undefined, {
+    timeout: 15_000,
+  });
+  await expectTracking440();
+  // The meter reads the new analyser, so the old one is not what is shown.
+  await page.waitForFunction(() => window.encore!.store.state.input.level > 0.1);
+
+  // A new stream was opened, with echo cancellation asked for and the other
+  // two filters still off; the old one was let go.
+  const opened = await micOpens();
+  expect(opened).toHaveLength(1);
+  expect(opened[0].audio).toMatchObject({
+    echoCancellation: true,
+    noiseSuppression: false,
+    autoGainControl: false,
+  });
+  expect(await micTrackId()).not.toBe(oldTrack);
+
+  const speaker = await appState();
+  expect(speaker.input.monitor).toBe('speakers');
+  expect(speaker.input.requestedAec).toBe(true);
+  expect(speaker.input.open).toBe(true);
+  expect(speaker.tracker).toBe('running');
+  // The device selection and the latency key are what they were.
+  expect(speaker.input.deviceId).toBe(before.input.deviceId);
+  await expect(page.locator('#input-select')).toHaveValue(picked);
+  expect(
+    await page.evaluate(() => window.encore!.session.parts!.tracker.clarityThreshold),
+  ).toBe(0.83);
+  await expect(speakers).toHaveAttribute('aria-pressed', 'true');
+  await expect(headphones).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByTestId('status-text')).toContainText('Speaker mode');
+  await expect(page.getByTestId('mic-processing')).toContainText('Speaker mode');
+  // Whether the fake device honours the request is its own business: when it
+  // says, the status line must agree with what it said.
+  const { aec, ns, agc } = speaker.input.processing;
+  test.info().annotations.push({ type: 'speaker processing', description: JSON.stringify({ aec, ns, agc }) });
+  if (aec === true) {
+    await expect(page.getByTestId('status-text')).toContainText('echo cancellation on');
+    expect(speaker.status.kind).toBe(ns || agc ? 'warn' : 'info');
+  } else if (aec === false) {
+    await expect(page.getByTestId('status-text')).toContainText('kept echo cancellation off');
+    expect(speaker.status.kind).toBe('warn');
+  }
+  const saved = await page.evaluate(
+    () => JSON.parse(localStorage.getItem('encore.settings') ?? '{}').monitor as string,
+  );
+  expect(saved).toBe('speakers');
+
+  // A recording in progress must not lose its stream to a mode switch.
+  await page.getByTestId('record').click();
+  await page.waitForFunction(() => window.encore!.store.state.recording === true);
+  await expect(headphones).toBeDisabled();
+  const recordingTrack = await micTrackId();
+  await page.evaluate(() => window.encore!.session.setMonitor('headphones'));
+  const refused = await appState();
+  expect(refused.recording).toBe(true);
+  expect(refused.input.monitor).toBe('speakers');
+  expect(refused.input.requestedAec).toBe(true);
+  expect(refused.status.kind).toBe('warn');
+  expect(refused.status.text).toBe('Stop recording before changing the monitor mode.');
+  expect(await micTrackId()).toBe(recordingTrack);
+  await page.waitForTimeout(500);
+  await page.getByTestId('record').click();
+  await expect(page.getByTestId('take-item')).toHaveCount(4);
+  await page.getByTestId('stop').click();
+
+  // And back: raw input, same device, still tracking.
+  await headphones.click();
+  await page.waitForFunction(() => window.encore!.store.state.input.requestedAec === false, undefined, {
+    timeout: 15_000,
+  });
+  await expectTracking440();
+  const back = await appState();
+  expect(back.input.monitor).toBe('headphones');
+  expect(back.input.processing).toEqual({ aec: false, ns: false, agc: false });
+  expect(back.input.deviceId).toBe(before.input.deviceId);
+  await expect(page.locator('#input-select')).toHaveValue(picked);
+  expect(
+    await page.evaluate(() => window.encore!.session.parts!.tracker.clarityThreshold),
+  ).toBe(0.83);
+  await page.evaluate(() => window.encore!.session.setClarity(0.9));
+  await expect(headphones).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('status-text')).toContainText('Raw input');
+  await expect(page.getByTestId('mic-processing')).toHaveText('Raw input: processing off');
+});
+
+test('13. calibrating in speaker mode borrows a raw mic and puts echo cancellation back', async () => {
+  await page.getByTestId('monitor-speakers').click();
+  await page.waitForFunction(() => window.encore!.store.state.input.requestedAec === true, undefined, {
+    timeout: 15_000,
+  });
+  // A song that is playing stands still for the run and carries on after it.
+  await page.getByTestId('stop').click();
+  await page.getByTestId('play').click();
+  await page.waitForFunction(() => window.encore!.store.state.player === 'playing');
+  await watchMicOpens();
+  await page.getByTestId('calibrate').click();
+  // Echo cancellation would remove the chirp, so the run is on a raw mic.
+  await page.waitForFunction(
+    () => {
+      const s = window.encore!.store.state;
+      return s.calibrating && s.input.open && s.input.requestedAec === false;
+    },
+    undefined,
+    { timeout: 15_000 },
+  );
+  const during = await appState();
+  expect(during.input.monitor).toBe('speakers');
+  expect(during.player).toBe('paused');
+  await page.waitForFunction(() => window.encore!.store.state.calibrating === false, undefined, {
+    timeout: 30_000,
+  });
+
+  // The fake microphone never hears the chirp, so the run ends in the usual
+  // warning; what matters is that speaker mode is back afterwards.
+  const after = await appState();
+  expect(after.status.text).toMatch(NOT_HEARD);
+  expect(after.status.kind).toBe('warn');
+  expect(after.input.open).toBe(true);
+  expect(after.input.monitor).toBe('speakers');
+  expect(after.input.requestedAec).toBe(true);
+  expect(after.tracker).toBe('running');
+  expect(after.player).toBe('playing');
+  await page.getByTestId('play').click();
+  await page.waitForFunction(() => window.encore!.store.state.player === 'paused');
+  const opened = await micOpens();
+  expect(opened.map((o) => o.audio.echoCancellation)).toEqual([false, true]);
+  await expectTracking440();
+  await expect(page.getByTestId('calibrate')).toBeEnabled();
+
+  await page.getByTestId('monitor-headphones').click();
+  await page.waitForFunction(() => window.encore!.store.state.input.requestedAec === false, undefined, {
+    timeout: 15_000,
+  });
+  expect((await appState()).input.monitor).toBe('headphones');
 });

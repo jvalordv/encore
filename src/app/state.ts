@@ -10,6 +10,7 @@
  */
 import { hzToMidi } from '../analysis/pitch';
 import type { PitchFrame } from '../analysis/pitch';
+import type { MonitorMode } from '../audio/mic';
 import type { LoopRegion, PlayerState, SongInfo } from '../audio/player';
 import { noteName } from '../render/pitch-lane';
 import type { TakeSummary } from './takes';
@@ -32,6 +33,14 @@ export interface AppState {
     level: number;
     /** What the browser really applied; null while unknown. */
     processing: { aec: boolean | null; ns: boolean | null; agc: boolean | null };
+    /** How the singer monitors the song; the saved choice, open or not. */
+    monitor: MonitorMode;
+    /**
+     * True when the open mic was asked for echo cancellation. Differs from
+     * `monitor` only while calibration borrows a raw mic. Compare with
+     * `processing.aec` to see whether the browser honoured the request.
+     */
+    requestedAec: boolean;
   };
   output: { deviceId: string | null; label: string; selectable: boolean };
   /** Round-trip latency for the current device pair; null when not set. */
@@ -64,6 +73,8 @@ export function initialState(): AppState {
       open: false,
       level: 0,
       processing: { aec: null, ns: null, agc: null },
+      monitor: 'headphones',
+      requestedAec: false,
     },
     output: { deviceId: null, label: '', selectable: false },
     latencyS: null,
@@ -192,6 +203,53 @@ export function describeHealth(state: AppState): string {
     `latency: ${formatLatency(state.latencyS)}`,
     `tracker: ${tracker}`,
   ].join(' · ');
+}
+
+/** What the mic line and status bar say about the open mic's processing. */
+export interface MonitorReport {
+  text: string;
+  /** 'warn' when the browser did not do what was asked of it. */
+  kind: StatusKind;
+}
+
+/**
+ * Whether the browser did what the open mic asked of it, in words: raw input
+ * for headphones; echo cancellation on with noise suppression and auto gain
+ * off for speakers. Null while no mic is open or when a raw mic reports
+ * nothing either way.
+ */
+export function describeMonitor(input: AppState['input']): MonitorReport | null {
+  if (!input.open) return null;
+  const { aec, ns, agc } = input.processing;
+  if (!input.requestedAec) {
+    const on = [aec && 'echo cancel', ns && 'noise suppression', agc && 'auto gain'].filter(Boolean);
+    if (on.length > 0) return { text: `Browser processing on: ${on.join(', ')}`, kind: 'warn' };
+    return aec === false && ns === false && agc === false
+      ? { text: 'Raw input: processing off', kind: 'info' }
+      : null;
+  }
+  if (aec === false) {
+    return {
+      text: 'Speaker mode requested but this browser kept echo cancellation off: the song may bleed into your pitch',
+      kind: 'warn',
+    };
+  }
+  if (aec === null) {
+    return {
+      text: 'Speaker mode: echo cancellation requested, but this browser does not say whether it is on',
+      kind: 'info',
+    };
+  }
+  // NS and AGC smooth dynamics, so a browser that insists on them costs
+  // coaching quality even though the song is being cancelled.
+  const extra = [ns && 'noise suppression', agc && 'auto gain'].filter(Boolean);
+  if (extra.length > 0) {
+    return {
+      text: `Speaker mode: echo cancellation on, but the browser also kept ${extra.join(' and ')} on, which flattens dynamics`,
+      kind: 'warn',
+    };
+  }
+  return { text: 'Speaker mode: echo cancellation on, NS/AGC off', kind: 'info' };
 }
 
 /** What the singer is hitting right now: nearest note and cents off it. */

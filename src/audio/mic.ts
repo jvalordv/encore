@@ -1,13 +1,14 @@
 /**
- * Microphone capture. Lists input devices, opens one with all of the
- * browser's voice processing switched off (echo cancellation, noise
- * suppression and auto gain flatten dynamics and smear pitch onsets, see
- * "Mic constraints" in docs/ARCHITECTURE.md), and exposes the live
- * MediaStream, a source node for the pitch worklet and recorder, and a cheap
- * peak meter. Failures come back as MicError with a code the status bar can
- * switch on, never as a raw DOMException. The source is never connected to the
- * destination: headphones carry the song, and speaker bleed would poison the
- * analysis. Nothing here throws at import time when the APIs are missing.
+ * Microphone capture. Lists input devices, opens one with the browser's voice
+ * processing off, except in speaker mode, where only echo cancellation is on
+ * so the song is taken out of the mic (noise suppression and auto gain flatten
+ * dynamics and smear pitch onsets, so they are never on; see "Mic
+ * constraints" in docs/ARCHITECTURE.md). It exposes the live MediaStream, a
+ * source node for the pitch worklet and recorder, and a cheap peak meter.
+ * Failures come back as MicError with a code the status bar can switch on,
+ * never as a raw DOMException. The source is never connected to the
+ * destination, so the singer's voice is not played back. Nothing here throws
+ * at import time when the APIs are missing.
  */
 import type { AudioEngine } from './engine';
 
@@ -18,13 +19,26 @@ export interface InputDevice {
   label: string;
 }
 
-/** Constraints every mic open starts from: raw, mono, 48 kHz if offered. */
+/** How the singer hears the song: through headphones or through speakers. */
+export type MonitorMode = 'headphones' | 'speakers';
+
+/** Constraints for headphones: raw, mono, 48 kHz if offered. */
 export const MIC_CONSTRAINTS: MediaTrackConstraints = Object.freeze({
   echoCancellation: false,
   noiseSuppression: false,
   autoGainControl: false,
   channelCount: Object.freeze({ ideal: 1 }),
   sampleRate: Object.freeze({ ideal: 48000 }),
+});
+
+/**
+ * Constraints for speakers: the headphone set with echo cancellation on.
+ * Chrome's canceller references the audio the page itself plays, so it takes
+ * the song out of the mic. Noise suppression and auto gain stay off.
+ */
+export const SPEAKER_MIC_CONSTRAINTS: MediaTrackConstraints = Object.freeze({
+  ...MIC_CONSTRAINTS,
+  echoCancellation: true,
 });
 
 /** Why a mic could not be opened, coarse enough to pick a status message. */
@@ -127,20 +141,33 @@ export function peak(frame: Float32Array): number {
 }
 
 /**
- * Constraints for opening `deviceId` (null for the system default) with 1 or
- * 2 channels. The device is `exact` so a missing mic fails loudly instead of
- * silently falling back to another one.
+ * Track constraints for opening `deviceId` (null for the system default) with
+ * 1 or 2 channels in `mode`. The device is `exact` so a missing mic fails
+ * loudly instead of silently falling back to another one.
  */
 export function buildMicConstraints(
   deviceId: string | null,
   channels: 1 | 2 = 1,
+  mode: MonitorMode = 'headphones',
 ): MediaTrackConstraints {
   const constraints: MediaTrackConstraints = {
-    ...MIC_CONSTRAINTS,
+    ...(mode === 'speakers' ? SPEAKER_MIC_CONSTRAINTS : MIC_CONSTRAINTS),
     channelCount: { ideal: channels },
   };
   if (deviceId) constraints.deviceId = { exact: deviceId };
   return constraints;
+}
+
+/**
+ * The getUserMedia argument for `mode`: headphones open raw, speakers open
+ * with echo cancellation only. Pure, so the choice is testable without a mic.
+ */
+export function micConstraints(
+  mode: MonitorMode,
+  deviceId: string | null = null,
+  channels: 1 | 2 = 1,
+): MediaStreamConstraints {
+  return { audio: buildMicConstraints(deviceId, channels, mode) };
 }
 
 /**
@@ -166,6 +193,7 @@ export class MicCapture {
   private analyser: AnalyserNode | null = null;
   private readonly scratch = new Float32Array(ANALYSER_SIZE);
   private id: string | null = null;
+  private monitor: MonitorMode = 'headphones';
   private lastLevelAtS = 0;
   // Bumped by every open() and close() so a slow permission prompt that
   // resolves after a newer call cannot resurrect a stale stream.
@@ -188,12 +216,16 @@ export class MicCapture {
   }
 
   /**
-   * Opens a mic (null for the system default), closing any previous one
-   * first. Throws MicError. If a later open() or close() overtakes this call
-   * while the permission prompt is up, the stale stream is stopped and this
-   * resolves without effect; check `stream` afterwards if it matters.
+   * Opens a mic (null for the system default) in `mode`, closing any previous
+   * one first. Throws MicError. If a later open() or close() overtakes this
+   * call while the permission prompt is up, the stale stream is stopped and
+   * this resolves without effect; check `stream` afterwards if it matters.
    */
-  async open(deviceId: string | null, channels: 1 | 2 = 1): Promise<void> {
+  async open(
+    deviceId: string | null,
+    channels: 1 | 2 = 1,
+    mode: MonitorMode = 'headphones',
+  ): Promise<void> {
     const devices = mediaDevicesOrNull();
     if (!devices || !MicCapture.isSupported()) {
       throw new MicError('unsupported', ERROR_MESSAGES.unsupported);
@@ -208,7 +240,7 @@ export class MicCapture {
 
     let stream: MediaStream;
     try {
-      stream = await devices.getUserMedia({ audio: buildMicConstraints(deviceId, channels) });
+      stream = await devices.getUserMedia(micConstraints(mode, deviceId, channels));
     } catch (e) {
       throw classifyMicError(e);
     }
@@ -243,6 +275,7 @@ export class MicCapture {
     this.media = stream;
     this.track = track;
     this.id = track.getSettings().deviceId ?? deviceId;
+    this.monitor = mode;
     this.lastLevelAtS = this.engine.now();
     track.addEventListener('ended', this.handleEnded);
   }
@@ -266,6 +299,11 @@ export class MicCapture {
   /** Id of the device actually opened (the browser's pick for the default). */
   get deviceId(): string | null {
     return this.id;
+  }
+
+  /** The mode the mic was last opened in; headphones before any open. */
+  get mode(): MonitorMode {
+    return this.monitor;
   }
 
   /** The device's name as the browser reports it; empty when closed. */
