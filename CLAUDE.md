@@ -31,8 +31,8 @@ memory. Follow this exactly so any model can pick up where the last one left:
 2. If it names a task **in progress**, finish that task first. Its notes say
    where work stopped. Otherwise take the first unchecked `[ ]` task in the
    active phase. Do not skip ahead; tasks are ordered by dependency.
-3. Run the checks before touching anything (`npm run check`, and
-   `cd service && uv run pytest` once the service exists). If they are red on
+3. Run the checks before touching anything (`npm run check`, `npm run e2e`
+   when the task touches audio or UI, and the service checks). If they are red on
    a clean checkout, fixing that is the task.
 4. Do exactly that one task. Resist widening it. Write follow-ups as new
    bullet lines under the task in `ROADMAP.md`, not as extra code.
@@ -92,6 +92,7 @@ npm ci                 install front end
 npm run dev            Vite dev server on :5173
 npm run check          typecheck + unit tests (run before every commit)
 npm run build          typecheck + production build
+npm run e2e            Playwright smoke in headless Chromium against the built bundle
 cd service && uv sync  install service (CPU deps); see service/README.md for GPU
 cd service && uv run uvicorn encore_service.app:app --reload --port 8765
 cd service && uv run ruff check . && uv run ruff format --check . && uv run pytest

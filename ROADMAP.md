@@ -7,18 +7,34 @@ resume protocol in `CLAUDE.md`.
 
 ## Current state
 
-- **Last done:** Phase 0 complete. Purpose and app-packaging decisions
-  recorded (`CLAUDE.md`, `docs/ARCHITECTURE.md`).
-- **In progress:** Phase 1 (P1-T1 to P1-T7), built by workers in waves.
-  Any unticked P1 box below was cut off; its files may exist uncommitted.
-- **Blockers:** none.
-- **Next:** P1-T8 phase review, then Phase 2.
-- **Owner-side, when convenient:**
-  - Run `npm run dev`, flip through the skins, then drop an mp3, pick a
-    mic, calibrate, and sing. Report what feels wrong.
-  - On the GPU machine: install uv and ffmpeg, `uv sync` in `service/`,
-    then follow `service/README.md` to enable the PyTorch CUDA index and
-    `uv sync --extra gpu`. Confirm `GET /gpu` shows `cuda_available: true`.
+- **Last done:** Phase 1 complete (P1-T1 to P1-T8). 446 unit tests, build
+  green, and an 11-test Playwright E2E suite (`npm run e2e`) proving in real
+  headless Chromium that the worklet loads from the built bundle, the
+  tracker reads a 440 Hz fake mic at 100 fps with browser voice processing
+  off, recording stores WAV plus frames, take playback aligns, and a
+  loopback calibration recovers a known 87 ms delay.
+- **In progress:** nothing.
+- **Blockers:** none. No human has used the app with a real mic yet.
+- **Next:** P2-T1 (song intake in the service). P2-T2 to P2-T4 need the
+  owner's GPU machine to run the models; workers can write and unit-test
+  them against small fixtures first.
+- **Owner-side, when convenient (the real smoke test):**
+  - `npm run dev`, drop an mp3, Open mic with headphones on, sing a vowel.
+    Note and cents readout and the lane ribbon should feel steady. If your
+    voice reads unvoiced often, lower the Voicing threshold and report
+    where it settles.
+  - Calibrate with the mic able to hear the headphones (hold an earcup to
+    it) or on speakers. Expect roughly 30 to 150 ms wired, 150 to 300 ms
+    Bluetooth, repeatable within a few ms.
+  - Record a take over a clear melody, play it back; your syllables should
+    land where you sang them. A fixed offset in ms is a calibration bug.
+  - Try A and B loop keys, Space, R, L, arrows. Flip skins with everything
+    on screen, especially Dreamhouse (light).
+  - Status bar should read "Raw input: processing off". If it says the
+    browser kept processing on, try another mic or Chrome/Edge.
+  - GPU machine: install uv and ffmpeg, `uv sync` in `service/`, enable the
+    PyTorch CUDA index per `service/README.md`, `uv sync --extra gpu`, and
+    confirm `GET /gpu` shows `cuda_available: true`.
 
 ---
 
@@ -71,24 +87,24 @@ capture device fed a known tone) that proves the worklet loads from the
 built bundle and the tracker reports the right pitch. `e2e` stays out of
 `check` and CI until Phase 5 adds a browser to CI.
 
-- [ ] **P1-T1** (S) Audio engine core. `src/audio/engine.ts`: one
+- [x] **P1-T1** (S) Audio engine core. `src/audio/engine.ts`: one
   `AudioContext` at 48 kHz, master gain, output device selection via
   `setSinkId` where supported. `src/audio/player.ts`: drag-and-drop or file
   picker for mp3/wav/flac, decode to `AudioBuffer`, transport (play, pause,
   seek, loop region), position in seconds exposed through the state store.
   Tests for transport math (seek clamping, loop wrap).
-- [ ] **P1-T2** (S) Mic capture. `src/audio/mic.ts`: enumerate input devices,
+- [x] **P1-T2** (S) Mic capture. `src/audio/mic.ts`: enumerate input devices,
   open the chosen one with `echoCancellation`, `noiseSuppression`, and
   `autoGainControl` all `false`, channel count 1 or 2, surface the live
   `MediaStream` and an input-level meter. Device list refreshes on
   `devicechange`. Permission errors shown in the status bar, not the console.
-- [ ] **P1-T3** (S) Latency calibration. `src/audio/latency.ts`: play a short
+- [x] **P1-T3** (S) Latency calibration. `src/audio/latency.ts`: play a short
   chirp through the output, record the mic, cross-correlate to find the
   round-trip delay, repeat three times, take the median, store per
   (output, input) device pair in `localStorage`. UI: a "Calibrate" button
   with the measured value shown. Tests: synthetic signal with a known delay
   recovers it within one hop.
-- [ ] **P1-T4** (S) Live pitch tracker. `src/analysis/pitch-worklet.ts`
+- [x] **P1-T4** (S) Live pitch tracker. `src/analysis/pitch-worklet.ts`
   (AudioWorklet) implementing McLeod Pitch Method on 2048-sample windows with
   a 480-sample hop (10 ms at 48 kHz), with clarity threshold for voicing.
   Posts `{t, f0, clarity}` frames to the main thread. `src/analysis/pitch.ts`
@@ -96,7 +112,7 @@ built bundle and the tracker reports the right pitch. `e2e` stays out of
   parabolic interpolation, Hz to MIDI to cents. Tests: synthetic sines,
   sawtooth, and a vibrato tone recover frequency within 5 cents; silence
   reports unvoiced.
-- [ ] **P1-T5** (S) Pitch lane renderer. `src/render/pitch-lane.ts`: canvas
+- [x] **P1-T5** (S) Pitch lane renderer. `src/render/pitch-lane.ts`: canvas
   that scrolls with song time, draws the live f0 trace as a ribbon coloured
   by the active skin, with a piano-key gutter, octave lines, and a playhead.
   Reference contour overlay slot (empty until Phase 2). Sized to its container
@@ -104,18 +120,38 @@ built bundle and the tracker reports the right pitch. `e2e` stays out of
   - Note: the P0 placeholder lane does not redraw on a bare
     `devicePixelRatio` change (window dragged between monitors). Add a
     `matchMedia('(resolution: ...)')` listener here.
-- [ ] **P1-T6** (S) Take recording. `src/audio/recorder.ts`: record the mic to
+- [x] **P1-T6** (S) Take recording. `src/audio/recorder.ts`: record the mic to
   a WAV blob aligned to song time with the latency offset applied. Takes
   stored in IndexedDB with song hash, date, duration, and the live f0 frames.
   Take list UI with playback of your own take mixed under the song.
-- [ ] **P1-T7** (S) State store and shell wiring. `src/app/state.ts`: typed
+- [x] **P1-T7** (S) State store and shell wiring. `src/app/state.ts`: typed
   event store (same shape as `4th-dimension`'s `StateStore`). Wire song,
   mic, calibration, tracker, lane, takes, and skin together. Keyboard
   shortcuts: space play/pause, R record, arrows seek. Status bar shows
   device names, latency, and tracker health.
-- [ ] **P1-T8** (F) Phase review. Orchestrator reads the diff of Phase 1,
+- [x] **P1-T8** (F) Phase review. Orchestrator reads the diff of Phase 1,
   smoke-tests with a real mp3 and mic on the owner's machine (owner runs,
   reports), writes follow-ups into Phase 5, confirms Phase 2 briefs.
+  - Done by the review worker with the E2E suite; the owner smoke test is
+    still pending (Current state). Fixed in review: loop end key never
+    engaged the loop; Record over a replaying take; stuck mic status without
+    AudioWorklet; capture finish throwing on disconnected nodes.
+  - Follow-up (P2 or P5): 'System default' mic stores `inputDeviceId` null,
+    so it is not reopened after reload, and latency is keyed by requested
+    ids so a default-device latency follows whatever the OS default becomes.
+    Store the opened track's real deviceId and key latency by it.
+  - Follow-up: `loadLatency`/`saveLatency` in `src/audio/latency.ts` are
+    unused (Session keeps latency in settings). Delete them and their tests.
+  - Follow-up: recording is refused while a loop is active; Phase 3 decides
+    how looped practice passes are recorded (split takes at wraps).
+  - Follow-up: lane only draws frames while the song plays; consider a
+    free-sing warm-up mode with time-based scroll.
+  - Follow-up: `RateMeter` over-reads fps for the first moments after the
+    mic opens; use a 500 ms minimum span.
+  - Follow-up: Takes list sits below the fold at 760 px; move above Latency.
+  - Follow-up: PitchLane throws without a 2D context; degrade like audio.
+  - Follow-up: settings UI for `serviceUrl` and `octaveInvariant` (P2-T5 or
+    P5-T3).
 
 ## Phase 2: Song preparation and scoring
 
@@ -227,6 +263,9 @@ Goal: two singers, scored separately, with harmony detection. Design in
   so the app matches the no-cloud rule and renders offline without a blocking
   stylesheet request. Until then `index.html` uses Google Fonts with system
   fallbacks.
+- [ ] **P5-T2c** (H) Run `npm run e2e` in CI: add
+  `npx playwright install --with-deps chromium` to the web job. The suite
+  and the pinned `@playwright/test` are ready.
 - [ ] **P5-T3** (S) Settings panel: devices, calibration, skin, scoring
   tolerance, octave-invariant toggle, service URL.
 - [ ] **P5-T4** (S) Export a report card as PNG for sharing.
