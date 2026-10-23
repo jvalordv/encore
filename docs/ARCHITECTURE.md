@@ -52,6 +52,41 @@ reference melody, lyrics, scoring, and coaching when it is up.
   with `startedAtSongS` and `latencyS` beside it, so a better calibration can
   re-align it later (`songTimeOfSample` in `src/audio/wav.ts`); its f0 frames
   are stored already on song time.
+- **YouTube playback in the app.** Selecting a YouTube link plays the video
+  in an embedded player (IFrame Player API) inside the app, with the singer's
+  live pitch drawn as usual. It needs no service and downloads nothing.
+  - *Two modes, one clock.* **Embedded:** the player supplies sound and
+    picture and our song time follows its `getCurrentTime()`. **Prepared:**
+    once the service has fetched and analysed the song (P2-T1d), our audio
+    engine supplies the sound and the clock, and the embed becomes a muted
+    picture re-synced to it. Coaching wins ties (CLAUDE.md): the engine has a
+    sample-accurate clock, a calibrated output latency, and stems; the
+    embed's audio cannot be routed through Web Audio (cross-origin), cannot
+    have its vocal removed, and `getCurrentTime()` has no documented
+    accuracy, so scoring only ever runs on the engine clock.
+  - *One transport interface.* `Transport` (state, positionS, durationS,
+    play, pause, seek) has two implementations, the audio player and
+    `YouTubeTransport`. The latter anchors on each polled time and
+    interpolates with `performance.now()`. Everything downstream
+    (`frameToSongTime`, the lane, recording) reads the active transport.
+  - *Latency.* Calibration measures our own output path with our chirp. The
+    embed adds a path we cannot play a chirp through, so it gets its own
+    stored offset, adjustable in the same latency field.
+  - *Echo.* Whether Chrome's echo cancellation references the embed's audio
+    in speaker mode is unverified; the P2-T1c spike checks it on real
+    speakers before the mode is advertised.
+  - *Player rules we follow* (YouTube's required minimum functionality): at
+    least 480 by 270, never covered by overlays, never hidden while playing,
+    started by a user gesture, one auto-playing player per page. The IFrame
+    script loads only when a link is used.
+  - *Embed failures.* Error 153 means no Referer reached YouTube, so the
+    page keeps a referrer policy of `strict-origin-when-cross-origin`, the
+    iframe sets `origin`, and a desktop shell must serve the app from a
+    scheme that sends a Referer (unverified for Tauri's custom scheme;
+    check in P6-T1). Errors 101 and 150 (embedding disabled by the owner of
+    the video) fall back to Prepared mode when the service is up.
+  - *Ads.* A pre-roll ad plays inside the embed and the clock stays the
+    player's; behaviour during ads is measured in the spike, not assumed.
 - **Live pitch.** McLeod Pitch Method (normalised square difference) in an
   AudioWorklet, 2048 window, 480 hop (10 ms), clarity gate at 0.9 for
   voiced. Hand-written and unit-tested; no DSP dependency. Accuracy target
@@ -158,8 +193,17 @@ DuetSplit    { singers: {id, contour, confidence: number[]}[],
   the same pipeline (owner priority, "very important"). Link the original
   track, not a karaoke upload: separation needs a real vocal to produce the
   reference. It is for the owner's own practice on their own machine:
-  nothing is redistributed, the cache is never committed, and YouTube's
-  terms restrict downloading, which `service/README.md` says plainly.
+  nothing is redistributed and the cache is never committed.
+  - *Two paths, kept separable.* Playing a link in the embedded player is
+    the ordinary use of YouTube's player. Preparing a link (yt-dlp, then
+    separation) is not: YouTube's developer policies for the embedded
+    player forbid downloading or caching its content (III.E.1.a),
+    separating its audio (III.I.7), and retrieving its data by means other
+    than the API (III.I.14), and its general terms restrict downloading.
+    Preparing is therefore opt-in, labelled as such in the UI and in
+    `service/README.md`, and the embedded path never depends on it.
+    Shipping both in one distributed app is a decision for the owner; for
+    personal use on their own machine they are the owner's to make.
 - **Two trackers.** A light live tracker in the browser for immediacy and a
   heavy one in the service for truth. Scores shown live are provisional and
   replaced by the post-take analysis.

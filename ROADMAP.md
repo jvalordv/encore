@@ -17,13 +17,24 @@ resume protocol in `CLAUDE.md`.
   they do: fix what the status lines and their notes show, as `P1-T10`
   follow-up commits, before taking P2 work that edits `src/`.
 - **Blockers:** none.
-- **Owner priority, stated in session:** load a YouTube link and have it
-  parsed, same as a dropped mp3 ("very important"). Specified in
-  `docs/ARCHITECTURE.md` (Song sources, Decisions) and tasked as **P2-T1,
-  P2-T1b (service), P2-T1c (browser)**, ahead of the rest of Phase 2.
-- **Next:** orchestrator pass (Opus): brief Sonnet workers on P2-T1, then
-  P2-T1b, then P2-T1c, one task per commit, in that order. P2-T1 and
-  P2-T1b touch only `service/`, so they are safe while the owner tests.
+- **Owner priority, stated in session:** pick a YouTube video and have it
+  play inside the app, and be parsed like a dropped mp3 ("very important").
+  Specified in `docs/ARCHITECTURE.md` (YouTube playback in the app, Song
+  sources, Decisions) and tasked as **P2-T1c** (embedded player, no
+  service), **P2-T1 and P2-T1b** (service intake and yt-dlp), **P2-T1d**
+  (prepare in the background and switch to the engine), ahead of the rest
+  of Phase 2.
+- **Policy flag for the orchestrator:** the terms for the embedded player
+  forbid downloading or caching YouTube content, separating its audio, and
+  fetching its data by other means (sections III.E.1.a, III.I.7, III.I.14
+  of the developer policies). Prepare-for-scoring (yt-dlp, separation)
+  does exactly that. The design keeps the two paths separable and the
+  prepare path opt-in, but whether to ship both together is the owner's
+  call; do not paper over it in the README.
+- **Next:** orchestrator pass (Opus). Two tracks can run at once because
+  they touch different trees: service (P2-T1, then P2-T1b; only
+  `service/`, safe while the owner tests) and browser (P2-T1c, spike
+  first). P2-T1d joins them and goes last. One task per commit.
 - **Machine facts (checked 2026-10-23):** Windows 10, `uv` 0.11.16 and
   `ffmpeg` 9.0.2 (winget) are on PATH; `node` yes, `deno` no. `service/`
   has `uv.lock` but no `.venv` yet (`uv sync` not run) and nothing is
@@ -230,21 +241,52 @@ lyrics, and scores each take against it.
   failure path. One manual run against a real, short, freely licensed video
   recorded in the task notes. `service/README.md` gets a YouTube section
   with the personal-use note.
-- [ ] **P2-T1c** (S) **YouTube intake, browser. Owner priority.** A link box
-  in the song panel under the dropzone: paste a YouTube URL, press Load.
-  New `src/service/client.ts` (service URL from settings; typed wrappers
-  `createSongFromUrl`, `getSong`, `fetchSongAudio`; poll with backoff).
-  Flow: POST the link, show per-step progress in the status bar and song
-  panel, then fetch `/songs/{id}/audio` and hand it to the existing
-  `session.loadSong` path so decoding, transport and the lane are untouched.
-  The song panel shows the video title. Service down or unreachable says so
-  and points at the README; the dropzone keeps working with no service.
-  Pasting a link anywhere on the page (not just in the box) also works.
-  Unit tests for the client against a stubbed `fetch` (progress, failure,
-  cache hit, abort on a second load via `loadToken`); one e2e that stubs the
-  service routes with Playwright and loads a song from a link.
+- [ ] **P2-T1c** (S) **Play a YouTube link inside the app. Owner priority.**
+  No service needed. Design in `docs/ARCHITECTURE.md` (YouTube playback in
+  the app). Start with a **spike**, recorded in this task's notes before
+  any wiring: a throwaway page measuring (a) whether the embed loads from
+  `http://localhost:5173` with `origin` set and `referrerpolicy=
+  "strict-origin-when-cross-origin"` (error 153 otherwise), (b) the step
+  size and jitter of `getCurrentTime()` against `performance.now()` over 60
+  s, (c) what the player reports during a pre-roll ad, (d) owner-side, with
+  speakers: whether Chrome's echo cancellation removes the embed's audio
+  from the mic. Go/no-go from the numbers, written down.
+  Then build: a link box under the dropzone and a paste handler on the
+  page; pure `parseYouTubeUrl` (watch, youtu.be, shorts, embed,
+  music.youtube, `t=` start; anything else is null); a `Transport`
+  interface extracted from `player.ts` (state, positionS, durationS, play,
+  pause, seek) with the existing player and a new `YouTubeTransport` behind
+  it, so `frameToSongTime`, the lane and recording read one clock. The
+  YouTube transport anchors on each polled `getCurrentTime()` and
+  interpolates between polls with `performance.now()`. The IFrame API
+  script loads only when a link is used, so the app stays offline-clean.
+  The player sits in its own pane at least 480 by 270, never covered, never
+  hidden, and starts on the Play press (a user gesture). Errors 2, 5, 100,
+  101, 150, 153 map to plain messages. Separate stored offset for the embed
+  path (calibration measures only our output). The panel says what this
+  mode gives (live pitch, recording) and what it does not (reference,
+  scoring, stems) until P2-T1d. Tests: URL parser table, interpolation math
+  on synthetic poll sequences with known answers, error mapping; one e2e
+  with the API script stubbed through Playwright routing (tests never reach
+  YouTube).
   Editing `src/` and `index.html` triggers a full reload on a running dev
   server; do it while the owner is not mid-test.
+- [ ] **P2-T1d** (S) **Prepare a linked song for scoring. Owner priority.**
+  Needs P2-T1 and P2-T1b. New `src/service/client.ts` (service URL from
+  settings; typed wrappers `createSongFromUrl`, `getSong`, `fetchSongAudio`;
+  poll with backoff). With the service reachable, a linked song shows a
+  "Prepare for scoring" button, and a setting (off by default; preparing is
+  opt-in, see the policy flag) posts it automatically on selection;
+  progress shows in the song panel. When `fetch` is done, load
+  `/songs/{id}/audio` into the audio engine and switch the clock and the
+  sound to it: precise clock, calibrated latency, stems later. The embed
+  stays visible, muted, and is re-synced by `seekTo` when it drifts more
+  than 0.5 s (checked every 2 s; the API's playback rate is only a
+  suggestion, so no rate nudging). A switch mid-song keeps the position.
+  Service down says so and points at the README; embedded playback keeps
+  working. Tests for the client against a stubbed `fetch` (progress,
+  failure, cache hit, abort on a second load via `loadToken`) and for the
+  drift rule; one e2e with the service routes stubbed.
 - [ ] **P2-T2** (S) Separation. Demucs (`htdemucs_ft`) producing
   `vocals.wav` and `no_vocals.wav`. Configurable model id. Honour
   `ENCORE_DEVICE` env (`cuda` default when available).
@@ -260,7 +302,7 @@ lyrics, and scores each take against it.
   gracefully when no words are found (instrumental, rap flagged as
   unpitched).
 - [ ] **P2-T5** (S) Browser integration. Extend `src/service/client.ts`
-  (created in P2-T1c) with the rest of the status and stem fetches. On song load, upload to the service if
+  (created in P2-T1d) with the rest of the status and stem fetches. On song load, upload to the service if
   reachable, show prep progress in the song panel, and swap in the stems:
   mix slider between original, karaoke, and vocal-only guide; reference
   contour drawn in the pitch lane; lyrics line with word highlight.
