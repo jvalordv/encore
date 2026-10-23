@@ -19,7 +19,7 @@ import type { PitchFrame } from '../analysis/pitch';
 import { PitchTracker } from '../analysis/pitch-tracker';
 import { PcmCapture } from '../audio/capture';
 import { AudioEngine, listOutputDevices } from '../audio/engine';
-import { latencyKey, measureLatency } from '../audio/latency';
+import { CalibrationError, describeLatency, latencyKey, measureLatency } from '../audio/latency';
 import { classifyMicError, listInputDevices, MicCapture, onDeviceChange } from '../audio/mic';
 import type { InputDevice } from '../audio/mic';
 import { normaliseLoop, Player } from '../audio/player';
@@ -482,30 +482,39 @@ export class Session {
     );
   }
 
-  /** Measures round-trip latency with chirps and stores it for this pair. */
+  /**
+   * Measures round-trip latency with chirps and stores it for this pair. A
+   * playing song is paused for the run, since it would drown the chirps, and
+   * picks up where it left off afterwards. A CalibrationError is the room's
+   * answer, not a fault, so it shows as a warning with its numbers.
+   */
   async calibrate(): Promise<void> {
     const parts = this.parts;
     const state = this.store.state;
     if (!parts || state.calibrating || state.recording) return;
     if (!(await this.ensureInput())) return;
-    if (state.player === 'playing') parts.player.pause();
+    const resume = state.player === 'playing';
+    if (resume) parts.player.pause();
     this.store.patch({ calibrating: true });
-    this.store.setStatus('Calibrating: listen for the chirps.');
+    this.store.setStatus('Calibrating: keep quiet and listen for the chirps.');
     try {
       const result = await measureLatency(parts.engine, parts.mic, parts.capture, {
         onProgress: (done, total) => this.store.setStatus(`Calibrating… ${done} of ${total}`),
       });
       this.setLatency(result.delayS);
-      const text = `Latency ${Math.round(result.delayS * 1000)} ms saved for this mic and output.`;
+      const text = describeLatency(result);
       if (result.confidence < LOW_CONFIDENCE) {
-        this.store.setStatus(`${text} Confidence is low; try again somewhere quieter.`, 'warn');
+        this.store.setStatus(`${text}. Confidence is low; try again somewhere quieter.`, 'warn');
       } else {
         this.store.setStatus(text);
       }
     } catch (error) {
-      this.store.setStatus(messageOf(error), 'error');
+      this.store.setStatus(messageOf(error), error instanceof CalibrationError ? 'warn' : 'error');
     } finally {
       this.store.patch({ calibrating: false });
+      // Only a song still paused where calibration left it is resumed; one the
+      // singer replaced or stopped meanwhile is left alone.
+      if (resume && parts.player.state === 'paused') parts.player.play();
     }
   }
 

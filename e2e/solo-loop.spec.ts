@@ -2,11 +2,12 @@
  * End-to-end proof of the Phase 1 solo loop in real Chromium, against the
  * production bundle: shell and skins, loading a song, transport, the live
  * pitch tracker on a fake microphone, recording a take, playing it back, and
- * the calibration failure path. It is the only test that runs the audio
- * worklets and Web Audio for real. The tests share one page and run in order,
- * each building on the state the last left behind; the page is driven through
- * `window.encore` (see src/main.ts) and the data-testid hooks in index.html.
- * Any uncaught page error fails the test that was running when it happened.
+ * calibration (the failure path, then a loopback of known delay). It is the
+ * only test that runs the audio worklets and Web Audio for real. The tests
+ * share one page and run in order, each building on the state the last left
+ * behind; the page is driven through `window.encore` (see src/main.ts) and
+ * the data-testid hooks in index.html. Any uncaught page error fails the
+ * test that was running when it happened.
  */
 import { expect, test } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
@@ -20,8 +21,9 @@ test.describe.configure({ mode: 'serial' });
 const MIC_HZ = 440;
 /** Share of a frame's pitch it may be off by and still count as on target. */
 const PITCH_TOLERANCE = 0.02;
-/** The message measureLatency throws when no chirp comes back. */
-const NO_ECHO = /No echo detected/;
+/** The message measureLatency throws when the mic never hears the chirp. */
+const NOT_HEARD =
+  /Chirp not heard\. Mic heard [+-]?\d+ dB over its noise floor; needs about \+6 dB/;
 
 let context: BrowserContext;
 let page: Page;
@@ -307,8 +309,9 @@ test('6. a saved take plays back under the song and stops cleanly', async () => 
 });
 
 test('7. calibration with no echo fails with a message and does not crash', async () => {
-  // The fake microphone plays the 440 Hz fixture, never the chirp, so there
-  // is nothing to correlate with and the documented failure must appear.
+  // The fake microphone plays the 440 Hz fixture, never the chirp, so the
+  // level during the chirp is no higher than the level before it and the
+  // documented "not heard" warning, with its measured levels, must appear.
   await page.getByTestId('calibrate').click();
   await page.waitForFunction(() => window.encore!.store.state.calibrating === true);
   await page.waitForFunction(() => window.encore!.store.state.calibrating === false, undefined, {
@@ -320,14 +323,16 @@ test('7. calibration with no echo fails with a message and does not crash', asyn
     open: window.encore!.store.state.input.open,
     tracker: window.encore!.store.state.tracker,
   }));
-  expect(result.status.text).toMatch(NO_ECHO);
-  expect(result.status.kind).toBe('error');
+  expect(result.status.text).toMatch(NOT_HEARD);
+  expect(result.status.text).toContain('turn the speakers up or move the mic closer');
+  // A room that did not answer is a warning, not an application error.
+  expect(result.status.kind).toBe('warn');
   expect(result.latencyS).toBeNull();
   // The mic and tracker survive the failed run.
   expect(result.open).toBe(true);
   expect(result.tracker).toBe('running');
   await expect(page.getByTestId('calibrate')).toBeEnabled();
-  await expect(page.getByTestId('status-text')).toHaveText(NO_ECHO);
+  await expect(page.getByTestId('status-text')).toHaveText(NOT_HEARD);
 });
 
 test('8. calibration against a loopback of known delay recovers it', async () => {
@@ -343,25 +348,45 @@ test('8. calibration against a loopback of known delay recovers it', async () =>
     Object.defineProperty(mic, 'source', { configurable: true, get: () => delay });
   }, knownS);
 
+  // The song is playing when Calibrate is pressed. It would be heard in the
+  // loopback, so it must stand still for the chirps and carry on afterwards.
+  await page.getByTestId('stop').click();
+  await page.getByTestId('play').click();
+  await page.waitForFunction(() => window.encore!.store.state.player === 'playing');
+  await page.waitForTimeout(300);
+  const before = await appState();
   await page.getByTestId('calibrate').click();
   await page.waitForFunction(() => window.encore!.store.state.calibrating === true);
+  expect((await appState()).player).toBe('paused');
   await page.waitForFunction(() => window.encore!.store.state.calibrating === false, undefined, {
     timeout: 30_000,
   });
   const result = await appState();
   expect(result.status.kind).toBe('info');
-  expect(result.status.text).toMatch(/^Latency 87 ms saved/);
+  const shown = /^Latency 87 ms \(trials (\d+), (\d+), (\d+) ms; confidence (\d\.\d\d)\)$/.exec(
+    result.status.text,
+  );
+  expect(shown, result.status.text).not.toBeNull();
+  for (const ms of shown!.slice(1, 4)) expect(Math.abs(Number(ms) - 87)).toBeLessThanOrEqual(1);
+  expect(Number(shown![4])).toBeGreaterThan(0.6);
   expect(result.latencyS).not.toBeNull();
-  expect(Math.abs((result.latencyS ?? 0) - knownS)).toBeLessThan(0.003);
+  expect(Math.abs((result.latencyS ?? 0) - knownS)).toBeLessThan(0.001);
   test.info().annotations.push({ type: 'measured latency', description: `${result.latencyS}` });
+  test.info().annotations.push({ type: 'status', description: result.status.text });
   await expect(page.getByTestId('latency-input')).toHaveValue('87');
+
+  // The song picked up where it stood instead of running on through the run.
+  expect(result.player).toBe('playing');
+  expect(Math.abs(result.positionS - before.positionS)).toBeLessThan(0.5);
+  await page.getByTestId('play').click();
+  await page.waitForFunction(() => window.encore!.store.state.player === 'paused');
 
   // The value survives a reload, filed under the device pair it was heard on.
   const saved = await page.evaluate(
     () => JSON.parse(localStorage.getItem('encore.settings') ?? '{}').latencyByDevicePair as Record<string, number>,
   );
   expect(Object.values(saved)).toHaveLength(1);
-  expect(Math.abs(Object.values(saved)[0] - knownS)).toBeLessThan(0.003);
+  expect(Math.abs(Object.values(saved)[0] - knownS)).toBeLessThan(0.001);
 
   await page.evaluate(() => {
     const { engine, mic } = window.encore!.session.parts!;
