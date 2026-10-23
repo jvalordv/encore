@@ -1,16 +1,39 @@
 /**
  * Entry point. Loads the stylesheets, fills the skin switcher from the
- * registry, applies the saved skin (Studio by default), creates the pitch
- * lane and reports readiness in the status bar. Later phases hang the audio
- * engine, tracker and state store off this file.
+ * registry, applies the saved skin (Studio by default), then builds the
+ * Session, hands it the pitch lane, mounts the UI on the markup in index.html
+ * and starts the per-frame loop. Nothing needs a running service: the whole
+ * practice loop (drop a song, pick a mic, sing, see the pitch) lives in the
+ * browser.
+ *
+ * Debug and test hook: `window.encore = { session, store }` is always set.
+ * `session` is the Session (its intents, and `session.parts` for the audio
+ * objects) and `store` is the StateStore the UI renders. This is a local app,
+ * so there is nothing to protect; the end-to-end test drives the page through
+ * it.
  */
 import './skins/arcade.css';
 import './skins/dreamhouse.css';
 import './skins/studio.css';
 import './style.css';
+import { Session } from './app/session';
+import type { StateStore } from './app/state';
+import { mountUI } from './app/ui';
 import { PitchLane } from './render/pitch-lane';
 import { applySkin, loadSavedSkin, SKIN_EVENT, SKINS } from './skins';
 import type { SkinEventDetail } from './skins';
+
+/** Shape of `window.encore`. */
+export interface EncoreGlobal {
+  session: Session;
+  store: StateStore;
+}
+
+declare global {
+  interface Window {
+    encore?: EncoreGlobal;
+  }
+}
 
 function must<T extends HTMLElement>(id: string): T {
   const e = document.getElementById(id);
@@ -35,7 +58,11 @@ window.addEventListener(SKIN_EVENT, (ev) => {
   switcher.value = (ev as CustomEvent<SkinEventDetail>).detail.id;
 });
 
-// The lane redraws itself on resize and skin events, so nothing holds it yet.
-new PitchLane(must<HTMLCanvasElement>('lane-canvas'), must('pitch-lane'));
+const session = new Session();
+const lane = new PitchLane(must<HTMLCanvasElement>('lane-canvas'), must('pitch-lane'));
+session.attachLane(lane);
+mountUI(session);
+lane.start();
+session.start();
 
-must('statusbar').textContent = 'ready';
+window.encore = { session, store: session.store };

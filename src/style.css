@@ -100,6 +100,7 @@ body {
   gap: 12px;
   min-height: 0;
   padding: 16px;
+  overflow-y: auto;
 }
 
 .panel-title {
@@ -113,16 +114,27 @@ body {
 }
 
 .dropzone {
-  flex: 1;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  min-height: 72px;
+  padding: 12px;
   background: var(--color-surface-2);
   border: var(--border-width) dashed var(--color-accent-2);
   border-radius: var(--radius);
   color: var(--color-text-muted);
   text-align: center;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--easing),
+    color var(--motion-fast) var(--easing);
+}
+
+.dropzone:hover,
+.dropzone.is-over {
+  border-color: var(--color-accent);
+  color: var(--color-text);
 }
 
 /* The canvas is taken out of flow so its size can never feed back into the
@@ -147,13 +159,16 @@ body {
 #controls {
   grid-area: ctrl;
   display: flex;
-  justify-content: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
   padding: 12px 16px;
 }
 
 button,
-select {
+select,
+input[type='number'] {
   padding: 8px 16px;
   background: var(--color-surface-2);
   border: var(--border-width) solid var(--color-accent);
@@ -190,17 +205,44 @@ select {
 }
 
 button:focus-visible,
-select:focus-visible {
+select:focus-visible,
+input:focus-visible,
+.dropzone:focus-visible {
   outline: calc(var(--border-width) + 1px) solid var(--color-accent-2);
   outline-offset: 2px;
 }
 
+input[type='range'] {
+  accent-color: var(--color-accent);
+}
+
+/* Author display rules below would otherwise beat the browser's [hidden]. */
+[hidden] {
+  display: none !important;
+}
+
 #statusbar {
   grid-area: status;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 24px;
   padding: 2px 4px;
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: 0.85rem;
+}
+
+/* The colour is only a second cue; the marker and the words carry it. */
+#status-text[data-kind='warn'],
+#status-text[data-kind='error'] {
+  padding-left: 8px;
+  border-left: 3px solid var(--color-okay);
+  color: var(--color-text);
+}
+
+#status-text[data-kind='error'] {
+  border-left-color: var(--color-miss);
 }
 
 @media (max-width: 900px) {
@@ -224,4 +266,264 @@ select:focus-visible {
     height: auto;
     min-height: 100%;
   }
+}
+
+/* ---- Song panel ---------------------------------------------------------- */
+
+.song-title {
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.song-meta {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.panel-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: var(--border-width) solid var(--color-accent-2);
+}
+
+.group-title {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.field {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.panel-group select {
+  width: 100%;
+  min-width: 0;
+}
+
+.button-row,
+.latency-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.button-row button {
+  flex: 1;
+  min-width: 0;
+  padding-inline: 8px;
+}
+
+.latency-row input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  padding-inline: 8px;
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-accent);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font: inherit;
+  font-family: var(--font-mono);
+}
+
+.latency-row button {
+  min-width: 0;
+  padding-inline: 12px;
+}
+
+.unit {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.meter {
+  height: 10px;
+  overflow: hidden;
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: var(--radius);
+}
+
+.meter-fill {
+  width: 0;
+  height: 100%;
+  background: var(--color-hit);
+  transition:
+    width var(--motion-fast) var(--easing),
+    background-color var(--motion-fast) var(--easing);
+}
+
+.meter-fill[data-zone='hot'] {
+  background: var(--color-okay);
+}
+
+.meter-fill[data-zone='clip'] {
+  background: var(--color-miss);
+}
+
+.take-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.take-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: var(--radius);
+}
+
+.take-item[data-active='true'] {
+  border-color: var(--color-accent);
+}
+
+.take-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.take-item button {
+  min-width: 0;
+  padding: 3px 8px;
+  font-size: 0.8rem;
+}
+
+/* ---- Pitch lane overlay -------------------------------------------------- */
+
+.pitch-readout {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  min-width: 120px;
+  padding: 6px 12px;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  pointer-events: none;
+}
+
+.pitch-note {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-accent);
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.pitch-cents {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+/* A tuner strip: the centre tick is the note, the marker is how far off. */
+.tuner {
+  position: relative;
+  height: 8px;
+  margin-top: 4px;
+  background: var(--color-surface-2);
+  border-radius: var(--radius);
+}
+
+.tuner::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: var(--border-width);
+  background: var(--color-text-muted);
+}
+
+.tuner-marker {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: 50%;
+  width: 6px;
+  margin-left: -3px;
+  background: var(--color-okay);
+  border-radius: var(--radius);
+  transition: left var(--motion-fast) var(--easing);
+}
+
+.tuner-marker[data-zone='hit'] {
+  background: var(--color-hit);
+}
+
+/* ---- Transport ----------------------------------------------------------- */
+
+.control-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.seek-group {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.seek-group input[type='range'] {
+  flex: 1;
+  min-width: 80px;
+}
+
+.time {
+  min-width: 7.5em;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+}
+
+button.compact {
+  min-width: 40px;
+  padding-inline: 12px;
+}
+
+button[aria-pressed='true'] {
+  border-color: var(--color-accent-2);
+  background: var(--color-surface);
+}
+
+#record-button.is-recording {
+  border-color: var(--color-miss);
+}
+
+#record-button.is-recording::before {
+  content: '\25CF';
+  margin-right: 6px;
+  color: var(--color-miss);
 }

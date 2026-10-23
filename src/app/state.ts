@@ -1,0 +1,213 @@
+/**
+ * The one state object the UI reads from, and the store that owns it. The
+ * state is a plain mutable object (same shape as the owner's StateStore in
+ * 4th-dimension): the Session writes it through `patch`, and every change is
+ * announced with the set of keys that changed, so a listener redraws only what
+ * moved. Nothing here knows about Web Audio or the DOM, which keeps the store
+ * usable from a native shell later (see "Built to become an app" in
+ * docs/ARCHITECTURE.md). The selectors at the bottom turn state into the
+ * strings the status bar and readouts show, so those can be tested too.
+ */
+import { hzToMidi } from '../analysis/pitch';
+import type { PitchFrame } from '../analysis/pitch';
+import type { LoopRegion, PlayerState, SongInfo } from '../audio/player';
+import { noteName } from '../render/pitch-lane';
+import type { TakeSummary } from './takes';
+
+/** How loudly the status line should speak. */
+export type StatusKind = 'info' | 'warn' | 'error';
+
+/** Everything the UI shows; the Session is the only writer. */
+export interface AppState {
+  song: SongInfo | null;
+  player: PlayerState;
+  positionS: number;
+  loop: LoopRegion | null;
+  durationS: number;
+  input: {
+    deviceId: string | null;
+    label: string;
+    open: boolean;
+    /** Peak level 0..1, smoothed by the Session for display. */
+    level: number;
+    /** What the browser really applied; null while unknown. */
+    processing: { aec: boolean | null; ns: boolean | null; agc: boolean | null };
+  };
+  output: { deviceId: string | null; label: string; selectable: boolean };
+  /** Round-trip latency for the current device pair; null when not set. */
+  latencyS: number | null;
+  calibrating: boolean;
+  tracker: 'unsupported' | 'idle' | 'running';
+  framesPerSecond: number;
+  lastFrame: PitchFrame | null;
+  recording: boolean;
+  /** Takes of the loaded song, newest first. */
+  takes: TakeSummary[];
+  playingTakeId: string | null;
+  status: { text: string; kind: StatusKind };
+}
+
+/** Called after a change with the keys that changed. */
+export type Listener = (state: AppState, changed: ReadonlySet<keyof AppState>) => void;
+
+/** A fresh state for a page that has just loaded: nothing open, nothing set. */
+export function initialState(): AppState {
+  return {
+    song: null,
+    player: 'empty',
+    positionS: 0,
+    loop: null,
+    durationS: 0,
+    input: {
+      deviceId: null,
+      label: '',
+      open: false,
+      level: 0,
+      processing: { aec: null, ns: null, agc: null },
+    },
+    output: { deviceId: null, label: '', selectable: false },
+    latencyS: null,
+    calibrating: false,
+    tracker: 'idle',
+    framesPerSecond: 0,
+    lastFrame: null,
+    recording: false,
+    takes: [],
+    playingTakeId: null,
+    status: { text: '', kind: 'info' },
+  };
+}
+
+function isPlain(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+/** Structural equality for primitives and nested plain objects only. */
+function samePlain(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (!isPlain(a) || !isPlain(b)) return false;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((k) => k in b && samePlain(a[k], b[k]));
+}
+
+/** Holds the AppState and tells subscribers what changed. */
+export class StateStore {
+  readonly state: AppState;
+  private readonly listeners = new Set<Listener>();
+
+  constructor(initial: AppState = initialState()) {
+    this.state = initial;
+  }
+
+  /** Registers a listener; returns the function that removes it. */
+  subscribe(l: Listener): () => void {
+    this.listeners.add(l);
+    return () => {
+      this.listeners.delete(l);
+    };
+  }
+
+  /**
+   * Shallow-merges `p` into the state and notifies once with the keys whose
+   * value changed (Object.is). Does nothing, and tells nobody, when no key
+   * changed. Keys the state does not have, and undefined values, are ignored.
+   */
+  patch(p: Partial<AppState>): void {
+    const target = this.state as unknown as Record<string, unknown>;
+    const changed = new Set<keyof AppState>();
+    for (const key of Object.keys(p) as Array<keyof AppState>) {
+      const value = p[key];
+      if (value === undefined || !(key in target)) continue;
+      if (Object.is(target[key], value)) continue;
+      target[key] = value;
+      changed.add(key);
+    }
+    if (changed.size > 0) this.notify(changed);
+  }
+
+  /**
+   * Like `patch`, for the nested `input` and `output` objects: merges the
+   * fields and compares by content, so rewriting the same device name does not
+   * wake the UI. Callers pass whole `processing` objects, not parts of one.
+   */
+  patchSection<K extends 'input' | 'output'>(key: K, p: Partial<AppState[K]>): void {
+    const current = this.state[key];
+    const next = { ...current, ...p } as AppState[K];
+    if (!samePlain(current, next)) this.patch({ [key]: next } as Partial<AppState>);
+  }
+
+  /** Sets the status line; repeating the same message is not a change. */
+  setStatus(text: string, kind: StatusKind = 'info'): void {
+    const { status } = this.state;
+    if (status.text === text && status.kind === kind) return;
+    this.patch({ status: { text, kind } });
+  }
+
+  private notify(changed: ReadonlySet<keyof AppState>): void {
+    for (const listener of [...this.listeners]) {
+      try {
+        listener(this.state, changed);
+      } catch (err) {
+        // One broken view must not stop the others from learning of a change.
+        console.error('State listener failed', err);
+      }
+    }
+  }
+}
+
+/** Floor of the level meter: anything quieter reads as empty. */
+const METER_FLOOR_DB = -60;
+
+/** Mic peak (0..1) as a 0..1 meter fill on a decibel scale, -60 dB to 0 dB. */
+export function meterFraction(level: number): number {
+  if (!(level > 0)) return 0;
+  const db = 20 * Math.log10(Math.min(level, 1));
+  return Math.min(1, Math.max(0, (db - METER_FLOOR_DB) / -METER_FLOOR_DB));
+}
+
+/** `m:ss`, or `h:mm:ss` from an hour up; negative and NaN read as 0:00. */
+export function formatClock(seconds: number): string {
+  const total = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  const ss = String(total % 60).padStart(2, '0');
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor(total / 60) % 60;
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${ss}` : `${minutes}:${ss}`;
+}
+
+/** Latency for display: whole milliseconds, or "not set". */
+export function formatLatency(latencyS: number | null): string {
+  return latencyS === null ? 'not set' : `${Math.round(latencyS * 1000)} ms`;
+}
+
+/** The device, latency and tracker readout for the right of the status bar. */
+export function describeHealth(state: AppState): string {
+  const mic = state.input.open ? state.input.label || 'open' : 'off';
+  let tracker: string;
+  if (state.tracker === 'unsupported') tracker = 'unavailable';
+  else if (state.tracker === 'idle') tracker = 'idle';
+  else tracker = `${Math.round(state.framesPerSecond)} fps`;
+  return [
+    `mic: ${mic}`,
+    `out: ${state.output.label || 'default'}`,
+    `latency: ${formatLatency(state.latencyS)}`,
+    `tracker: ${tracker}`,
+  ].join(' · ');
+}
+
+/** What the singer is hitting right now: nearest note and cents off it. */
+export interface PitchReadout {
+  note: string;
+  /** Signed distance from the nearest semitone, -50..50. */
+  cents: number;
+  hz: number;
+}
+
+/** The readout for a voiced frame, or null for silence and unvoiced frames. */
+export function describePitch(frame: PitchFrame | null): PitchReadout | null {
+  if (!frame || !(frame.f0 > 0)) return null;
+  const midi = hzToMidi(frame.f0);
+  if (!Number.isFinite(midi)) return null;
+  const nearest = Math.round(midi);
+  // `|| 0` turns -0 into 0 so "-0 cents" never shows.
+  return { note: noteName(nearest), cents: Math.round((midi - nearest) * 100) || 0, hz: frame.f0 };
+}

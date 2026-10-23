@@ -1,7 +1,8 @@
 <!doctype html>
 <!--
-  App shell. Every region is addressed by id from src/main.ts; layout lives in
-  src/style.css and colour, type and motion come from the active skin
+  App shell. Every region is addressed by id from src/main.ts and
+  src/app/ui.ts (the data-testid attributes are for the end-to-end run); layout
+  lives in src/style.css and colour, type and motion come from the active skin
   (data-skin on <html>, tokens in src/skins/*.css). The default skin is set
   here so the first paint is never unstyled.
 -->
@@ -44,19 +45,79 @@
 
       <aside id="song-panel" aria-label="Song">
         <h2 class="panel-title">Song</h2>
-        <div class="dropzone">Drop an mp3 here to start</div>
+        <div id="dropzone" class="dropzone" data-testid="dropzone" role="button" tabindex="0">
+          Drop an mp3 here, or click to choose one
+        </div>
+        <input id="song-input" data-testid="song-input" type="file" accept="audio/*" hidden />
+        <div class="song-info">
+          <div id="song-title" class="song-title" data-testid="song-title">No song loaded</div>
+          <div id="song-duration" class="song-meta" data-testid="song-duration"></div>
+        </div>
+
+        <section class="panel-group" aria-label="Devices">
+          <h3 class="group-title">Devices</h3>
+          <label class="field" for="input-select">Microphone</label>
+          <select id="input-select" data-testid="input-select"></select>
+          <div id="mic-meter" class="meter" data-testid="mic-meter" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0">
+            <div id="mic-meter-fill" class="meter-fill"></div>
+          </div>
+          <div id="mic-processing" class="song-meta" data-testid="mic-processing"></div>
+          <label class="field" for="output-select">Output</label>
+          <select id="output-select" data-testid="output-select"></select>
+          <div class="button-row">
+            <button type="button" id="refresh-devices" data-testid="refresh-devices">Refresh</button>
+            <button type="button" id="mic-toggle" data-testid="mic-toggle">Open mic</button>
+          </div>
+        </section>
+
+        <section class="panel-group" aria-label="Timing and voicing">
+          <h3 class="group-title">Latency</h3>
+          <div class="latency-row">
+            <input id="latency-input" data-testid="latency-input" type="number" min="0" max="2000" step="1" inputmode="numeric" placeholder="ms" aria-label="Latency in milliseconds" />
+            <span class="unit">ms</span>
+            <button type="button" id="calibrate-button" data-testid="calibrate" title="Play chirps and time the echo">Calibrate</button>
+          </div>
+          <label class="field" for="clarity-input">Voicing threshold <output id="clarity-value" class="song-meta"></output></label>
+          <input id="clarity-input" data-testid="clarity-input" type="range" min="0.5" max="0.99" step="0.01" />
+        </section>
+
+        <section class="panel-group" aria-label="Takes">
+          <h3 class="group-title">Takes</h3>
+          <ul id="take-list" class="take-list" data-testid="take-list"></ul>
+          <p id="take-empty" class="song-meta">No takes yet. Press Record and sing.</p>
+        </section>
       </aside>
 
       <main id="pitch-lane" aria-label="Pitch lane">
         <canvas id="lane-canvas"></canvas>
+        <div id="pitch-readout" class="pitch-readout" data-testid="pitch-readout" hidden>
+          <div class="pitch-note"><span id="pitch-note" data-testid="pitch-note"></span> <span id="pitch-cents" class="pitch-cents"></span></div>
+          <div class="tuner" aria-hidden="true"><div id="tuner-marker" class="tuner-marker"></div></div>
+        </div>
       </main>
 
       <section id="controls" aria-label="Transport">
-        <button type="button" id="play-button" disabled>Play</button>
-        <button type="button" id="record-button" disabled>Record</button>
+        <div class="control-group">
+          <button type="button" id="stop-button" data-testid="stop" title="Stop and return to the start" disabled>Stop</button>
+          <button type="button" id="play-button" data-testid="play" title="Play or pause (Space)" disabled>Play</button>
+          <button type="button" id="record-button" data-testid="record" title="Record a take (R)" disabled>Record</button>
+        </div>
+        <div class="control-group seek-group">
+          <span id="time-readout" class="time" data-testid="time">0:00 / 0:00</span>
+          <input id="seek-input" data-testid="seek" type="range" min="0" max="0" step="0.01" value="0" aria-label="Song position (arrows: 5 s, Shift: 1 s)" disabled />
+        </div>
+        <div class="control-group">
+          <button type="button" id="loop-a" class="compact" data-testid="loop-a" title="Loop starts here ([)" disabled>A</button>
+          <button type="button" id="loop-b" class="compact" data-testid="loop-b" title="Loop ends here (])" disabled>B</button>
+          <button type="button" id="loop-clear" data-testid="loop-clear" title="Loop on or off (L)" disabled>Loop</button>
+          <span id="loop-readout" class="song-meta" data-testid="loop-readout"></span>
+        </div>
       </section>
 
-      <div id="statusbar" role="status" aria-live="polite"></div>
+      <div id="statusbar">
+        <span id="status-text" data-testid="status-text" role="status" aria-live="polite"></span>
+        <span id="status-health" data-testid="status-health"></span>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
