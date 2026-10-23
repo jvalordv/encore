@@ -85,8 +85,9 @@ describe('skin registry', () => {
 describe('skin token contract', () => {
   it('is exactly the token list in docs/SKINS.md', () => {
     const doc = Object.values(rawSkinsDoc)[0] ?? '';
-    // The first code fence after "Tokens" holds the contract.
-    const fence = /Tokens[^`]*```\n([\s\S]*?)```/.exec(doc)?.[1] ?? '';
+    // The first code fence after "Tokens" holds the contract. \r? because a
+    // Windows checkout with autocrlf turns the doc's line endings into CRLF.
+    const fence = /Tokens[^`]*```\r?\n([\s\S]*?)```/.exec(doc)?.[1] ?? '';
     const documented = fence.match(/--[a-z0-9-]+/g) ?? [];
     expect(documented.length).toBeGreaterThan(0);
     expect([...SKIN_TOKENS].sort()).toEqual([...documented].sort());
