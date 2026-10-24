@@ -261,7 +261,7 @@ def test_a_yt_dlp_failure_reads_what_failed_then_the_update_hint(
     assert message == (
         "YouTube lookup failed: Video unavailable. "
         "If YouTube links keep failing, update yt-dlp: "
-        "cd service && uv lock --upgrade-package yt-dlp && uv sync"
+        "cd service && uv lock --upgrade-package yt-dlp && uv sync --inexact"
     )
 
 

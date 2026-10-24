@@ -172,9 +172,19 @@ reference melody, lyrics, scoring, and coaching when it is up.
 ## Service
 
 - **Stack.** Python 3.11, FastAPI, uvicorn, pydantic v2. `uv` manages the
-  environment. CPU deps install everywhere (CI included); the `gpu` extra
-  pulls torch with CUDA, demucs, torchcrepe, whisperx, speechbrain,
-  praat-parselmouth. `ENCORE_DEVICE` selects `cuda` or `cpu`.
+  environment. CPU deps install everywhere (CI included). The heavy models
+  come in one extra per feature, each declared and installed by the task
+  that needs it, so nothing is downloaded before it is used: `separation`
+  (torch, torchaudio, demucs; P2-T2) now, then `pitch` (torchcrepe, P2-T3),
+  `lyrics` (P2-T4), `analysis` (praat-parselmouth, librosa, P3-T1) and
+  `speaker` (speechbrain, P4-T2). torch and torchaudio come from PyTorch's
+  CUDA 12.8 index (cu128) and are held to 2.11: torchaudio stopped at 2.11.0,
+  and CUDA 12 is what CTranslate2 (Whisper, P2-T4) supports. Install with
+  `uv sync --extra separation` (name every extra; a plain `uv sync` removes
+  them, `uv sync --inexact` keeps them). torchaudio 2.11's own load and save
+  need torchcodec, which is not installed: read and write audio with
+  soundfile and hand tensors to the models. `ENCORE_DEVICE` selects `cuda`
+  or `cpu`.
 - **Jobs.** One worker thread, FIFO. A 4070 Ti (12 GB) handles demucs,
   crepe, and whisper comfortably one at a time, not concurrently. Status is
   polled; no websockets needed. `jobs.py` is the queue (idempotent per song,
@@ -226,7 +236,8 @@ reference melody, lyrics, scoring, and coaching when it is up.
     it is refused with a message rather than written elsewhere.
   - *Failure:* YouTube changes break yt-dlp every few weeks. Its message
     goes into the fetch step's `error` as "<what failed>: <why>" with the
-    hint to update it (`uv lock --upgrade-package yt-dlp && uv sync`). Tests
+    hint to update it (`uv lock --upgrade-package yt-dlp && uv sync
+    --inexact`, which keeps the installed model extras). Tests
     inject fakes, so CI never touches the network.
   - *JS runtime (checked against yt-dlp 2026.10.21):* full YouTube support
     needs `yt-dlp-ejs` plus a JavaScript runtime (Deno, Node, Bun or

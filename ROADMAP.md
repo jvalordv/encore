@@ -46,13 +46,21 @@ resume protocol in `CLAUDE.md`.
   prepare path opt-in, and the README must not paper over it. **Owner
   decision (2026-10-23): keep the prepare path, opt-in and off by
   default, as specced.** Do not re-ask.
-- **Next:** P2-T2 (separation with demucs). It needs the GPU extra on
-  this machine first (owner-side list: CUDA index, `uv sync --extra gpu`,
-  `GET /gpu`); a worker can do that install if the owner agrees, since it
-  is a multi-gigabyte download. Then P2-T3, P2-T4, P2-T5.
-- **Machine facts (checked 2026-10-23):** Windows 10, `uv` 0.11.16,
+- **Next:** P2-T2 (separation with demucs). The `separation` extra is
+  installed and `GET /gpu` reports CUDA on the 4070 Ti (owner chose a lean
+  install, 2026-10-24: one extra per feature, each installed when its task
+  starts). Then P2-T3, P2-T4, P2-T5.
+- **Machine facts (checked 2026-10-24):** Windows 10, RTX 4070 Ti 12 GB,
+  NVIDIA driver 617.42 (CUDA 13.4 capable), `uv` 0.11.16, Python 3.11.15,
   `ffmpeg` 9.0.2 (winget), Node 24 on PATH (yt-dlp's JavaScript runtime);
-  no Deno. `service/.venv` is synced (CPU deps plus yt-dlp[default]).
+  no Deno. `service/.venv` has the CPU deps, yt-dlp[default] and the
+  `separation` extra (torch and torchaudio 2.11.0+cu128, demucs 4.1.0).
+  In `service/` use `uv sync --extra separation` (or `--inexact`); a plain
+  `uv sync` uninstalls torch. **Drive C: is nearly full: about 25 GB free
+  of 3.3 TB.** uv's cache still holds the cu130 torch wheel from a first
+  install (about 2.7 GiB); `uv cache clean torch torchaudio` frees it once
+  nothing holds the files (it was locked on 2026-10-24, probably by a
+  virus scan). Keep 15 GB free; Whisper weights (P2-T4) take several GB.
   The service is not running by default; the Vite dev server on :5173 is
   the owner's.
 - **Repo hygiene:** repo-local git identity is `Claude
@@ -93,10 +101,8 @@ resume protocol in `CLAUDE.md`.
     video stays in step (including after a click on YouTube's own timeline
     and a long buffer), and whether Speakers mode now keeps the song out of
     the mic, which it should since the sound runs through the page.
-  - GPU machine: uv, ffmpeg and the CPU `uv sync` are done. Still to do:
-    enable the PyTorch CUDA index per `service/README.md`,
-    `uv sync --extra gpu`, and confirm `GET /gpu` shows
-    `cuda_available: true` (needed from P2-T2).
+  - GPU machine: done for separation (2026-10-24). Disk on C: is the
+    constraint to watch (about 25 GB free).
 
 ---
 
@@ -495,10 +501,25 @@ lyrics, and scores each take against it.
     browser can show, not a flat contour. Today a runner can only finish
     (done) or raise (failed): add a `StepSkipped(reason)` exception that
     `pipeline._run_step` turns into `skipped` with that detail.
+  - Note (GPU setup): declare the `pitch` extra (torch, torchcrepe) in
+    `service/pyproject.toml`. torchcrepe 0.0.24 is compatible with torch
+    2.11 and bundles its weights, but `torchcrepe.load.audio` is
+    `torchaudio.load`, which needs torchcodec (not installed): read audio
+    with soundfile and pass tensors to `torchcrepe.predict`. It pulls
+    resampy and numba.
 - [ ] **P2-T4** (S) Lyrics. WhisperX on `vocals.wav` for word-level
   timestamps, saved as `lyrics.json`. Language auto-detected. Degrade
   gracefully when no words are found (instrumental, rap flagged as
   unpitched).
+  - **Decide first (GPU setup finding):** whisperx 3.8.6 pins torch and
+    torchaudio ~=2.8.0, torchcodec <0.8 and pyannote-audio >=4, none of
+    which coexist with our torch 2.11. In a scratch lock uv did not error;
+    it silently fell back to whisperx 3.4.5 with ctranslate2 4.4.0 (cuDNN
+    8) and about 69 more packages, an old and unverified stack. Options:
+    faster-whisper directly (CTranslate2 on CUDA 12, which is why torch is
+    on cu128) plus our own word alignment; whisperx in its own venv called
+    as a subprocess; or moving the whole project to torch 2.8. Pick one
+    deliberately and record it in `docs/ARCHITECTURE.md`. Mind disk space.
 - [ ] **P2-T5** (S) Browser integration. Extend `src/service/client.ts`
   (created in P2-T1d) with the rest of the status and stem fetches. On song load, upload to the service if
   reachable, show prep progress in the song panel, and swap in the stems:

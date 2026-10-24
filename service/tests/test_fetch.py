@@ -22,7 +22,7 @@ from tests.fakes import RATE, SECONDS, FetchFakes, Ydl
 VIDEO_ID = "dQw4w9WgXcQ"
 UPDATE_HINT = (
     "If YouTube links keep failing, update yt-dlp: "
-    "cd service && uv lock --upgrade-package yt-dlp && uv sync"
+    "cd service && uv lock --upgrade-package yt-dlp && uv sync --inexact"
 )
 
 

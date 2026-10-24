@@ -40,7 +40,7 @@ NOT_A_LINK = (
 LIVE = "Live streams and premieres cannot be practised; pick a finished video."
 UPDATE_HINT = (
     "If YouTube links keep failing, update yt-dlp: "
-    "cd service && uv lock --upgrade-package yt-dlp && uv sync"
+    "cd service && uv lock --upgrade-package yt-dlp && uv sync --inexact"
 )
 
 

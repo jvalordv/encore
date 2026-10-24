@@ -72,7 +72,7 @@ FFMPEG_MISSING = "ffmpeg is not on PATH; see service/README.md (GPU setup, step 
 # Shown after every yt-dlp failure: YouTube changes break it every few weeks.
 UPDATE_HINT = (
     "If YouTube links keep failing, update yt-dlp: "
-    "cd service && uv lock --upgrade-package yt-dlp && uv sync"
+    "cd service && uv lock --upgrade-package yt-dlp && uv sync --inexact"
 )
 NO_RUNTIME_NOTE = (
     "No JavaScript runtime (Node or Deno) was found on PATH, which YouTube "

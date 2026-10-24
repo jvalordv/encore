@@ -43,7 +43,8 @@ check fails twice."
 Some things only the owner can do, since the service needs their GPU and the
 app needs their mics:
 
-- First run of the service with the `gpu` extra (`service/README.md`).
+- First run of the service with each model extra as its task lands
+  (`service/README.md`, "GPU setup"); `separation` is installed.
 - Smoke tests at each phase review with a real song and a real mic.
 - Enrollment recordings for duet mode.
 
