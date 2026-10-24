@@ -483,6 +483,44 @@ input[type='range'] {
   gap: 8px;
 }
 
+/* A checkbox with its sentence beside it; the sentence wraps under itself, not
+   under the box. */
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.check input {
+  flex: none;
+  margin: 3px 0 0;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+/* Prepare for scoring: the button, the service's progress by step, a note. */
+.prepare {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prepare p,
+.prepare-steps {
+  margin: 0;
+}
+
+.prepare-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  list-style: none;
+}
+
 .unit {
   color: var(--color-text-muted);
   font-family: var(--font-mono);

@@ -45,6 +45,7 @@ describe('initialState', () => {
       clock: 'engine',
       embed: null,
       embedOffsetS: 0,
+      prepare: { phase: 'none', steps: null, message: '' },
       positionS: 0,
       loop: null,
       durationS: 0,

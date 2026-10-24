@@ -17,7 +17,8 @@ import type { LoopRegion, TrackInfo, Transport, TransportEvent } from './transpo
 
 /**
  * What we know about the loaded song. `hash` is sha256 hex of the file, or an
- * 8-character FNV-1a hex when crypto.subtle is missing.
+ * 8-character FNV-1a hex when crypto.subtle is missing, unless the caller
+ * named the song itself (see `load`).
  */
 export interface SongInfo extends TrackInfo {
   sampleRate: number;
@@ -231,14 +232,17 @@ export class Player implements Transport {
   /**
    * Decodes the file and makes it the 'original' stem at gain 1, dropping all
    * other stems, any loop and any playback. Rejects with a readable message
-   * when the file cannot be decoded, and when a newer load overtakes it.
+   * when the file cannot be decoded, and when a newer load overtakes it. The
+   * song is filed under the hash of the bytes unless `key` names it: a song
+   * prepared from a YouTube link keeps the `yt-<id>` key its takes already
+   * have, whichever way its sound reaches the engine.
    */
-  async load(file: File | Blob, name?: string): Promise<SongInfo> {
+  async load(file: File | Blob, name?: string, key?: string): Promise<SongInfo> {
     const loadId = ++this.loadId;
     const label = name ?? (file as { name?: string }).name ?? 'untitled';
     const bytes = await file.arrayBuffer();
     // Hash before decoding: decodeAudioData may detach the buffer it is given.
-    const hash = await hashBytes(new Uint8Array(bytes));
+    const hash = key ?? (await hashBytes(new Uint8Array(bytes)));
     let buffer: AudioBuffer;
     try {
       buffer = await this.engine.context.decodeAudioData(bytes);

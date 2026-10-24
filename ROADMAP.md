@@ -7,11 +7,13 @@ resume protocol in `CLAUDE.md`.
 
 ## Current state
 
-- **Last done:** P2-T1c (a YouTube link plays in the embedded player
-  inside the app, on a shared Transport; 911 unit tests, 30 e2e). Before
-  it P2-T1b (service: `POST /songs/url`, yt-dlp fetch to stereo FLAC; 507
-  service tests) and P2-T1 (song intake, job queue, step pipeline).
-  Speaker mode still untried on real speakers.
+- **Last done:** the owner's YouTube priority, end to end. P2-T1d (opt-in
+  Prepare for scoring: the service fetches the audio, the app switches
+  sound and clock to the engine with the video muted and following; 1110
+  unit tests, 51 e2e). Before it P2-T1c (embedded player on a shared
+  Transport), P2-T1b (`POST /songs/url`, yt-dlp to stereo FLAC; 507
+  service tests) and P2-T1 (intake, job queue, step pipeline). Speaker
+  mode still untried on real speakers.
 - **Workflow:** the orchestrator (Opus) runs each wave as a Workflow:
   Sonnet implementer, three review lenses, adversarial verification of
   findings, fixer, critic. Then it reviews the diff itself and commits.
@@ -44,9 +46,10 @@ resume protocol in `CLAUDE.md`.
   prepare path opt-in, and the README must not paper over it. **Owner
   decision (2026-10-23): keep the prepare path, opt-in and off by
   default, as specced.** Do not re-ask.
-- **Next:** P2-T1d (prepare a linked song in the background, opt-in, and
-  switch the clock and sound to the engine; touches `src/` and the client,
-  so a worktree again). Then P2-T2 (separation) on the GPU machine.
+- **Next:** P2-T2 (separation with demucs). It needs the GPU extra on
+  this machine first (owner-side list: CUDA index, `uv sync --extra gpu`,
+  `GET /gpu`); a worker can do that install if the owner agrees, since it
+  is a multi-gigabyte download. Then P2-T3, P2-T4, P2-T5.
 - **Machine facts (checked 2026-10-23):** Windows 10, `uv` 0.11.16,
   `ffmpeg` 9.0.2 (winget), Node 24 on PATH (yt-dlp's JavaScript runtime);
   no Deno. `service/.venv` is synced (CPU deps plus yt-dlp[default]).
@@ -84,6 +87,12 @@ resume protocol in `CLAUDE.md`.
     the mic), whether a pre-roll ad ever shows and what the app says during
     it, and whether takes over the video line up; nudge "YouTube video
     offset" until they do and report the value.
+  - Prepared mode (P2-T1d): start the service (`cd service && uv run
+    python -m encore_service`), load a link, press "Prepare for scoring"
+    while it plays. Report whether the switch is audible, whether the muted
+    video stays in step (including after a click on YouTube's own timeline
+    and a long buffer), and whether Speakers mode now keeps the song out of
+    the mic, which it should since the sound runs through the page.
   - GPU machine: uv, ffmpeg and the CPU `uv sync` are done. Still to do:
     enable the PyTorch CUDA index per `service/README.md`,
     `uv sync --extra gpu`, and confirm `GET /gpu` shows
@@ -406,7 +415,7 @@ lyrics, and scores each take against it.
     cannot be built under vitest today).
   - Follow-up (P2-T1d): reuse the `yt-<id>` song key so takes made over the
     embed line up with the prepared song.
-- [ ] **P2-T1d** (S) **Prepare a linked song for scoring. Owner priority.**
+- [x] **P2-T1d** (S) **Prepare a linked song for scoring. Owner priority.**
   Needs P2-T1 and P2-T1b. New `src/service/client.ts` (service URL from
   settings; typed wrappers `createSongFromUrl`, `getSong`, `fetchSongAudio`;
   poll with backoff). With the service reachable, a linked song shows a
@@ -427,6 +436,53 @@ lyrics, and scores each take against it.
     again. Polling must treat any `failed` step as settling the song (stop
     polling, show the error and an "Add again" action), not wait for every
     step to leave `queued`.
+  - Done: `src/service/{types,client}.ts`, `src/app/prepare.ts`,
+    `src/audio/embed-follower.ts`, `AudioEngine.ensureRunning`, the Prepare
+    group and the opt-in checkbox; 1110 unit tests, 51 e2e (21 in
+    `e2e/prepare.spec.ts` with the service and IFrame API faked). Built in a
+    worktree and cherry-picked. Review fix (3 of 3 verifiers): the embed's
+    own loop wrap was read as a scrub and dragged the engine; the follower
+    is now one-directional for it. A pause pressed in the video inside the
+    800 ms echo window is no longer swallowed.
+  - Live check (real service on :8765 with its own cache and CORS origin,
+    real YouTube): opt-in held (only `GET /health` before Prepare); Prepare
+    fetched Big Buck Bunny in about 6 s and switched; the muted video then
+    stayed 0.07 to 0.13 s from the sound for 22 s; seek while paused
+    followed; a repeat Prepare was a cache hit in about 1 s; with the
+    service stopped Prepare was disabled with the README hint while the
+    video kept playing. It found a freeze then a 1 s jump at the switch and
+    at each Play: the AudioContext clock starts late after `resume()`. Fixed
+    by waiting for the clock to move before the switch and holding the
+    picture until the sound runs (tested, e2e emulates the late clock).
+  - Owner-side, still open: the 800 ms echo window and 1 s scrub threshold
+    are readings of YouTube's event timing, to confirm on the real embed (a
+    timeline click while playing, a long buffering stall, whether the switch
+    is audible, an ad while the muted video follows; whether muting an ad
+    is allowed is unverified).
+  - Follow-up (P2-T5): polling stops when fetch is done, so separation,
+    reference and lyrics progress is never shown. Keep polling after the
+    switch and extend `PrepareState` (`describeStep` already words every
+    step).
+  - Follow-up: after a reload or a repeat paste the song comes back
+    embedded and Prepare downloads and decodes again (a service cache hit).
+    Remember the prepared choice per video, or reuse the Player's audio
+    when it already holds `yt-<id>`.
+  - Follow-up: no Cancel and no overall timeout for a preparation; only a
+    newer load stops one.
+  - Follow-up: a scrub on the video's own timeline while paused raises no
+    event, so it is only noticed when the video's own Play is pressed.
+  - Follow-up: on a hidden page `requestAnimationFrame` stops, so the
+    Session loop that moves the seek bar stops too; add a timer fallback.
+    `startRecording` should also wait for the engine clock to move, and a
+    mid-song clock-health guard could catch a context that stalls later.
+  - Follow-up: a CORS mismatch (page origin not in
+    `ENCORE_ALLOWED_ORIGINS`) reads as "service not running"; name the
+    setting in the hint, or expose `serviceUrl` (P5-T3).
+  - Follow-up: a 15-minute song decodes to about 350 MB of float32; fine
+    on this machine, worth a ceiling before the desktop shell (Phase 6).
+  - Note: e2e tests with real-time bands flaked under heavy CPU load from
+    another project's Playwright run on this machine; rerun before blaming
+    a change, and prefer condition waits when touching those tests.
 - [ ] **P2-T2** (S) Separation. Demucs (`htdemucs_ft`) producing
   `vocals.wav` and `no_vocals.wav`. Configurable model id. Honour
   `ENCORE_DEVICE` env (`cuda` default when available).

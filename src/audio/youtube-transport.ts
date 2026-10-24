@@ -16,7 +16,10 @@
  * - failure: error codes and blocked autoplay become plain messages. While
  *   `load` is still settling they reject it (a video that cannot be embedded
  *   reports that just after the player is ready); afterwards they arrive
- *   through `onNotice`.
+ *   through `onNotice`;
+ * - prepared mode: once the song is prepared the transport stops being the
+ *   active one. The app mutes it (`mute`) and moves it with the ordinary
+ *   controls from embed-follower.ts, so it stays a picture of the song.
  *
  * The player lives in the nocookie host (privacy-enhanced mode). The DOM is
  * reached only through an injected EmbedHost, and time and timers are
@@ -422,6 +425,21 @@ export class YouTubeTransport implements Transport {
     if (next?.startS === prev?.startS && next?.endS === prev?.endS) return;
     this.loopValue = next;
     this.emit('loop');
+  }
+
+  /**
+   * Silences the video's own sound and leaves the picture going. Used once a
+   * song is prepared, when the app's audio engine is what the singer hears.
+   */
+  mute(): void {
+    const player = this.usablePlayer();
+    if (player) attempt(() => player.mute());
+  }
+
+  /** True while the player reports its sound off; false before it is ready. */
+  get muted(): boolean {
+    const player = this.usablePlayer();
+    return player ? (attempt(() => player.isMuted()) ?? false) : false;
   }
 
   /** Subscribes to an event; returns the function that unsubscribes. */

@@ -11,6 +11,9 @@
 /** Context rate. 48 kHz matches the tracker's hop maths and most hardware. */
 const ENGINE_SAMPLE_RATE = 48000;
 
+/** How often `ensureRunning` looks at the context, milliseconds. */
+const RUNNING_POLL_MS = 10;
+
 /** Constructor shape for AudioContext, including old WebKit's prefix. */
 type ContextCtor = new (options?: AudioContextOptions) => AudioContext;
 
@@ -54,6 +57,33 @@ export class AudioEngine {
   async resume(): Promise<void> {
     if (this.context.state === 'closed') return;
     await this.context.resume();
+  }
+
+  /**
+   * Starts the context and waits until its clock moves, true, or until
+   * `timeoutMs` has passed, false. Starting is not instant: a context that was
+   * suspended, or never started, can take up to about a second, and the state
+   * can turn to running before the device has made the clock move. Everything
+   * reads that clock, so something that must begin on it with another source
+   * already going (a song handed over from a video) waits here first.
+   */
+  async ensureRunning(timeoutMs: number): Promise<boolean> {
+    // Not awaited: a start the browser will not make yet never settles.
+    let refused = false;
+    void this.resume().catch(() => {
+      refused = true;
+    });
+    // Real time, not a count of polls: a page whose timers are slowed down
+    // (a hidden one) must not stretch the wait.
+    const deadlineMs = performance.now() + timeoutMs;
+    let seenS = this.now();
+    while (!refused && performance.now() <= deadlineMs) {
+      await new Promise<void>((resolve) => setTimeout(resolve, RUNNING_POLL_MS));
+      const nowS = this.now();
+      if (this.context.state === 'running' && nowS > seenS) return true;
+      seenS = nowS;
+    }
+    return false;
   }
 
   /** Current context time in seconds; the master clock for everything. */

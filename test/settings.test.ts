@@ -32,6 +32,7 @@ describe('DEFAULT_SETTINGS', () => {
       outputDeviceId: null,
       monitor: 'headphones',
       serviceUrl: 'http://localhost:8765',
+      autoPrepareLinks: false,
       clarityThreshold: 0.9,
       octaveInvariant: false,
       latencyByDevicePair: {},
@@ -76,6 +77,7 @@ describe('loadSettings', () => {
           outputDeviceId: 7,
           monitor: 'loudspeakers',
           serviceUrl: 'ftp://nope',
+          autoPrepareLinks: 'yes',
           clarityThreshold: 0.75,
           octaveInvariant: 'yes',
           latencyByDevicePair: { 'latency.a|b': 0.12 },
@@ -88,6 +90,7 @@ describe('loadSettings', () => {
       outputDeviceId: null,
       monitor: 'headphones',
       serviceUrl: DEFAULT_SETTINGS.serviceUrl,
+      autoPrepareLinks: false,
       clarityThreshold: 0.75,
       octaveInvariant: false,
       latencyByDevicePair: { 'latency.a|b': 0.12 },
@@ -177,6 +180,20 @@ describe('loadSettings', () => {
     }
   });
 
+  it('keeps automatic preparing off unless the stored value is exactly true', () => {
+    expect(DEFAULT_SETTINGS.autoPrepareLinks).toBe(false);
+    expect(sanitizeSettings({ autoPrepareLinks: true }).autoPrepareLinks).toBe(true);
+    expect(sanitizeSettings({ autoPrepareLinks: false }).autoPrepareLinks).toBe(false);
+    for (const bad of ['true', 'yes', 1, 0, null, undefined, {}, [true]]) {
+      expect(sanitizeSettings({ autoPrepareLinks: bad }).autoPrepareLinks, String(bad)).toBe(false);
+    }
+  });
+
+  it('reads settings saved before preparing existed as off', () => {
+    const old = JSON.stringify({ inputDeviceId: 'mic-1', embedOffsetS: 0.04 });
+    expect(loadSettings(storeWith(old)).autoPrepareLinks).toBe(false);
+  });
+
   it('reads settings saved before the embed existed as no offset', () => {
     const old = JSON.stringify({ inputDeviceId: 'mic-1', monitor: 'speakers' });
     expect(loadSettings(storeWith(old)).embedOffsetS).toBe(0);
@@ -213,6 +230,7 @@ describe('saveSettings', () => {
     outputDeviceId: 'out-1',
     monitor: 'speakers',
     serviceUrl: 'http://127.0.0.1:9999',
+    autoPrepareLinks: true,
     clarityThreshold: 0.8,
     octaveInvariant: true,
     latencyByDevicePair: { 'latency.out-1|in-1': 0.143 },
@@ -245,6 +263,21 @@ describe('saveSettings', () => {
       serviceUrl: DEFAULT_SETTINGS.serviceUrl,
       latencyByDevicePair: { good: 0.1 },
     });
+  });
+
+  it('round-trips the automatic-prepare choice both ways', () => {
+    for (const autoPrepareLinks of [true, false]) {
+      const store = memoryStore();
+      saveSettings(store, { ...custom, autoPrepareLinks });
+      expect(JSON.parse(store.get('settings') ?? 'null').autoPrepareLinks).toBe(autoPrepareLinks);
+      expect(loadSettings(store).autoPrepareLinks).toBe(autoPrepareLinks);
+    }
+  });
+
+  it('never persists an automatic-prepare value that is not a boolean', () => {
+    const store = memoryStore();
+    saveSettings(store, { ...custom, autoPrepareLinks: 'yes' as unknown as boolean });
+    expect(JSON.parse(store.get('settings') ?? 'null').autoPrepareLinks).toBe(false);
   });
 
   it('writes a clamped embed offset, never a wild one', () => {

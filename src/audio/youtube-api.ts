@@ -35,6 +35,8 @@ export interface YouTubePlayer {
   getPlayerState(): number;
   getPlaybackRate(): number;
   getVideoData(): YouTubeVideoData;
+  isMuted(): boolean;
+  mute(): void;
   playVideo(): void;
   pauseVideo(): void;
   seekTo(seconds: number, allowSeekAhead: boolean): void;

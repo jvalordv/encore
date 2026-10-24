@@ -1,8 +1,9 @@
 /**
  * Persistent user settings: the devices last chosen, how the singer monitors
- * the song, the service address, the voicing threshold, the round-trip
- * latency measured for each device pair and the extra offset applied while a
- * YouTube video supplies the song.
+ * the song, the service address, whether a pasted YouTube link is sent to the
+ * service by itself, the voicing threshold, the round-trip latency measured for
+ * each device pair and the extra offset applied while a YouTube video supplies
+ * the song.
  * One object under one storage key, behind the KeyValueStore interface, so a
  * native shell can own storage later (see "Built to become an app" in
  * docs/ARCHITECTURE.md). Loading never throws and never trusts what it reads:
@@ -24,6 +25,12 @@ export interface Settings {
   monitor: MonitorMode;
   /** Base URL of the optional Python service, without a trailing slash. */
   serviceUrl: string;
+  /**
+   * Send a YouTube link to the service as soon as it loads, which downloads
+   * its audio. Off unless the singer turns it on: otherwise a link is only
+   * sent when Prepare for scoring is pressed.
+   */
+  autoPrepareLinks: boolean;
   /** Clarity at or above which a pitch frame counts as voiced, 0..1. */
   clarityThreshold: number;
   /** Judge pitch modulo an octave (for singers covering another register). */
@@ -53,6 +60,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   outputDeviceId: null,
   monitor: 'headphones',
   serviceUrl: 'http://localhost:8765',
+  autoPrepareLinks: false,
   clarityThreshold: 0.9,
   octaveInvariant: false,
   latencyByDevicePair: Object.freeze({}) as Record<string, number>,
@@ -129,6 +137,10 @@ export function sanitizeSettings(value: unknown): Settings {
     outputDeviceId: deviceId(raw.outputDeviceId),
     monitor: monitorMode(raw.monitor),
     serviceUrl: serviceUrl(raw.serviceUrl) ?? DEFAULT_SETTINGS.serviceUrl,
+    autoPrepareLinks:
+      typeof raw.autoPrepareLinks === 'boolean'
+        ? raw.autoPrepareLinks
+        : DEFAULT_SETTINGS.autoPrepareLinks,
     clarityThreshold: clarity(raw.clarityThreshold),
     octaveInvariant:
       typeof raw.octaveInvariant === 'boolean'

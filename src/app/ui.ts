@@ -8,12 +8,17 @@
  * shortcuts live here too (Space, R, L, [ ], arrows) because they are the same
  * intents as the buttons. A YouTube link reaches the Session three ways: the
  * link box, a paste anywhere on the page, or a link dropped on it; the pane
- * the player is built into is handed to the Session here. Importing the file
- * touches no DOM; mountUI does.
+ * the player is built into is handed to the Session here. The song panel's
+ * Prepare for scoring group is drawn from `state.prepare` through
+ * describePrepare, and its button, the automatic-prepare checkbox and a window
+ * regaining focus (the service may have been started meanwhile) are the only
+ * things here that lead to the service. Importing the file touches no DOM;
+ * mountUI does.
  */
 import { isRunning } from '../audio/transport';
 import { domEmbedHost } from '../audio/youtube-transport';
 import { parseYouTubeUrl } from '../audio/youtube-url';
+import { describePrepare } from './prepare';
 import type { Session } from './session';
 import { describeHealth, describeMonitor, describePitch, formatClock, meterFraction } from './state';
 import type { AppState } from './state';
@@ -109,6 +114,11 @@ export function mountUI(session: Session, root: Document = document): UI {
   const embedPlayer = get('embed-player');
   const embedOffset = get('embed-offset');
   const embedOffsetInput = get<HTMLInputElement>('embed-offset-input');
+  const autoPrepare = get<HTMLInputElement>('auto-prepare');
+  const prepareGroup = get('prepare');
+  const prepareButton = get<HTMLButtonElement>('prepare-button');
+  const prepareSteps = get('prepare-steps');
+  const prepareNote = get('prepare-note');
   const inputSelect = get<HTMLSelectElement>('input-select');
   const outputSelect = get<HTMLSelectElement>('output-select');
   const refreshButton = get<HTMLButtonElement>('refresh-devices');
@@ -159,6 +169,7 @@ export function mountUI(session: Session, root: Document = document): UI {
   // ---- Rendering ----------------------------------------------------------
 
   let inputSignature = '';
+  let stepsSignature = '';
   let seeking = false;
   let lastVoicedAt = -Infinity;
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
@@ -224,6 +235,30 @@ export function mountUI(session: Session, root: Document = document): UI {
     const wait = PITCH_HOLD_MS - (performance.now() - lastVoicedAt);
     if (wait <= 0) hidePitch();
     else hideTimer = setTimeout(hidePitch, wait);
+  }
+
+  function renderPrepare(prepare: AppState['prepare']): void {
+    const view = describePrepare(prepare);
+    prepareGroup.hidden = !view.visible;
+    prepareGroup.dataset.phase = prepare.phase;
+    setText(prepareButton, view.label);
+    prepareButton.disabled = view.disabled;
+    prepareButton.title = view.title;
+    // Rebuilt only when a line changed, so a poll that repeats itself leaves
+    // the list alone.
+    const signature = view.lines.join('\n');
+    if (signature !== stepsSignature) {
+      stepsSignature = signature;
+      prepareSteps.replaceChildren(
+        ...view.lines.map((line) => {
+          const item = document.createElement('li');
+          item.textContent = line;
+          return item;
+        }),
+      );
+    }
+    prepareSteps.hidden = view.lines.length === 0;
+    setText(prepareNote, view.note);
   }
 
   function takeRow(take: TakeSummary, number: number, state: AppState): HTMLLIElement {
@@ -365,6 +400,7 @@ export function mountUI(session: Session, root: Document = document): UI {
     if (has('embedOffsetS') && document.activeElement !== embedOffsetInput) {
       embedOffsetInput.value = String(Math.round(state.embedOffsetS * 1000));
     }
+    if (has('prepare')) renderPrepare(state.prepare);
 
     if (has('lastFrame')) renderPitch(state.lastFrame);
 
@@ -396,6 +432,15 @@ export function mountUI(session: Session, root: Document = document): UI {
   // the state (`embed`), never by touching the element.
   session.attachEmbedHost(domEmbedHost(embedPlayer));
   cleanups.push(() => session.attachEmbedHost(null));
+
+  autoPrepare.checked = session.settings.autoPrepareLinks;
+  listen(autoPrepare, 'change', () => session.setAutoPrepareLinks(autoPrepare.checked));
+  listen(prepareButton, 'click', () => void session.prepare());
+  // The service may have been started while the person was elsewhere; while
+  // Prepare is off for want of it, coming back asks again.
+  const onFocus = (): void => session.checkService();
+  root.defaultView?.addEventListener('focus', onFocus);
+  cleanups.push(() => root.defaultView?.removeEventListener('focus', onFocus));
 
   listen(linkLoad, 'click', () => loadLink(linkInput.value));
   listen(linkInput, 'keydown', (ev) => {

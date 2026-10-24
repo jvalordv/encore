@@ -345,6 +345,20 @@ describe('Player load', () => {
     expect((await b.player.load(new File(['x'], 'my song.wav'))).name).toBe('my song.wav');
   });
 
+  it('files the song under the key it was given instead of the hash of its bytes', async () => {
+    const { player } = setup();
+    const info = await player.load(new Blob(['abc']), 'Some Video', 'yt-dQw4w9WgXcQ');
+    expect(info.hash).toBe('yt-dQw4w9WgXcQ');
+    expect(info.name).toBe('Some Video');
+    expect(player.info?.hash).toBe('yt-dQw4w9WgXcQ');
+  });
+
+  it('still hashes the bytes when no key is given', async () => {
+    const { player } = setup();
+    const info = await player.load(new Blob([new TextEncoder().encode('abc')]), 'a.mp3', undefined);
+    expect(info.hash).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  });
+
   it('rejects with a readable message and stays empty when decoding fails', async () => {
     const { player, ctx } = setup();
     ctx.decodeFails = true;

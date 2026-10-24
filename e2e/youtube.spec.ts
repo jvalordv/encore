@@ -21,12 +21,27 @@
  * a video playing on or a file, as it was; with nothing loaded the same
  * failure says only why; a newer load wins over an older one; a video loading
  * behind the one in use never covers it and replaces it only when ready.
- * The tests share one page and run in order, each building on the state the
- * last left behind.
+ * The service is stubbed as well, answering only its health check: loading and
+ * playing links must never send one to it, which every test checks. The tests
+ * share one page and run in order, each building on the state the last left
+ * behind.
  */
 import { expect, test } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
 import type { AppState } from '../src/app/state';
+import { stubService } from './fake-service';
+import type { FakeService } from './fake-service';
+import {
+  FAKE_IFRAME_API,
+  callFake,
+  countFakePlayers,
+  pasteInto,
+  readAppState,
+  readFakeHandle,
+  readStoredTakes,
+  setReadyDelay,
+} from './fake-youtube';
+import type { FakeHandle } from './fake-youtube';
 import { PORT, SONG_FILE } from './fixtures';
 
 test.describe.configure({ mode: 'serial' });
@@ -46,143 +61,6 @@ const TITLE = 'Fake Video Title';
 const DURATION_S = 213;
 const SKINS = ['studio', 'arcade', 'dreamhouse'] as const;
 
-/** What the fake player records about itself, as the page exposes it. */
-interface FakeHandle {
-  videoId: string;
-  destroyed: boolean;
-  calls: string[];
-  options: {
-    host: string;
-    videoId: string;
-    width: string;
-    height: string;
-    playerVars: Record<string, string | number>;
-  };
-}
-
-/**
- * The fake IFrame API. `__CONFIG__` becomes the title, the length, the delay
- * before ready and the ids that cannot be embedded. It mirrors the real one
- * where that matters here: a cued video does not play until asked (but
- * seeking it does play it), playVideo goes through buffering, the clock
- * extrapolates while playing, and during an ad the player reports the ad's
- * id, length and time instead of the video's.
- */
-const FAKE_IFRAME_API = `(function () {
-  var STATE = { UNSTARTED: -1, ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 };
-  var registry = (window.__yt = { players: [], config: __CONFIG__ });
-  function FakePlayer(target, options) {
-    var self = this;
-    this.options = options;
-    this.videoId = options.videoId;
-    this.state = STATE.UNSTARTED;
-    this.baseS = Number((options.playerVars && options.playerVars.start) || 0);
-    this.startedAtMs = 0;
-    this.rate = 1;
-    this.destroyed = false;
-    this.ad = null;
-    this.calls = [];
-    this.events = options.events || {};
-    var iframe = document.createElement('iframe');
-    iframe.src = options.host + '/embed/' + options.videoId + '?enablejsapi=1&origin=' + encodeURIComponent(location.origin);
-    iframe.setAttribute('width', String(options.width));
-    iframe.setAttribute('height', String(options.height));
-    iframe.setAttribute('title', 'YouTube video player');
-    iframe.setAttribute('frameborder', '0');
-    iframe.setAttribute('allow', 'autoplay; encrypted-media');
-    this.iframe = iframe;
-    target.replaceWith(iframe);
-    registry.players.push(this);
-    setTimeout(function () {
-      if (self.destroyed) return;
-      self.fire('onReady', {});
-      if (registry.config.blockedIds.indexOf(self.videoId) < 0) {
-        self.setState(STATE.CUED);
-        return;
-      }
-      // Like the real one: no cue, and the error a moment after ready.
-      setTimeout(function () { self.fire('onError', { data: 150 }); }, 150);
-    }, registry.config.readyDelayMs);
-  }
-  FakePlayer.prototype = {
-    fire: function (name, extra) {
-      var callback = this.events[name];
-      if (callback && !this.destroyed) callback(Object.assign({ target: this }, extra));
-    },
-    setState: function (next) {
-      if (this.state === STATE.PLAYING && next !== STATE.PLAYING) this.baseS = this.getCurrentTime();
-      if (next === STATE.PLAYING && this.state !== STATE.PLAYING) this.startedAtMs = performance.now();
-      this.state = next;
-      this.fire('onStateChange', { data: next });
-    },
-    getCurrentTime: function () {
-      if (this.ad) return (performance.now() - this.ad.startedAtMs) / 1000;
-      if (this.state !== STATE.PLAYING) return this.baseS;
-      return this.baseS + ((performance.now() - this.startedAtMs) / 1000) * this.rate;
-    },
-    getDuration: function () { return this.ad ? this.ad.durationS : registry.config.durationS; },
-    getPlayerState: function () { return this.state; },
-    getPlaybackRate: function () { return this.rate; },
-    getVideoData: function () {
-      return this.ad
-        ? { video_id: this.ad.id, title: 'An advertisement' }
-        : { video_id: this.videoId, title: registry.config.title };
-    },
-    playVideo: function () {
-      var self = this;
-      this.calls.push('playVideo');
-      if (this.state === STATE.PLAYING || this.state === STATE.BUFFERING) return;
-      this.setState(STATE.BUFFERING);
-      setTimeout(function () {
-        if (!self.destroyed && self.state === STATE.BUFFERING) self.setState(STATE.PLAYING);
-      }, 60);
-    },
-    pauseVideo: function () {
-      this.calls.push('pauseVideo');
-      if (this.state === STATE.PLAYING || this.state === STATE.BUFFERING) this.setState(STATE.PAUSED);
-    },
-    seekTo: function (seconds) {
-      // As documented, seeking a cued, unstarted or ended video plays it.
-      var cold = this.state === STATE.CUED || this.state === STATE.UNSTARTED || this.state === STATE.ENDED;
-      this.calls.push('seekTo:' + seconds);
-      this.baseS = seconds;
-      this.startedAtMs = performance.now();
-      if (cold) this.playVideo();
-    },
-    cueVideoById: function (options) {
-      this.calls.push('cue:' + (options.startSeconds || 0));
-      this.baseS = options.startSeconds || 0;
-      this.setState(STATE.CUED);
-    },
-    destroy: function () {
-      this.calls.push('destroy');
-      this.destroyed = true;
-      if (this.iframe.parentNode) this.iframe.remove();
-    },
-    fireError: function (code) { this.fire('onError', { data: code }); },
-    blockAutoplay: function () { this.fire('onAutoplayBlocked', {}); },
-    startAd: function (id, durationS) {
-      var self = this;
-      // The video stops (its time is kept), then the ad buffers and plays.
-      this.setState(STATE.BUFFERING);
-      this.ad = { id: id, durationS: durationS, startedAtMs: performance.now() };
-      setTimeout(function () { if (!self.destroyed) self.setState(STATE.PLAYING); }, 50);
-    },
-    endAd: function () {
-      var self = this;
-      // The video comes back where it stopped, through buffering.
-      this.ad = null;
-      this.state = STATE.PAUSED;
-      this.setState(STATE.BUFFERING);
-      setTimeout(function () { if (!self.destroyed) self.setState(STATE.PLAYING); }, 50);
-    },
-  };
-  window.YT = { Player: FakePlayer, PlayerState: STATE };
-  setTimeout(function () {
-    if (typeof window.onYouTubeIframeAPIReady === 'function') window.onYouTubeIframeAPIReady();
-  }, 0);
-})();`;
-
 let context: BrowserContext;
 let page: Page;
 const pageErrors: string[] = [];
@@ -194,6 +72,8 @@ const served: string[] = [];
 const apiAttempts: string[] = [];
 /** While true the IFrame API script is refused, as if YouTube were down. */
 let failApi = false;
+/** The service stand-in; a link is only ever answered a health check. */
+let service: FakeService;
 
 test.beforeAll(async ({ browser }) => {
   context = await browser.newContext({
@@ -228,6 +108,7 @@ test.beforeAll(async ({ browser }) => {
       body: '<!doctype html><meta charset="utf-8"><title>fake player</title><body style="margin:0;background:#111;color:#ddd;font:14px sans-serif">fake YouTube player</body>',
     });
   });
+  service = await stubService(context, VIDEO);
   page = await context.newPage();
   page.on('pageerror', (error) => pageErrors.push(`uncaught: ${error.message}`));
   page.on('console', (message) => {
@@ -240,6 +121,8 @@ test.beforeAll(async ({ browser }) => {
 test.afterEach(() => {
   expect(pageErrors, 'page errors').toEqual([]);
   expect(strayRequests, 'requests to YouTube that were not stubbed').toEqual([]);
+  // Nothing is sent to the service for a link unless Prepare is pressed.
+  expect(service.songRequests(), 'requests to the service beyond health checks').toEqual([]);
 });
 
 test.afterAll(async () => {
@@ -247,55 +130,33 @@ test.afterAll(async () => {
 });
 
 /** A copy of the app state as the page holds it right now. */
-async function appState(): Promise<AppState> {
-  return page.evaluate(() => JSON.parse(JSON.stringify(window.encore!.store.state)) as AppState);
+function appState(): Promise<AppState> {
+  return readAppState(page);
 }
 
 /** What the n-th fake player has recorded about itself. */
-async function fakeHandle(index: number): Promise<FakeHandle> {
-  return page.evaluate((i) => {
-    const p = (window as unknown as { __yt: { players: FakeHandle[] } }).__yt.players[i];
-    return JSON.parse(
-      JSON.stringify({ videoId: p.videoId, destroyed: p.destroyed, calls: p.calls, options: p.options }),
-    ) as FakeHandle;
-  }, index);
+function fakeHandle(index: number): Promise<FakeHandle> {
+  return readFakeHandle(page, index);
 }
 
 /** Calls a control method on the n-th fake player. */
-async function fakeDo(index: number, method: string, ...args: Array<string | number>): Promise<void> {
-  await page.evaluate(
-    ({ i, name, params }) => {
-      const player = (window as unknown as { __yt: { players: Array<Record<string, (...a: unknown[]) => void>> } })
-        .__yt.players[i];
-      player[name](...params);
-    },
-    { i: index, name: method, params: args },
-  );
+function fakeDo(index: number, method: string, ...args: Array<string | number>): Promise<void> {
+  return callFake(page, index, method, ...args);
 }
 
 /** Pastes `text` as if from the clipboard, onto the page or onto a field. */
-async function pasteText(text: string, selector?: string): Promise<void> {
-  await page.evaluate(
-    ({ value, target }) => {
-      const element = target ? (document.querySelector(target) as HTMLElement) : document.body;
-      const data = new DataTransfer();
-      data.setData('text', value);
-      element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
-    },
-    { value: text, target: selector ?? null },
-  );
+function pasteText(text: string, selector?: string): Promise<void> {
+  return pasteInto(page, text, selector);
 }
 
 /** How many fake players have been built so far. */
-async function playerCount(): Promise<number> {
-  return page.evaluate(() => (window as unknown as { __yt: { players: unknown[] } }).__yt.players.length);
+function playerCount(): Promise<number> {
+  return countFakePlayers(page);
 }
 
 /** Sets how long the next fake players take to report ready. */
-async function readyAfter(ms: number): Promise<void> {
-  await page.evaluate((delay) => {
-    (window as unknown as { __yt: { config: { readyDelayMs: number } } }).__yt.config.readyDelayMs = delay;
-  }, ms);
+function readyAfter(ms: number): Promise<void> {
+  return setReadyDelay(page, ms);
 }
 
 /**
@@ -358,37 +219,8 @@ async function layoutSettled(): Promise<void> {
 }
 
 /** The takes in IndexedDB, without their audio. */
-async function readStoredTakes(): Promise<
-  Array<{
-    songHash: string;
-    clock?: string;
-    latencyS: number;
-    durationS: number;
-    startedAtSongS: number;
-    frames: Array<{ t: number; f0: number }>;
-  }>
-> {
-  return page.evaluate(async () => {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('encore');
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    const records = await new Promise<Array<Record<string, unknown>>>((resolve, reject) => {
-      const request = db.transaction('takes').objectStore('takes').getAll();
-      request.onsuccess = () => resolve(request.result as Array<Record<string, unknown>>);
-      request.onerror = () => reject(request.error);
-    });
-    db.close();
-    return records.map((r) => ({
-      songHash: r.songHash as string,
-      clock: r.clock as string | undefined,
-      latencyS: r.latencyS as number,
-      durationS: r.durationS as number,
-      startedAtSongS: r.startedAtSongS as number,
-      frames: r.frames as Array<{ t: number; f0: number }>,
-    }));
-  });
+function readTakes(): ReturnType<typeof readStoredTakes> {
+  return readStoredTakes(page);
 }
 
 test('1. nothing from YouTube is fetched until a link is used, and the player pane is hidden', async () => {
@@ -738,7 +570,7 @@ test('7. the embed offset field is saved and applies only to takes over the vide
   // Stopping the take paused the video it had started.
   await page.waitForFunction(() => window.encore!.store.state.player === 'paused');
 
-  const [take] = await readStoredTakes();
+  const [take] = await readTakes();
   expect(take.songHash).toBe(`yt-${VIDEO}`);
   expect(take.clock).toBe('embed');
   // Not calibrated, so the whole latency is the embed offset.
@@ -813,7 +645,7 @@ test('9. an ad stops the clock, the lane and recording, and says so', async () =
     timeout: 8000,
   });
   expect((await appState()).recording).toBe(false);
-  expect(await readStoredTakes()).toHaveLength(1);
+  expect(await readTakes()).toHaveLength(1);
 
   // The ad ends and the song carries on from where it was.
   await fakeDo(0, 'endAd');
@@ -921,7 +753,7 @@ test('12. dropping a file swaps back to the audio player and destroys the YouTub
   await page.waitForTimeout(1200);
   await page.getByTestId('record').click();
   await expect(page.getByTestId('take-item')).toHaveCount(1);
-  const fileTake = (await readStoredTakes()).find((take) => !take.songHash.startsWith('yt-'))!;
+  const fileTake = (await readTakes()).find((take) => !take.songHash.startsWith('yt-'))!;
   expect(fileTake.clock).toBe('engine');
   expect(fileTake.latencyS).toBe(0);
   await expect(page.getByTestId('take-note')).toHaveCount(0);

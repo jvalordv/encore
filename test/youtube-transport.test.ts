@@ -43,6 +43,7 @@ class FakePlayer implements YouTubePlayer {
   duration = 0;
   ytState: number = YT_STATE.UNSTARTED;
   rate = 1;
+  silent = false;
   videoData: YouTubeVideoData = { video_id: '', title: '' };
   calls: string[] = [];
   destroyed = false;
@@ -69,6 +70,13 @@ class FakePlayer implements YouTubePlayer {
   }
   getVideoData(): YouTubeVideoData {
     return this.videoData;
+  }
+  isMuted(): boolean {
+    return this.silent;
+  }
+  mute(): void {
+    this.silent = true;
+    this.calls.push('mute');
   }
   playVideo(): void {
     this.calls.push('play');
@@ -1109,6 +1117,52 @@ describe('YouTubeTransport.destroy', () => {
     expect(t.players[0].destroyed).toBe(true);
     expect(t.mounts[0].disposed).toBe(true);
     expect(t.timers.timeouts.size).toBe(0);
+  });
+});
+
+describe('YouTubeTransport sound', () => {
+  it('mutes the player and reports it muted, leaving the picture and the clock alone', async () => {
+    const t = await loaded();
+    startPlaying(t, 12);
+    expect(t.transport.muted).toBe(false);
+    t.transport.mute();
+    expect(t.player.calls).toEqual(['mute']);
+    expect(t.transport.muted).toBe(true);
+    expect(t.transport.state).toBe('playing');
+    expect(t.transport.positionS).toBe(12);
+  });
+
+  it('reads muted from the player each time, so a person unmuting it shows', async () => {
+    const t = await loaded();
+    t.transport.mute();
+    t.player.silent = false;
+    expect(t.transport.muted).toBe(false);
+  });
+
+  it('does nothing before the player is ready or after it is destroyed, and reads as not muted', async () => {
+    const t = setup();
+    void t.transport.load(VIDEO);
+    t.transport.mute();
+    expect(t.players[0].calls).toEqual([]);
+    expect(t.transport.muted).toBe(false);
+    const done = await loaded();
+    done.transport.mute();
+    done.transport.destroy();
+    done.player.calls.length = 0;
+    done.transport.mute();
+    expect(done.player.calls).toEqual([]);
+    expect(done.transport.muted).toBe(false);
+  });
+
+  it('survives a player whose methods throw', async () => {
+    const t = await loaded();
+    const boom = (): never => {
+      throw new TypeError('player.mute is not a function');
+    };
+    t.player.mute = boom;
+    t.player.isMuted = boom;
+    expect(() => t.transport.mute()).not.toThrow();
+    expect(t.transport.muted).toBe(false);
   });
 });
 

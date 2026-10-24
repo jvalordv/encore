@@ -96,6 +96,27 @@ reference melody, lyrics, scoring, and coaching when it is up.
   - *Echo.* Whether Chrome's echo cancellation references the embed's audio
     in speaker mode is unverified; it needs the owner's real speakers
     before the mode is advertised for YouTube songs.
+  - *Prepared mode, as built* (P2-T1d: `src/service/client.ts`,
+    `src/app/prepare.ts`, `src/audio/embed-follower.ts`). Opt-in: loading
+    a link sends only `GET /health` (no link data); the link goes to
+    `POST /songs/url` only on the Prepare press or with
+    `autoPrepareLinks` on (default off). Health is re-checked on focus, so
+    starting the service enables Prepare without a reload. Polling backs off
+    from 500 ms to a 2 s cap and settles when fetch is done or any step has
+    failed. The switch waits for a take in progress or starting, and for
+    the AudioContext clock to actually move (it can lag `resume()` by up to
+    about a second; capped at 2 s), then makes the audio player the active
+    transport at the embed's position, keyed `yt-<id>` so takes over the
+    embed and over the prepared audio share one list (prepared takes carry
+    `clock: "engine"`; `embedOffsetS` no longer applies). The embed is
+    muted, stays visible, and follows: engine play, pause, seek, stop and
+    loop are copied to it; every 2 s a drift over 0.5 s is corrected with
+    `seekTo`; nothing in it feeds the engine clock. YouTube's own controls
+    are copied back to the engine through the same guards as the app's,
+    ignoring echoes of our own commands for 800 ms and the embed's own loop
+    wraps. The picture starts when the sound's clock moves, and a picture
+    already running is joined, not pulled back. With the sound now in the
+    AudioContext, speaker mode's echo cancellation references it.
   - *Lifecycle, as built* (`src/audio/youtube-transport.ts`). A link is
     cued, not autoplayed. A seek on a cued player would start playback, so
     the transport re-cues at the new position instead. A video that cannot

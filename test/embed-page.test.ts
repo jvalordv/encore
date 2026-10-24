@@ -97,6 +97,45 @@ describe('index.html for the YouTube embed', () => {
   });
 });
 
+describe('index.html for preparing a linked song', () => {
+  it('has an automatic-prepare checkbox that starts off, worded as the policy note needs', () => {
+    const box = tagOf('auto-prepare');
+    expect(box).toContain('type="checkbox"');
+    expect(box).not.toMatch(/\bchecked\b/);
+    expect(html).toContain(
+      'Prepare YouTube songs automatically (downloads the audio; see service/README.md)',
+    );
+  });
+
+  it('keeps the checkbox and its words in one label, so the words toggle it', () => {
+    const label = /<label[^>]*\bfor="auto-prepare"[^>]*>([\s\S]*?)<\/label>/.exec(html)?.[1] ?? '';
+    expect(label).toContain('id="auto-prepare"');
+    expect(label).toContain('downloads the audio');
+  });
+
+  it('holds the prepare group in the song panel, hidden until a video is the song', () => {
+    expect(tagOf('prepare')).toMatch(/\bhidden\b/);
+    const panel = html.indexOf('id="song-panel"');
+    const group = html.indexOf('id="prepare"');
+    const devices = html.indexOf('aria-label="Devices"');
+    expect(panel).toBeGreaterThan(-1);
+    expect(group).toBeGreaterThan(panel);
+    expect(group).toBeLessThan(devices);
+  });
+
+  it('has the button, the progress list and the note the panel is drawn into', () => {
+    expect(tagOf('prepare-button')).toContain('type="button"');
+    expect(tagOf('prepare-steps')).toMatch(/\bhidden\b/);
+    expect(tagOf('prepare-note')).toContain('aria-live="polite"');
+  });
+
+  it('tells the singer in the embed note that the song can be prepared', () => {
+    const note = /id="embed-note"[^>]*>([^<]*)</.exec(html)?.[1] ?? '';
+    expect(note).toMatch(/Prepare the song/);
+    expect(note).toMatch(/not built yet/);
+  });
+});
+
 describe('style.css for the YouTube embed', () => {
   it('sizes the player at least 480 by 270 at 16:9', () => {
     const block = /\.embed-player\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';

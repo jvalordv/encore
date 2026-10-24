@@ -56,10 +56,24 @@
           <input id="link-input" data-testid="link-input" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="YouTube link" aria-label="YouTube link" />
           <button type="button" id="link-load" data-testid="link-load" title="Load the YouTube link">Load</button>
         </div>
+        <!-- Off unless ticked: a link is otherwise sent to the service only when
+             Prepare for scoring is pressed. Preparing downloads the video's
+             audio, which YouTube's terms restrict (service/README.md). -->
+        <label class="check" for="auto-prepare">
+          <input id="auto-prepare" data-testid="auto-prepare" type="checkbox" />
+          <span>Prepare YouTube songs automatically (downloads the audio; see service/README.md)</span>
+        </label>
         <div class="song-info">
           <div id="song-title" class="song-title" data-testid="song-title">No song loaded</div>
           <div id="song-duration" class="song-meta" data-testid="song-duration"></div>
-          <p id="embed-note" class="song-meta" data-testid="embed-note" hidden>Playing in YouTube's player. Live pitch and takes work here; the reference melody, scoring and stems need the song prepared, which is not built yet.</p>
+          <p id="embed-note" class="song-meta" data-testid="embed-note" hidden>Playing in YouTube's player. Live pitch and takes work here, with approximate timing. Prepare the song to have the app play it on its own clock; the reference melody, scoring and stems are not built yet.</p>
+        </div>
+        <!-- Shown while a YouTube video is the song. The button, the service's
+             progress and a note are all drawn from state.prepare. -->
+        <div id="prepare" class="prepare" data-testid="prepare" role="group" aria-label="Prepare for scoring" hidden>
+          <button type="button" id="prepare-button" data-testid="prepare-button">Prepare for scoring</button>
+          <ul id="prepare-steps" class="prepare-steps song-meta" data-testid="prepare-steps" hidden></ul>
+          <p id="prepare-note" class="song-meta" data-testid="prepare-note" role="status" aria-live="polite"></p>
         </div>
 
         <section class="panel-group" aria-label="Devices">

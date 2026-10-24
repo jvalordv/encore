@@ -13,6 +13,8 @@ import type { PitchFrame } from '../analysis/pitch';
 import type { MonitorMode } from '../audio/mic';
 import type { ClockKind, LoopRegion, TrackInfo, TransportState } from '../audio/transport';
 import { noteName } from '../render/pitch-lane';
+import { initialPrepare } from './prepare';
+import type { PrepareState } from './prepare';
 import type { TakeSummary } from './takes';
 
 /** How loudly the status line should speak. */
@@ -33,6 +35,11 @@ export interface AppState {
   embed: { videoId: string } | null;
   /** Seconds added to the latency while the clock is 'embed'. */
   embedOffsetS: number;
+  /**
+   * Where the linked song stands on the way to prepared audio, and what the
+   * song panel says about it. Phase 'none' while no video is the song.
+   */
+  prepare: PrepareState;
   positionS: number;
   loop: LoopRegion | null;
   durationS: number;
@@ -78,6 +85,7 @@ export function initialState(): AppState {
     clock: 'engine',
     embed: null,
     embedOffsetS: 0,
+    prepare: initialPrepare(),
     positionS: 0,
     loop: null,
     durationS: 0,
