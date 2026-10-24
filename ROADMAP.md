@@ -123,6 +123,82 @@ resume protocol in `CLAUDE.md`.
 
 ---
 
+## Estimates (2026-10-24)
+
+Agent wall-clock hours for the full pipeline per task (Sonnet implementer,
+three review lenses, adversarial verification, fixer and critic, live check
+where real hardware or services exist), calibrated on measured runs: P2-T1
+0.65 h, P2-T1b with P2-T1c in parallel 3.2 h, P2-T1d 3.4 h, GPU setup 0.45 h,
+P2-T2 1.8 h. Each estimate was challenged by a second estimator; the higher
+reasoned figure is kept. "Owner" is your active time (tests, listening,
+decisions), not agent time. Orchestrator review adds 0.25 to 1.5 h per task.
+
+| Task | Likely | Range | Owner | What drives it |
+|---|---|---|---|---|
+| P2-T3 Reference contour | 2.0 | 1.4-3.3 | 5 min | `pitch` extra, note segmenter, reference route |
+| P2-T4 Lyrics | 2.8 | 1.8-5.5 | 20 min | Whisper stack decision first; GB of weights |
+| P2-T5 Browser integration | 5.5 | 4.0-8.5 | 40 min | largest browser task; can run beside T3/T4 |
+| P2-T6 Live scoring | 3.4 | 2.5-5.5 | 45 min | phrase definition; speaker-mode gate |
+| P2-T7 Report card v1 | 2.6 | 1.9-4.0 | 15 min | three skins, take schema |
+| P2-T8 Phase 2 review | 1.8 | 0.8-3.5 | 60 min | your full real-hardware smoke test |
+| **Phase 2 rest** | **18.1** | 12.4-30.3 | 3 h | about 14 h critical path with T5 beside T3/T4 |
+| P3-T1 Take analysis | 3.5 | 2.2-5.5 | 20 min | `analysis` extra, DTW, vibrato, formants |
+| P3-T2 Rules engine | 1.5 | 1.0-2.5 | 20 min | severity and phrase design |
+| P3-T3 Coaching UI | 4.8 | 3.5-7.5 | 35 min | jump-to-moment, trend chips |
+| P3-T4 Range and key | 5.2 | 3.5-8.5 | 25 min | your listening test: WSOLA or rubberband |
+| P3-T5 Coaching copy | 0.7 | 0.4-1.2 | 10 min | after T3 freezes copy keys |
+| P3-T6 Phase 3 review | 1.2 | 0.7-2.0 | 45 min | full real session |
+| **Phase 3** | **16.9** | 11.3-27.2 | 2.6 h | about 11 to 12 h critical path |
+| P4-T1 Two-mic mode | 4.5 | 3.0-7.0 | 30 min | needs a second mic; crosstalk gate |
+| P4-T2 Enrollment | 4.8 | 3.0-8.5 | 40 min | speaker-embedding stack vs torchaudio 2.11 |
+| P4-T3 One-mic live split | 3.6 | 2.3-6.0 | 25 min | needs a second singer to tune |
+| P4-T4 One-mic post-take split | 6.5 | 4.0-11.0 | 45 min | least certain task in the plan |
+| P4-T5 Duet scoring, harmony | 4.0 | 2.5-6.5 | 20 min | needs P2-T4 to P2-T6 |
+| P4-T6 Duet report card | 2.2 | 1.3-3.5 | 10 min | chorus definition |
+| P4-T7 Phase 4 review | 1.6 | 1.0-2.8 | 40 min | two mics and a second person |
+| **Phase 4** | **27.2** | 17.1-45.3 | 3.5 h | gated by a second mic and singer |
+| P5-T1 Skin FX | 3.0 | 2.2-5.0 | 15 min | after P2-T6/T7 |
+| P5-T2 Two more skins | 1.3 | 0.8-2.5 | 15 min | you pick which two |
+| P5-T2b Self-host fonts | 0.8 | 0.5-1.6 | 5 min | no blockers; budget filler |
+| P5-T2c e2e in CI | 1.3 | 0.6-3.5 | 15 min | no `gh` here: CI logs relayed by you |
+| P5-T3 Settings panel | 3.8 | 2.5-5.5 | 20 min | moves controls most e2e tests drive |
+| P5-T4 Report card PNG | 2.6 | 1.8-4.2 | 15 min | after P3-T3 |
+| P5-T5 Retrospective | 0.3 | 0-0.6 | 25 min | Phase 6 decisions |
+| **Phase 5** | **13.1** | 8.4-22.9 | 1.8 h | T2b, T2c, T2 can run any time |
+| P6-T1 Tauri shell | 6.0 | 3.5-10.0 | 60 min | Rust toolchain; YouTube embed origin in the shell; drag-drop |
+| P6-T2 Service sidecar | 9.5 | 5.5-16.0 | 90 min | really three tasks; first-run multi-GB env |
+| P6-T3 Installers | 6.5 | 3.5-12.0 | 60 min | CI round trips; code-signing decision |
+| P6-T4 Retrospective | 0.3 | 0-0.8 | 30 min | GPU-less tier decision |
+| **Phase 6** | **22.3** | 12.5-38.8 | 4 h | mostly serial |
+
+- **Not inside any task, about 7 h (4 to 10):** fixes from the owner's
+  pending checklist (0.5 to 3 h), a written JSON contract before P2-T5 so
+  it can run beside P2-T3/T4 (0.5 h), a joint live check of separation,
+  pitch and lyrics sharing the 12 GB card (0.5 to 1 h), a Session test
+  harness with a fake Web Audio (1.5 h), shared duet e2e fixtures (0.75 h),
+  speaker bleed in server-side take analysis (1 to 2 h, or a stated
+  limit), third-party licence notices before an installer (0.5 h).
+- **Totals:** about 98 agent hours likely (62 to 165) plus about 7 h
+  cross-cutting and about 21 h of orchestrator review: about 126 h. With
+  service and browser tracks in parallel the critical path is about 90 h.
+  Owner time about 15 h.
+- **Follow-up backlog already listed under tasks:** about 32 h if all
+  worked (Phase 2 items 11.5, Phase 3 13, Phase 4 3, Phases 5 and 6 4.5);
+  new tasks will add more. Most are optional polish.
+- **Cost and calendar:** this pipeline used about 2 million subagent tokens
+  per task (11.7 M for the six units P2-T1 to P2-T2). The 30 remaining
+  tasks at the same rigour are about 60 M. Run continuously, that is
+  roughly 2 to 3 weeks; the weekly usage limit and the owner's test
+  sessions set the real calendar. A lighter pipeline (one review lens, no
+  adversarial votes) for low-risk tasks (copy, skins, fonts, CI) would cut
+  their cost about in half.
+- **Owner gates:** pending speaker/YouTube checklist (now); Whisper stack
+  approval and weights download (P2-T4); listening test (P3-T4); a second
+  mic and a second singer (Phase 4); Rust toolchain install (P6-T1);
+  code-signing decision (P6-T3).
+
+---
+
 ## Phase 0: Scaffold
 
 Goal: a repo any session can clone, check, and extend. No features yet.

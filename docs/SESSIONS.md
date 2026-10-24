@@ -53,12 +53,12 @@ of these.
 
 ## Rough cost per task
 
-Sizes are relative, not token counts. S = one short Sonnet run, M = one
-long run or two short, L = two or more long runs. Phase 0 is all S. Phase 1
-tasks are M (P1-T4 the tracker is L). Phase 2 is M, with P2-T2 and P2-T4
-being mostly owner-side setup. Phase 3 is M with P3-T4 L. Phase 4 is L.
-Spend the week's budget on Phases 1 and 2 first; coaching and duet are
-useless until the loop and the reference exist.
+Measured hours and per-task estimates for everything left are in
+`ROADMAP.md`, "Estimates". The full pipeline (implementer, three review
+lenses, adversarial verification, fixer, critic, live check) costs about
+2 million subagent tokens per task; use a lighter one for low-risk tasks.
+Spend the week's budget on Phases 2 and 3 first; duet and packaging are
+useless until the loop, the reference and coaching exist.
 
 ## Schedule suggestion
 
