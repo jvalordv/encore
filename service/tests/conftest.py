@@ -3,9 +3,11 @@
 `store` is a song cache in a temporary folder. `new_song` and `new_link` put a
 song in it the way the routes do, so store and pipeline tests start from real
 cache contents rather than hand-built folders. Every test also runs with the
-step registry emptied (see `no_runners`) and with yt-dlp out of reach (see
-`no_unfaked_yt_dlp`). `ydl`, `fakes` and `node_only` keep the YouTube code
-away from the network, ffmpeg and whatever this machine has on PATH.
+step registry emptied (see `no_runners`), with yt-dlp out of reach (see
+`no_unfaked_yt_dlp`) and with no real separation model to load (see
+`no_real_models`). `ydl`, `fakes` and `node_only` keep the YouTube code away
+from the network, ffmpeg and whatever this machine has on PATH, and `separator`
+stands in for the separation model.
 """
 
 import hashlib
@@ -14,14 +16,25 @@ from pathlib import Path
 
 import pytest
 
-from encore_service import pipeline, youtube
+from encore_service import pipeline, separation, youtube
 from encore_service.pipeline import initial_status
 from encore_service.store import SongMeta, SongStore
-from tests.fakes import FetchFakes, Ydl, install_fake_fetch, install_fake_ydl
+from tests.fakes import (
+    FakeSeparator,
+    FetchFakes,
+    Ydl,
+    install_fake_fetch,
+    install_fake_separator,
+    install_fake_ydl,
+)
 
 UNFAKED = (
     "A test reached yt-dlp without a fake. Use the `ydl` fixture, or replace "
     "youtube.lookup or the fetch calls (see tests/fakes.py)."
+)
+UNFAKED_MODEL = (
+    "A test reached the real separation model without a fake. Use the "
+    "`separator` fixture (see tests/fakes.py)."
 )
 
 
@@ -59,6 +72,30 @@ def no_unfaked_yt_dlp(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
     monkeypatch.setattr(youtube.yt_dlp, "YoutubeDL", Unfaked)
     yield reached
     assert not reached, UNFAKED
+
+
+@pytest.fixture(autouse=True)
+def no_real_models(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
+    """Start each test with no model held and no way to load a real one.
+
+    The registry is replaced by an empty one, so a model a test loads does not
+    show up in the next test's `/gpu`, and the loader refuses, so no test can
+    download weights. The attempt is also remembered and fails the test
+    afterwards, because the separation step turns any error into a failed step
+    and a test that expects a failure would otherwise pass for the wrong
+    reason. The `separator` fixture runs after this one and puts its fake in
+    the loader's place. Yields the list of attempts.
+    """
+    reached: list[str] = []
+
+    def unfaked(name: str, device: str) -> object:
+        reached.append(UNFAKED_MODEL)
+        raise AssertionError(UNFAKED_MODEL)
+
+    monkeypatch.setattr(separation, "models", separation.ModelRegistry())
+    monkeypatch.setattr(separation, "load_demucs", unfaked)
+    yield reached
+    assert not reached, UNFAKED_MODEL
 
 
 @pytest.fixture
@@ -121,3 +158,9 @@ def node_only(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict[str, str]]:
 def fakes(monkeypatch: pytest.MonkeyPatch) -> FetchFakes:
     """Fake download and conversion for the fetch step; see tests/fakes.py."""
     return install_fake_fetch(monkeypatch)
+
+
+@pytest.fixture
+def separator(monkeypatch: pytest.MonkeyPatch) -> FakeSeparator:
+    """A fake separation model that makes known stems; see tests/fakes.py."""
+    return install_fake_separator(monkeypatch)

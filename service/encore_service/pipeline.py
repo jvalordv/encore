@@ -4,10 +4,12 @@
 step's state in the song's status.json as it goes so the browser can poll
 progress. The work of a step is a runner registered in `RUNNERS`. A step with
 no runner yet is reported as skipped, with a note naming the ROADMAP task that
-builds it, so the browser can tell "not built" from "failed". To add a runner,
-import it here and replace its `None` in `RUNNERS`; nothing else changes.
-`queue_preparation` is how a song gets onto the job queue: the routes and the
-start-up resume all go through it.
+builds it, so the browser can tell "not built" from "failed". A runner that
+cannot do its work on this machine, or has none to do, raises `StepSkipped`
+and its step ends skipped with that reason, which stops the steps that need it
+without calling it a failure. To add a runner, import it here and replace its
+`None` in `RUNNERS`; nothing else changes. `queue_preparation` is how a song
+gets onto the job queue: the routes and the start-up resume all go through it.
 """
 
 import logging
@@ -16,6 +18,7 @@ import time
 from collections.abc import Callable
 from functools import partial
 
+from encore_service.errors import StepSkipped
 from encore_service.fetch import fetch_source
 from encore_service.jobs import JobQueue
 from encore_service.schemas import (
@@ -25,7 +28,8 @@ from encore_service.schemas import (
     StepName,
     StepStatus,
 )
-from encore_service.store import SongMeta, SongStore
+from encore_service.separation import separate_vocals
+from encore_service.store import STEM_FILES, SongMeta, SongStore
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +44,7 @@ Runner = Callable[[SongStore, str, Report], None]
 # Step name -> its runner, or None while the step is not built.
 RUNNERS: dict[StepName, Runner | None] = {
     "fetch": fetch_source,
-    "separation": None,
+    "separation": separate_vocals,
     "reference": None,
     "lyrics": None,
 }
@@ -126,9 +130,10 @@ def queue_preparation(store: SongStore, jobs: JobQueue, song_id: str) -> SongSta
     do for this song goes back to `queued` (progress cleared, no error or
     detail), so a step that failed or was skipped does not keep reading that
     way while its retry waits, and the status returned is the one after that
-    reset. A fetch whose audio has gone missing counts as not done. A song
-    that is already queued or running is left as it is and its current status
-    returned. Raises FileNotFoundError for a song with no status.
+    reset. A fetch whose audio has gone missing, or a separation whose stems
+    have, counts as not done. A song that is already queued or running is left
+    as it is and its current status returned. Raises FileNotFoundError for a
+    song with no status.
     """
     reset: list[SongStatus] = []
     accepted = jobs.submit(
@@ -169,15 +174,21 @@ def _is_done(
 ) -> bool:
     """Whether a step is done and what it made is still there.
 
-    Only the fetch leaves something to look for: the song's audio. A link whose
-    fetch finished but whose audio has since gone missing from the cache is not
-    done, whatever its status says, or adding the link again could never fetch
-    the audio back. An upload gets its audio back by being added again instead.
+    The fetch and the separation leave files to look for: the song's audio,
+    and its two stems. A link whose fetch finished but whose audio has since
+    gone missing from the cache is not done, whatever its status says, or
+    adding the link again could never fetch the audio back. An upload gets its
+    audio back by being added again instead. Likewise a separation whose stems
+    have gone: with one missing the stems route would answer "not separated
+    yet" for good, since adding the song again would find the step done and
+    leave it be.
     """
     if getattr(status.steps, step).state != "done":
         return False
     if step == "fetch" and _applies(step, status.source):
         return store.source_path(song_id) is not None
+    if step == "separation":
+        return all(store.stem_path(song_id, stem) is not None for stem in STEM_FILES)
     return True
 
 
@@ -186,8 +197,8 @@ def prepare(store: SongStore, song_id: str) -> None:
 
     Safe to repeat: finished steps are left alone and every other step is
     judged afresh, so a step skipped as "not built yet" runs once its runner
-    is registered, a failed step is retried and a fetch whose audio has gone
-    missing is run again.
+    is registered, a failed step is retried, and a fetch whose audio has gone
+    missing, or a separation whose stems have, is run again.
     """
     for step in STEP_ORDER:
         # Read on every turn: the step before this one decides what it does.
@@ -221,6 +232,12 @@ def _run_step(
     )
     try:
         runner(store, song_id, make_reporter(store, song_id, step))
+    except StepSkipped as skipped:
+        # Not a failure, so no traceback: the reason is for the browser and
+        # one line in the log says the step was left out.
+        logger.info("Step %s skipped for song %s: %s", step, song_id, skipped.reason)
+        _skip(store, song_id, step, skipped.reason)
+        return
     except (Exception, SystemExit) as exc:
         # SystemExit too: a library that calls sys.exit() would otherwise
         # leave this step "running" for good. The traceback goes to the

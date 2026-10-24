@@ -101,6 +101,7 @@ def test_upload_returns_a_status_named_by_the_hash(
         "url": None,
         "duration_s": body["duration_s"],
         "video_id": None,
+        "stem_gain": 1.0,
     }
 
 

@@ -10,8 +10,9 @@ lyrics, scoring and coaching. See `../docs/ARCHITECTURE.md`.
 Status: songs can be added (`POST /songs`, `POST /songs/url`,
 `GET /songs/{id}`, `GET /songs/{id}/audio`): uploads are hashed, cached and
 queued for preparation, a link to a YouTube video is looked up, cached and its
-audio fetched (see "YouTube links"), and `/health` and `/gpu` work. The other
-preparation steps (separation, reference pitch, lyrics) arrive in ROADMAP
+audio fetched (see "YouTube links"), the vocal is separated from the rest
+(`GET /songs/{id}/stems/{stem}`, see "Separation"), and `/health` and `/gpu`
+work. The other preparation steps (reference pitch, lyrics) arrive in ROADMAP
 Phase 2, so for now each reports `skipped` with a "Not built yet" note.
 `/analyze` and `/duet/*` are stubs that answer 501 until Phases 3 and 4.
 
@@ -118,8 +119,8 @@ and pin every package today.
    that cache (`~/.cache/huggingface/hub`, or `HF_HOME`), and it falls back to
    PyTorch's hub cache (`~/.cache/torch/hub/checkpoints`, or `TORCH_HOME`) for
    the older model repository. On Windows `~` is your user folder. The
-   default `htdemucs` is 84 MB; `htdemucs_ft`, the model ROADMAP P2-T2 names,
-   is four of them, 336 MB.
+   default, `htdemucs_ft`, is four models of 84 MB each, 336 MB; plain
+   `htdemucs` (`ENCORE_DEMUCS_MODEL=htdemucs`) is 84 MB.
 
 ## Run
 
@@ -146,21 +147,28 @@ The browser adds a song, then polls it while the service prepares it.
 | `POST /songs/url` | Add a YouTube video by link: a JSON body `{"url": "..."}`. The song's id is `yt-` and the video's id, so adding the same video again is a cache hit that asks YouTube nothing and queues whatever has not finished. Answers with the song's status. See "YouTube links". |
 | `GET /songs/{id}` | The song's status: `title`, `duration_s`, and for each step (`fetch`, `separation`, `reference`, `lyrics`) a `state` (`queued`, `running`, `done`, `failed` or `skipped`), a `progress` from 0 to 1, an `error` when it failed and a `detail` saying why it was skipped. 404 for an unknown id. |
 | `GET /songs/{id}/audio` | The stored source file, so the browser can reload a song without the original. 404 for an unknown id, 409 while the song has no source audio. |
+| `GET /songs/{id}/stems/{stem}` | One stem the separation step made, `vocals` or `no_vocals`, as 24-bit FLAC (`audio/flac`, with range requests) and the song's stem gain in the `X-Stem-Gain` header. 404 for an unknown id or any other stem name, 409 while the song has not been separated. See "Separation". |
 
 Songs are prepared one at a time in a background queue, so two songs never
 compete for GPU memory. `fetch` is `skipped` for uploads, which arrive with
 their audio, and is the download for a link. A step whose model is not built
 yet is `skipped` with a "Not built yet" detail naming the ROADMAP task; add
-the song again after that task lands and the step runs.
+the song again after that task lands and the step runs. A step that cannot
+run on this machine, such as separation without its extra installed, is
+`skipped` too, with a detail that says what to do; the steps that need it are
+`skipped` with "Needs <step>".
 
 The cache is under `service/cache` (or `ENCORE_CACHE_DIR`), one folder per song:
 
 ```
-<song_id>/source.<ext>   the audio, as uploaded; source.flac for a link
-<song_id>/meta.json      title, duration, where it came from
-<song_id>/status.json    the state of each step
-<song_id>/.fetch/        a link's download while it is under way
-.incoming/               uploads still arriving
+<song_id>/source.<ext>      the audio, as uploaded; source.flac for a link
+<song_id>/meta.json         title, duration, where it came from, stem gain
+<song_id>/status.json       the state of each step
+<song_id>/vocals.flac       the sung part, from the separation step
+<song_id>/no_vocals.flac    everything else, from the separation step
+<song_id>/.fetch/           a link's download while it is under way
+<song_id>/.separate/        the separation's working files while it runs
+.incoming/                  uploads still arriving
 ```
 
 Deleting a song's folder makes the service forget it; add the file again to
@@ -237,6 +245,107 @@ It exists for your own practice, on your own machine. Nothing is redistributed:
 the cache is never committed and stems never leave the machine. Whether to use
 it is your decision, and the service prepares only what it is asked to.
 
+## Separation
+
+The `separation` step splits a song into its voice and everything else with
+[demucs](https://github.com/adefossez/demucs). The voice is the reference to
+score a singer against, and the rest is the backing to sing over. It needs the
+`separation` extra ("GPU setup", step 4), and ffmpeg for m4a and any other
+file libsndfile cannot read. Without the extra the step is `skipped` with the
+command that installs it, the steps that need it are skipped with "Needs
+separation", and the song is still stored and playable.
+
+**What it makes**, in the song's folder, and served by
+`GET /songs/{id}/stems/vocals` and `GET /songs/{id}/stems/no_vocals`:
+
+- `vocals.flac`: the sung part.
+- `no_vocals.flac`: the sum of every other source the model makes (drums, bass
+  and the rest), which is the karaoke backing.
+
+Both are stereo 24-bit FLAC at the model's sample rate (44.1 kHz for the demucs
+models), whatever the song's own. FLAC rather than WAV because it is lossless
+at about half the size for music, and every browser decodes it. A mono song is
+separated as two identical channels, and audio of more than two channels is
+folded down to stereo first, so a vocal in the centre of 5.1 is kept. A song of
+unknown length, such as an m4a upload, gets its length from the decoded audio.
+
+**What the stems are.** The model's estimates of the voice and of the rest,
+not an exact split of the song, so `vocals + no_vocals` is not the song and
+nothing may treat it as that. The models learn from music: they drop sound
+effects, and nothing above about 16 kHz comes out in either stem. With the
+stem gain (below) undone, the difference between the song and the two stems
+added back together is about 21 dB below the song's level on a sung Creative
+Commons song, and only about 12 dB below it on a film soundtrack full of
+effects (Big Buck Bunny), where 44% of the difference's energy falls in 8 of
+its 634 seconds.
+
+**Level.** If either stem would clip (a peak over 0.999), both are scaled by
+the same factor, so the balance between them, and their sum, are the model's
+own times that factor. The factor is stored as `stem_gain` in `meta.json`, 1.0
+when nothing was scaled, and sent with each stem as the `X-Stem-Gain` response
+header, which a page on an allowed origin may read. Divide a stem by it for its
+level on the song's own scale, before comparing that level with the song's or
+with another song's. A player that mixes the stems with the original should
+multiply the original by it.
+
+**A song with no singing** still has a vocal stem that is not silent: the
+model hands it the odd animal call or effect. Over the whole song a few such
+seconds make the vocal stem's RMS level, against the song's, look like
+singing (-17 dB for the film, -10 dB for the sung song), so that global ratio
+cannot tell the two apart. The vocal stem's RMS level a second at a time, with
+the stem gain undone, can: the film's is above -40 dBFS in 3.5% of its 634
+seconds (its 95th percentile is -42 dBFS), the sung song's in 81% of its 231,
+and that song's median is -23 dBFS.
+
+**The model** is `ENCORE_DEMUCS_MODEL`, default `htdemucs_ft`: four
+fine-tuned htdemucs models, each run over the whole song and each kept for the
+one source it is best at. That is about four times the work of plain `htdemucs`
+for a slightly cleaner split. Any name demucs knows works, as long as the model
+makes a `vocals` source, as `htdemucs`, `htdemucs_6s` (guitar and piano go into
+the backing) and `mdx_extra` do; a model without one fails the step as it is
+loaded, before any song is read. A name with a `/` in it, or one that starts
+with `hf://`, is fetched from that Hugging Face user's repository, and the file
+names the code that builds the model, so set one only for a repository you
+trust. It runs as the demucs command does: the song is normalised by its mono
+mix and cut into overlapping segments that are cross-faded, and the model is
+run once at a random time shift, with the bag's models combined by their
+weights. The random shift means two runs differ slightly.
+
+**Weights** are not part of the install. The first song downloads them (84 MB
+for `htdemucs`, 336 MB for `htdemucs_ft`) into the cache described in "GPU
+setup", step 6, and the model then stays loaded until the service stops, which
+`GET /gpu` shows under `loaded_models`, as `demucs:htdemucs_ft@cuda`. A first
+song therefore takes longer, and fails with the reason if the download cannot
+be made.
+
+**Device.** `ENCORE_DEVICE` picks it: `cuda` when torch sees a GPU, otherwise
+`cpu`. A CPU is much slower.
+
+**Time and memory**, measured on the RTX 4070 Ti with `htdemucs_ft` and real
+weights (2026-10-24). A 10.6-minute track separated in about 44 s once the
+model was loaded, about 14 times faster than real time; a 3.9-minute song took
+about 26 s while another program was also using the GPU. The first song of a
+fresh install spent about 16 s more downloading and loading the weights. GPU
+memory peaked about 1.4 GB above what the machine used before, and about
+1.3 GB stays in use afterwards while the model is loaded. Writing both stems
+of a four-minute song takes under 2 s. RAM is the larger cost: the song is held
+as 32-bit floats in several copies at once, about 0.6 GB per minute of audio
+at the peak on top of about 1 GB for the service (a stand-in run of a
+10-minute song peaked at 6.5 GiB), so a 15-minute link, the longest allowed,
+needs about 10 GB. On the CPU the same work runs about 12 times slower than on
+this GPU (about 45 s per minute of audio in a stand-in run). The stems of the
+10.6-minute track came to 43 MB (vocals) and 94 MB (backing).
+
+**When it fails**, the step's `error` says what and why, as for the fetch step.
+Running out of GPU memory, while loading the model or while separating, is
+told apart: the message says to close other programs that use the GPU, or to
+set `ENCORE_DEVICE=cpu`. Stems are written to `<song_id>/.separate/` first and
+moved in only when both are whole, so a stem that is served is never
+half-written, and the folder is removed whatever happens. If the move itself
+fails, neither stem is left, so the two are never a mismatched pair. Add the
+song again to retry. That also runs a finished separation again when its stems
+have gone from the song's folder.
+
 ## Configuration
 
 Environment variables, all optional:
@@ -244,6 +353,7 @@ Environment variables, all optional:
 | Variable | Default | Meaning |
 |---|---|---|
 | `ENCORE_DEVICE` | `cuda` if torch sees CUDA, else `cpu` | Device for the models. |
+| `ENCORE_DEMUCS_MODEL` | `htdemucs_ft` | The demucs model that separates the vocal (see "Separation"). Any name demucs knows; blank means the default. |
 | `ENCORE_CACHE_DIR` | `service/cache` | Where songs and their stems are stored. For YouTube links the path must not hold a `$` that yt-dlp would expand, such as `$HOME`; the fetch step fails and says so. |
 | `ENCORE_PORT` | `8765` | Port for `python -m encore_service`. |
 | `ENCORE_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated origins allowed by CORS. |
@@ -258,4 +368,7 @@ PowerShell: `$env:ENCORE_DEVICE = "cpu"` before starting. Linux:
 uv run ruff check . && uv run ruff format --check . && uv run pytest
 ```
 
-They need no GPU extra and pass with or without one installed.
+They need no GPU extra and pass with or without one installed. The tests that
+run demucs itself (`tests/test_separation_torch.py`) use small models with
+random weights, download nothing, and are skipped where torch is absent, as in
+CI; the CUDA ones are skipped where there is no GPU.

@@ -7,7 +7,11 @@ resume protocol in `CLAUDE.md`.
 
 ## Current state
 
-- **Last done:** the owner's YouTube priority, end to end. P2-T1d (opt-in
+- **Last done:** P2-T2 (vocal separation with demucs `htdemucs_ft` on the
+  GPU: `vocals.flac` and `no_vocals.flac` per song, served at
+  `/songs/{id}/stems/{stem}`; about 14 times real time on the 4070 Ti; 768
+  service tests). Before it the GPU setup (per-feature extras, CUDA 12.8
+  PyTorch, `98aa41e`) and the owner's YouTube priority, end to end. P2-T1d (opt-in
   Prepare for scoring: the service fetches the audio, the app switches
   sound and clock to the engine with the video muted and following; 1110
   unit tests, 51 e2e). Before it P2-T1c (embedded player on a shared
@@ -46,18 +50,22 @@ resume protocol in `CLAUDE.md`.
   prepare path opt-in, and the README must not paper over it. **Owner
   decision (2026-10-23): keep the prepare path, opt-in and off by
   default, as specced.** Do not re-ask.
-- **Next:** P2-T2 (separation with demucs). The `separation` extra is
-  installed and `GET /gpu` reports CUDA on the 4070 Ti (owner chose a lean
-  install, 2026-10-24: one extra per feature, each installed when its task
-  starts). Then P2-T3, P2-T4, P2-T5.
+- **Next:** P2-T3 (reference contour with torchcrepe). It declares and
+  installs the `pitch` extra (small: torchcrepe bundles its 72 MB of
+  weights; resampy and numba come with it), per the owner's lean-install
+  choice (2026-10-24: one extra per feature, each installed when its task
+  starts). Then P2-T4 (decide the Whisper stack first, see its entry) and
+  P2-T5.
 - **Machine facts (checked 2026-10-24):** Windows 10, RTX 4070 Ti 12 GB,
   NVIDIA driver 617.42 (CUDA 13.4 capable), `uv` 0.11.16, Python 3.11.15,
   `ffmpeg` 9.0.2 (winget), Node 24 on PATH (yt-dlp's JavaScript runtime);
   no Deno. `service/.venv` has the CPU deps, yt-dlp[default] and the
   `separation` extra (torch and torchaudio 2.11.0+cu128, demucs 4.1.0).
   In `service/` use `uv sync --extra separation` (or `--inexact`); a plain
-  `uv sync` uninstalls torch. **Drive C: is nearly full: about 25 GB free
-  of 3.3 TB.** uv's cache still holds the cu130 torch wheel from a first
+  `uv sync` uninstalls torch. **Drive C: had about 25 GB free during the
+  GPU install and 156 GB at the P2-T2 commit (space freed outside these
+  sessions); check before large downloads.** uv's cache still holds the
+  cu130 torch wheel from a first
   install (about 2.7 GiB); `uv cache clean torch torchaudio` frees it once
   nothing holds the files (it was locked on 2026-10-24, probably by a
   virus scan). Keep 15 GB free; Whisper weights (P2-T4) take several GB.
@@ -489,25 +497,67 @@ lyrics, and scores each take against it.
   - Note: e2e tests with real-time bands flaked under heavy CPU load from
     another project's Playwright run on this machine; rerun before blaming
     a change, and prefer condition waits when touching those tests.
-- [ ] **P2-T2** (S) Separation. Demucs (`htdemucs_ft`) producing
-  `vocals.wav` and `no_vocals.wav`. Configurable model id. Honour
-  `ENCORE_DEVICE` env (`cuda` default when available).
+- [x] **P2-T2** (S) Separation. Demucs (`htdemucs_ft`) producing
+  `vocals.flac` and `no_vocals.flac` (24-bit FLAC, not WAV: the drive is
+  nearly full). Configurable model id. Honour `ENCORE_DEVICE` env (`cuda`
+  default when available).
+  - Done: `separation.py` (runner `separate_vocals`, lazy model registry,
+    soundfile I/O with an ffmpeg fallback, julius resampling), `errors.py`
+    (`StepSkipped`), `GET /songs/{id}/stems/{stem}` with `X-Stem-Gain`,
+    `ENCORE_DEMUCS_MODEL`; 768 service tests (741 pass with torch blocked,
+    the CI path). Review fixes: the song's mean was restored into every
+    stem, so the stems summed to the mix plus extra DC (now shared once);
+    a done separation whose stems were deleted never re-ran; an OOM while
+    loading the model got the generic message; `stem_gain` never reached
+    the browser (now the `X-Stem-Gain` header); tests now pin the
+    normalisation and the apply_model arguments.
+  - Real run on the 4070 Ti (real `htdemucs_ft` weights, 336 MB into the
+    Hugging Face cache, first load about 16 s): Big Buck Bunny (10.6 min)
+    in about 44 s, about 14 times real time; VRAM peak about 1.4 GB over
+    idle, about 1.3 GB resident after. A CC BY song with singing (3.9 min,
+    licence read from YouTube's metadata) in about 26 s with another
+    program on the GPU, `stem_gain` 0.909, stems summing back within
+    -21.5 dB. Stems exactly the source length, zero-lag aligned.
+  - Follow-up: no length cap for uploads; RAM peaks at about 0.6 GB per
+    minute of audio, so a multi-hour file would exhaust memory. Cap
+    uploads like links, or separate in chunks.
+  - Follow-up: the first-use weight download shows as "running 0%" for
+    about 16 s with no text; let a running step carry a short note.
+  - Follow-up: `.separate/` and `.fetch/` left by a crash are only cleared
+    when that song runs again; `recover_interrupted` could clear them.
+  - Follow-up: declare `julius` in the `separation` extra (imported
+    directly, only a transitive dependency of demucs today).
+  - Follow-up: the ffmpeg decode helper now exists twice (`youtube.py`,
+    `separation.py`); share one when a third caller appears (P3-T1).
+  - Follow-up: about 1.3 GB stays on the GPU after the first song. Fine
+    alone on 12 GB; once crepe and Whisper share the process, consider
+    releasing the allocator cache after each song.
+  - Follow-up: the Hugging Face cache warns that symlinks are unavailable
+    on this Windows machine and runs degraded (copies instead of links).
+    Harmless at this size; Windows Developer Mode would enable symlinks.
 - [ ] **P2-T3** (S) Reference contour and notes. `torchcrepe` (full model) on
-  `vocals.wav` at 10 ms hop with Viterbi decoding and a confidence gate.
+  `vocals.flac` at 10 ms hop with Viterbi decoding and a confidence gate.
   Median filter for octave errors. Segment into notes (`docs/COACHING.md`
   rules). Save `reference.json` using the contour and notes schemas.
-  - Follow-up (from P2-T1b): when `vocals.wav` is near silent (a karaoke
-    upload linked from YouTube), mark the step `skipped` with a reason the
-    browser can show, not a flat contour. Today a runner can only finish
-    (done) or raise (failed): add a `StepSkipped(reason)` exception that
-    `pipeline._run_step` turns into `skipped` with that detail.
+  - Follow-up (from P2-T1b): when `vocals.flac` holds no singing (a karaoke
+    upload linked from YouTube), raise `StepSkipped` (built in P2-T2,
+    `encore_service/errors.py`) with a reason the browser can show, not a
+    flat contour. Decide by the share of 1 s windows where the vocal stem
+    (divided by `stem_gain`) is above about -40 dBFS, NOT by a global
+    vocals-to-mix ratio: measured 3.5% for a film with no singing versus
+    81% for a sung song, while the global ratio was -17 dB versus -10 dB.
+    Test it on synthetic signals with known answers.
+  - Note (from P2-T2): stems are 44.1 kHz while the source may be 48 kHz;
+    contour times come from the stem's own rate. When torchcrepe joins the
+    process, move the model registry out of `separation.py` and give each
+    model family its own prefix in `/gpu`'s `loaded_models`.
   - Note (GPU setup): declare the `pitch` extra (torch, torchcrepe) in
     `service/pyproject.toml`. torchcrepe 0.0.24 is compatible with torch
     2.11 and bundles its weights, but `torchcrepe.load.audio` is
     `torchaudio.load`, which needs torchcodec (not installed): read audio
     with soundfile and pass tensors to `torchcrepe.predict`. It pulls
     resampy and numba.
-- [ ] **P2-T4** (S) Lyrics. WhisperX on `vocals.wav` for word-level
+- [ ] **P2-T4** (S) Lyrics. WhisperX on `vocals.flac` for word-level
   timestamps, saved as `lyrics.json`. Language auto-detected. Degrade
   gracefully when no words are found (instrumental, rap flagged as
   unpitched).
@@ -521,7 +571,12 @@ lyrics, and scores each take against it.
     as a subprocess; or moving the whole project to torch 2.8. Pick one
     deliberately and record it in `docs/ARCHITECTURE.md`. Mind disk space.
 - [ ] **P2-T5** (S) Browser integration. Extend `src/service/client.ts`
-  (created in P2-T1d) with the rest of the status and stem fetches. On song load, upload to the service if
+  (created in P2-T1d) with the rest of the status and stem fetches.
+  Stems come from `GET /songs/{id}/stems/{vocals|no_vocals}` (24-bit FLAC,
+  44.1 kHz) with an `X-Stem-Gain` header: the original must be multiplied
+  by that gain to sit at the stems' level in the mix slider. P2-T1d stops
+  polling once fetch is done; keep polling through separation, reference
+  and lyrics here. On song load, upload to the service if
   reachable, show prep progress in the song panel, and swap in the stems:
   mix slider between original, karaoke, and vocal-only guide; reference
   contour drawn in the pitch lane; lyrics line with word highlight.

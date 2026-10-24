@@ -8,9 +8,11 @@ link to one YouTube video instead: it checks the link, asks YouTube what the
 video is, and creates the song as `yt-<video id>` for the fetch step to fill.
 `GET /songs/{id}` reports per-step progress for the browser to poll, and `GET
 /songs/{id}/audio` serves the stored source so a song can be reloaded without
-the original file. Storage lives in `store.py`, the queue in `jobs.py`, the
-steps in `pipeline.py` and the YouTube access in `youtube.py`; this module is
-the HTTP edge over them.
+the original file. `GET /songs/{id}/stems/{stem}` serves the vocal or the
+backing that the separation step made, with the level they were scaled by in
+the `X-Stem-Gain` header. Storage lives in `store.py`, the queue in `jobs.py`,
+the steps in `pipeline.py` and the YouTube access in `youtube.py`; this module
+is the HTTP edge over them.
 """
 
 import hashlib
@@ -27,9 +29,22 @@ from encore_service.config import Settings
 from encore_service.jobs import JobQueue
 from encore_service.pipeline import initial_status, queue_preparation
 from encore_service.schemas import SongLinkRequest, SongStatus
-from encore_service.store import AUDIO_MEDIA_TYPES, SongMeta, SongStore
+from encore_service.store import (
+    AUDIO_MEDIA_TYPES,
+    STEM_FILES,
+    STEM_MEDIA_TYPE,
+    SongMeta,
+    SongStore,
+)
 
 router = APIRouter(prefix="/songs", tags=["songs"])
+
+# Sent with each stem: what both stems were scaled by so that neither clips
+# (1.0 if they were not), which the original must be scaled by to be mixed
+# with them. A header rather than a field of the status, so the player gets it
+# with the very file it belongs to. app.py lets a page on another origin read
+# it.
+STEM_GAIN_HEADER = "X-Stem-Gain"
 
 _MIB = 1024 * 1024
 # The service is local, so this only keeps a wrong file (a video, a disk
@@ -223,3 +238,38 @@ def get_song_audio(song_id: str, request: Request) -> FileResponse:
     if source is None:
         raise HTTPException(status_code=409, detail="Song not fetched yet.")
     return FileResponse(source, media_type=AUDIO_MEDIA_TYPES[source.suffix])
+
+
+@router.get(
+    "/{song_id}/stems/{stem}",
+    response_class=FileResponse,
+    responses={
+        404: {"description": "No such song, or no such stem."},
+        409: {"description": "The song has not been separated yet."},
+    },
+)
+def get_song_stem(song_id: str, stem: str, request: Request) -> FileResponse:
+    """Serve one stem of the song, `vocals` or `no_vocals`, as 24-bit FLAC.
+
+    The stems are the model's estimates, not an exact split of the song. The
+    response carries the song's stem gain in the X-Stem-Gain header: divide a
+    stem by it for its level on the song's own scale.
+    """
+    store: SongStore = request.app.state.store
+    if not store.exists(song_id):
+        raise HTTPException(status_code=404, detail="No such song.")
+    # A name that is no stem is told apart from a stem not made yet, which
+    # stem_path alone could not do. The name is only ever a key into STEM_FILES,
+    # so nothing in the request reaches the file system.
+    if stem not in STEM_FILES:
+        raise HTTPException(status_code=404, detail="No such stem.")
+    path = store.stem_path(song_id, stem)
+    if path is None:
+        raise HTTPException(status_code=409, detail="Song not separated yet.")
+    meta = store.read_meta(song_id)
+    # Without a readable meta the gain is not known, and 1.0 is what a song
+    # whose stems were not scaled records.
+    gain = meta.stem_gain if meta is not None else 1.0
+    return FileResponse(
+        path, media_type=STEM_MEDIA_TYPE, headers={STEM_GAIN_HEADER: str(gain)}
+    )

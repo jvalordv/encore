@@ -2,10 +2,12 @@
 
 A song lives in `<cache_dir>/<song_id>/` as `source.<ext>` (the audio),
 `meta.json` (what the song is) and `status.json` (how far preparation has
-got). Uploads stream into `<cache_dir>/.incoming/` first and are moved into
-place once hashed. A linked song is created with no audio at all; its fetch
-step works in a folder of its own and moves the finished file into place
-(`install_source`). The routes, the job queue and the preparation steps all
+got), plus the stems the separation step makes, `vocals.flac` and
+`no_vocals.flac`. Uploads stream into `<cache_dir>/.incoming/` first and are
+moved into place once hashed. A linked song is created with no audio at all;
+its fetch step works in a folder of its own and moves the finished file into
+place (`install_source`), and the separation step does the same for each stem
+(`install_stem`). The routes, the job queue and the preparation steps all
 reach the cache through `SongStore`, so this is the one module that builds a
 path from an id, and the id check that guards against path traversal lives
 here too.
@@ -21,7 +23,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from encore_service.schemas import (
     SongSource,
@@ -50,6 +52,11 @@ AUDIO_MEDIA_TYPES = {
     ".ogg": "audio/ogg",
     ".opus": "audio/ogg",
 }
+
+# The stems the separation step makes, by the name a request uses, and the
+# file each is kept in. A request never builds a path: it picks a key.
+STEM_FILES = {"vocals": "vocals.flac", "no_vocals": "no_vocals.flac"}
+STEM_MEDIA_TYPE = "audio/flac"
 
 # Written to a step's error by recover_interrupted; shown to the user as is.
 INTERRUPTED_MESSAGE = (
@@ -80,6 +87,13 @@ class SongMeta(BaseModel):
     url: str | None = None  # the link a youtube song came from; None for files
     duration_s: float | None = None
     video_id: str | None = None  # None for files
+    # What both stems were multiplied by so that neither clips, 1.0 when they
+    # were not scaled. Divide a stem by it for its level on the song's own
+    # scale; the original times it is the level to mix a stem against, which
+    # the browser needs to do fairly. It is all there is to undo: the stems
+    # are the model's estimates and add up to the song only roughly (see
+    # separation.py), so vocals + no_vocals is never the song itself.
+    stem_gain: float = Field(default=1.0, gt=0, le=1)
 
 
 def _replace(src: Path, dst: Path) -> None:
@@ -208,6 +222,18 @@ class SongStore:
                 return candidate
         return None
 
+    def stem_path(self, song_id: str, stem: str) -> Path | None:
+        """A finished stem file, or None if there is none (yet).
+
+        `stem` is "vocals" or "no_vocals". Anything else, including a name
+        built to look like a path, has no file, whatever is on disk.
+        """
+        name = STEM_FILES.get(stem)
+        if name is None or not is_valid_id(song_id):
+            return None
+        candidate = self.root / song_id / name
+        return candidate if candidate.is_file() else None
+
     def incoming_path(self) -> Path:
         """A fresh path to stream one upload into; the file is not created."""
         folder = self.root / INCOMING_DIR
@@ -288,6 +314,41 @@ class SongStore:
         with self._lock:
             _replace(finished, target)
         return target
+
+    def install_stem(self, song_id: str, stem: str, finished: Path) -> Path:
+        """Move a finished stem file into the song's folder under its name.
+
+        Atomic like `install_source`: the stem's file is either absent, as it
+        was, or whole, so a half-written stem is never served. `finished`
+        should be on the same volume as the cache, which a file in the song's
+        own folder is. Raises ValueError for a stem that is not a known one.
+        """
+        name = STEM_FILES.get(stem)
+        if name is None:
+            raise ValueError(f"Unknown stem: {stem!r}")
+        target = self.song_dir(song_id) / name
+        with self._lock:
+            _replace(finished, target)
+        return target
+
+    def set_stem_gain(self, song_id: str, gain: float) -> None:
+        """Record in meta.json what the song's stems were scaled by.
+
+        A locked read-modify-write, so it cannot undo a change to another
+        field made at the same time. Raises FileNotFoundError when the song
+        has no readable meta.json, and ValueError for a gain outside (0, 1].
+        """
+        folder = self.song_dir(song_id)
+        with self._lock:
+            meta = _load(folder / META_FILE, SongMeta)
+            if meta is None:
+                raise FileNotFoundError(f"No meta stored for song {song_id}")
+            # Validated by building a new SongMeta, which checks the range;
+            # assigning to the field would not.
+            _write_json(
+                folder / META_FILE,
+                SongMeta.model_validate({**meta.model_dump(), "stem_gain": gain}),
+            )
 
     def set_duration(self, song_id: str, duration_s: float) -> SongStatus:
         """Record a song's measured length in meta.json and status.json.

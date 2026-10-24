@@ -1,6 +1,7 @@
 """FastAPI application factory for the encore service.
 
-`create_app` wires CORS from the settings, mounts every router and gives the
+`create_app` wires CORS from the settings (and lets a page read the one custom
+header the service sends, the stem gain), mounts every router and gives the
 app a lifespan that owns the song store and the job queue; `app` is the
 instance uvicorn serves (`encore_service.app:app`). On start the lifespan also
 settles what the last run left behind: interrupted steps are marked failed and
@@ -78,6 +79,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origins=list(settings.allowed_origins),
         allow_methods=["*"],
         allow_headers=["*"],
+        # A page on another origin (the browser app) reads only the headers
+        # listed here, besides the few every response is allowed to show.
+        expose_headers=[songs.STEM_GAIN_HEADER],
     )
     for module in (health, gpu, songs, analyze, duet):
         app.include_router(module.router)

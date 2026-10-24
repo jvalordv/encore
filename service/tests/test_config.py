@@ -7,6 +7,7 @@ import pytest
 
 from encore_service.config import (
     DEFAULT_CACHE_DIR,
+    DEFAULT_DEMUCS_MODEL,
     DEFAULT_MAX_SONG_S,
     DEFAULT_ORIGINS,
     Settings,
@@ -62,6 +63,28 @@ def test_bad_max_song_s_is_a_clear_error_that_quotes_the_value(raw: str) -> None
         Settings.from_env({"ENCORE_MAX_SONG_S": raw})
     assert repr(raw.strip()) in str(raised.value)
     assert "positive integer" in str(raised.value)
+
+
+def test_the_demucs_model_defaults_to_the_fine_tuned_bag() -> None:
+    settings = Settings.from_env({})
+    assert settings.demucs_model == DEFAULT_DEMUCS_MODEL == "htdemucs_ft"
+    assert Settings().demucs_model == "htdemucs_ft"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("htdemucs", "htdemucs"),
+        ("  htdemucs_6s  ", "htdemucs_6s"),
+        ("hf://someone/their_model", "hf://someone/their_model"),
+        # Blank counts as unset, as it does for every other variable.
+        ("", "htdemucs_ft"),
+        ("   ", "htdemucs_ft"),
+    ],
+)
+def test_the_demucs_model_is_read_from_the_environment(raw: str, expected: str) -> None:
+    settings = Settings.from_env({"ENCORE_DEMUCS_MODEL": raw})
+    assert settings.demucs_model == expected
 
 
 def test_device_falls_back_to_cpu_without_torch(

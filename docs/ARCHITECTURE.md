@@ -195,12 +195,30 @@ reference melody, lyrics, scoring, and coaching when it is up.
   that were queued but never reached; a failed song is never auto-resumed,
   so a file that crashes a step cannot crash-loop the service.
 - **Cache.** `service/cache/<song_id>/` holds `source.<ext>`, `meta.json`
-  (title, source, url, duration), `vocals.wav`, `no_vocals.wav`,
-  `reference.json`, `lyrics.json`, `status.json`. Deleting the folder
-  re-prepares the song. Never committed. Uploads stream into
-  `service/cache/.incoming/` and are moved into place once hashed; JSON is
-  written atomically and `status.json` last, so a half-made folder is not a
-  song. Only a finished `source.<ext>` from a fixed list is ever served.
+  (title, source, url, duration, `stem_gain`), `vocals.flac`,
+  `no_vocals.flac`, `reference.json`, `lyrics.json`, `status.json`.
+  Deleting the folder re-prepares the song. Never committed. Uploads stream
+  into `service/cache/.incoming/` and are moved into place once hashed; JSON
+  is written atomically and `status.json` last, so a half-made folder is not
+  a song. Only a finished `source.<ext>` from a fixed list is ever served,
+  and only the two stem names are served from `GET /songs/{id}/stems/{stem}`.
+  Scratch folders (`.fetch/`, `.separate/`) live inside the song's folder
+  and are removed whatever happens.
+- **Separation** (P2-T2, `separation.py`). demucs `htdemucs_ft`
+  (`ENCORE_DEMUCS_MODEL`) through its Python API, normalised and segmented
+  as the demucs command does; audio in and out with soundfile, ffmpeg only
+  to decode what libsndfile cannot. Stems are 24-bit FLAC at the model's
+  44.1 kHz (the source may be 48 kHz: downstream timing uses each file's
+  own rate and frame count). `vocals` is the model's vocal source,
+  `no_vocals` the sum of the rest. If their joint peak would clip, both are
+  scaled by one factor, `stem_gain` in meta.json and the `X-Stem-Gain`
+  header: divide a stem by it for the song's own level. Stems are model
+  estimates, not an exact split: on a sung song they add back to the mix
+  within about -21 dB, but sound effects and content above about 16 kHz are
+  dropped (-12 dB on a film soundtrack). Without the `separation` extra the
+  step is skipped with the install hint (`StepSkipped`, which any runner
+  can raise). On the 4070 Ti: about 14 times real time, 1.4 GB VRAM peak,
+  about 0.6 GB RAM per minute of audio.
 - **Song sources.** A song enters as an uploaded file or a YouTube link;
   everything after intake is identical.
   - *File:* `POST /songs`, id is the sha256 of the bytes.
@@ -247,8 +265,11 @@ reference melody, lyrics, scoring, and coaching when it is up.
     still worked for the test video but offers fewer formats; failures then
     carry a note saying no runtime was found.
   - *Karaoke uploads* download fine but contain no vocal. The reference
-    step reports `skipped` with a reason when `vocals.wav` is near silent
-    (P2-T3 follow-up) instead of drawing a flat contour.
+    step reports `skipped` with a reason when `vocals.flac` holds no
+    singing (P2-T3) instead of drawing a flat contour. Measured: a global
+    vocals-to-mix level ratio cannot tell (-17 dB on a film with no
+    singing, -10 dB on a sung song); the share of 1 s windows with the
+    vocal stem above -40 dBFS can (3.5% versus 81%).
 - **Models are loaded lazily** on first use and kept resident. A `/gpu`
   endpoint reports device, VRAM, and which models are loaded.
 

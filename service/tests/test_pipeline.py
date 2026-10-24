@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterator
 import pytest
 
 from encore_service import pipeline
+from encore_service.errors import StepSkipped
 from encore_service.jobs import JobQueue
 from encore_service.pipeline import (
     MIN_PROGRESS_INTERVAL_S,
@@ -23,7 +24,7 @@ from encore_service.pipeline import (
     queue_preparation,
 )
 from encore_service.schemas import SongStatus, SongSteps, StepStatus
-from encore_service.store import SongMeta, SongStore
+from encore_service.store import STEM_FILES, SongMeta, SongStore
 
 
 class Calls:
@@ -48,6 +49,18 @@ def _ok(store: SongStore, song_id: str, report: Callable[[float], None]) -> None
 
 def _boom(store: SongStore, song_id: str, report: Callable[[float], None]) -> None:
     raise RuntimeError("model exploded")
+
+
+def _put_stems(store: SongStore, song_id: str) -> None:
+    """Leave both stems in the song's folder, as the separation step does."""
+    for name in STEM_FILES.values():
+        (store.song_dir(song_id) / name).write_bytes(b"fLaC")
+
+
+def _separates(store: SongStore, song_id: str, report: Callable[[float], None]) -> None:
+    """A separation that does what the real one leaves behind: its stems."""
+    report(0.5)
+    _put_stems(store, song_id)
 
 
 def _separation(store: SongStore, song_id: str) -> StepStatus:
@@ -250,7 +263,7 @@ def test_re_running_prepare_runs_only_the_steps_not_done(
     store: SongStore, new_song: Callable, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     song_id = new_song()
-    separation, reference = Calls(_ok), Calls(_ok)
+    separation, reference = Calls(_separates), Calls(_ok)
     monkeypatch.setitem(RUNNERS, "separation", separation)
 
     prepare(store, song_id)
@@ -272,16 +285,60 @@ def test_re_running_prepare_runs_only_the_steps_not_done(
     assert status.steps.lyrics.detail == "Not built yet (ROADMAP P2-T4)"
 
 
+@pytest.mark.parametrize("step", ["reference", "lyrics"])
 def test_a_done_step_is_never_run_again(
+    store: SongStore, new_song: Callable, monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    song_id = new_song()
+    store.update_step(song_id, step, state="done", progress=1.0)
+    runner = Calls(_ok)
+    monkeypatch.setitem(RUNNERS, step, runner)
+    prepare(store, song_id)
+    prepare(store, song_id)
+    assert runner.count == 0
+
+
+def test_a_done_separation_is_left_alone_while_its_stems_are_there(
     store: SongStore, new_song: Callable, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     song_id = new_song()
     store.update_step(song_id, "separation", state="done", progress=1.0)
-    separation = Calls(_ok)
+    _put_stems(store, song_id)
+    separation = Calls(_separates)
+    monkeypatch.setitem(RUNNERS, "separation", separation)
+
+    prepare(store, song_id)
+    prepare(store, song_id)
+
+    assert separation.count == 0
+    assert _separation(store, song_id).state == "done"
+
+
+@pytest.mark.parametrize(
+    "gone", [("vocals",), ("no_vocals",), ("vocals", "no_vocals")], ids="-".join
+)
+def test_a_done_separation_runs_again_when_a_stem_has_gone_missing(
+    store: SongStore,
+    new_song: Callable,
+    monkeypatch: pytest.MonkeyPatch,
+    gone: tuple[str, ...],
+) -> None:
+    song_id = new_song()
+    separation = Calls(_separates)
     monkeypatch.setitem(RUNNERS, "separation", separation)
     prepare(store, song_id)
+    assert separation.count == 1
+    for stem in gone:
+        # Deleted by hand, to free the drive say; the status still says done.
+        (store.song_dir(song_id) / STEM_FILES[stem]).unlink()
+    assert _separation(store, song_id).state == "done"
+
     prepare(store, song_id)
-    assert separation.count == 0
+
+    # Run again, not left "done" for good beside a stem that is not there.
+    assert separation.count == 2
+    assert _separation(store, song_id).state == "done"
+    assert all(store.stem_path(song_id, stem) for stem in STEM_FILES)
 
 
 def test_a_failed_step_is_retried_and_its_error_cleared(
@@ -541,6 +598,136 @@ def test_the_reporter_clamps_and_ignores_nonsense(
     assert _separation(store, song_id).progress == 1.0
 
 
+# --- StepSkipped -------------------------------------------------------------
+
+
+def _skipping(reason: str) -> Callable[[SongStore, str, Callable[[float], None]], None]:
+    def skip(store: SongStore, song_id: str, report: Callable[[float], None]) -> None:
+        raise StepSkipped(reason)
+
+    return skip
+
+
+def test_a_runner_that_raises_step_skipped_ends_its_step_skipped_with_the_reason(
+    store: SongStore,
+    new_song: Callable,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    song_id = new_song()
+    monkeypatch.setitem(RUNNERS, "separation", _skipping("Install the extra"))
+
+    with caplog.at_level(logging.INFO, logger="encore_service.pipeline"):
+        prepare(store, song_id)
+
+    step = _separation(store, song_id)
+    assert (step.state, step.detail) == ("skipped", "Install the extra")
+    assert (step.error, step.progress) == (None, 0.0)
+    # Not a failure: nothing at error level, no traceback, one line saying so.
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert "Step separation skipped for song" in caplog.text
+    assert "Install the extra" in caplog.text
+
+
+def test_a_skip_forgets_the_progress_the_runner_reported_before_it(
+    store: SongStore, new_song: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def part_way(s: SongStore, sid: str, report: Callable[[float], None]) -> None:
+        report(0.6)
+        assert _separation(s, sid).progress == 0.6
+        raise StepSkipped("Nothing to separate")
+
+    song_id = new_song()
+    monkeypatch.setitem(RUNNERS, "separation", part_way)
+
+    prepare(store, song_id)
+
+    step = _separation(store, song_id)
+    assert (step.state, step.progress, step.detail) == (
+        "skipped",
+        0.0,
+        "Nothing to separate",
+    )
+
+
+def test_the_steps_that_need_a_skipped_step_skip_too_and_do_not_run(
+    store: SongStore, new_song: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    song_id = new_song()
+    reference, lyrics = Calls(_ok), Calls(_ok)
+    monkeypatch.setitem(RUNNERS, "separation", _skipping("Install the extra"))
+    monkeypatch.setitem(RUNNERS, "reference", reference)
+    monkeypatch.setitem(RUNNERS, "lyrics", lyrics)
+
+    prepare(store, song_id)
+
+    status = store.read_status(song_id)
+    assert status is not None
+    for dependant in (status.steps.reference, status.steps.lyrics):
+        assert (dependant.state, dependant.detail) == ("skipped", "Needs separation")
+        assert dependant.error is None
+    assert (reference.count, lyrics.count) == (0, 0)
+
+
+def test_a_skipped_fetch_leaves_separation_waiting_for_the_audio(
+    store: SongStore, new_link: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    song_id = new_link()
+    separation = Calls(_ok)
+    monkeypatch.setitem(RUNNERS, "fetch", _skipping("Offline"))
+    monkeypatch.setitem(RUNNERS, "separation", separation)
+
+    prepare(store, song_id)
+
+    status = store.read_status(song_id)
+    assert status is not None
+    assert (status.steps.fetch.state, status.steps.fetch.detail) == (
+        "skipped",
+        "Offline",
+    )
+    assert status.steps.separation.detail == "Needs fetch"
+    assert separation.count == 0
+
+
+def test_a_skipped_step_is_tried_again_and_its_reason_cleared(
+    store: SongStore, new_song: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    song_id = new_song()
+    monkeypatch.setitem(RUNNERS, "separation", _skipping("Install the extra"))
+    prepare(store, song_id)
+    assert _separation(store, song_id).state == "skipped"
+
+    # The extra is installed; the person adds the song again.
+    fixed = Calls(_ok)
+    monkeypatch.setitem(RUNNERS, "separation", fixed)
+    prepare(store, song_id)
+
+    step = _separation(store, song_id)
+    assert (step.state, step.detail, step.error) == ("done", None, None)
+    assert fixed.count == 1
+
+
+def test_a_skipped_step_is_not_a_failure_for_the_next_start(
+    store: SongStore, new_song: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    song_id = new_song()
+    monkeypatch.setitem(RUNNERS, "separation", _skipping("Install the extra"))
+    prepare(store, song_id)
+
+    # Every step has settled, so nothing is queued to be resumed.
+    assert song_id not in store.ids_waiting_to_run()
+    assert store.recover_interrupted() == []
+
+
+def test_step_skipped_is_the_pipelines_to_import_and_needs_a_reason() -> None:
+    assert pipeline.StepSkipped is StepSkipped
+    assert StepSkipped("why").reason == "why"
+    assert str(StepSkipped("why")) == "why"
+    for blank in ("", "   ", "\n"):
+        with pytest.raises(ValueError, match="say why"):
+            StepSkipped(blank)
+
+
 # --- queue_preparation -----------------------------------------------------
 
 WAIT_S = 10.0
@@ -615,6 +802,34 @@ def test_queue_preparation_queues_a_done_fetch_whose_audio_has_gone_missing(
     assert returned.steps.fetch == QUEUED
     assert returned.steps.separation == QUEUED
     assert _status(store, song_id) == returned
+
+
+def test_queue_preparation_queues_a_done_separation_whose_stems_have_gone_missing(
+    store: SongStore, jobs: JobQueue, new_song: Callable
+) -> None:
+    song_id = new_song()
+    store.update_step(song_id, "separation", state="done", progress=1.0)
+    _put_stems(store, song_id)
+    (store.song_dir(song_id) / STEM_FILES["no_vocals"]).unlink()
+
+    returned = queue_preparation(store, jobs, song_id)
+
+    # Adding the song again is how lost stems are made again, so the status
+    # must not go on saying the separation is done.
+    assert returned.steps.separation == QUEUED
+    assert _status(store, song_id) == returned
+
+
+def test_queue_preparation_leaves_a_done_separation_alone_while_its_stems_are_there(
+    store: SongStore, jobs: JobQueue, new_song: Callable
+) -> None:
+    song_id = new_song()
+    store.update_step(song_id, "separation", state="done", progress=1.0)
+    _put_stems(store, song_id)
+
+    returned = queue_preparation(store, jobs, song_id)
+
+    assert returned.steps.separation == StepStatus(state="done", progress=1.0)
 
 
 def test_queue_preparation_keeps_fetch_skipped_for_an_upload(

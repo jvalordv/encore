@@ -23,6 +23,10 @@ DEFAULT_CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
 # Longest YouTube video, in seconds, that a link may bring in: 15 minutes
 # fits any song, and keeps a long mix or a stream from filling the cache.
 DEFAULT_MAX_SONG_S = 900
+# The demucs model that separates the vocal: the fine-tuned bag of four, which
+# takes about four times the work of plain htdemucs for a slightly cleaner
+# split.
+DEFAULT_DEMUCS_MODEL = "htdemucs_ft"
 
 
 def cuda_available() -> bool:
@@ -45,6 +49,7 @@ class Settings:
     port: int = DEFAULT_PORT
     allowed_origins: tuple[str, ...] = DEFAULT_ORIGINS
     max_song_s: int = DEFAULT_MAX_SONG_S
+    demucs_model: str = DEFAULT_DEMUCS_MODEL
 
     @cached_property
     def device(self) -> str:
@@ -89,10 +94,17 @@ class Settings:
                 f"ENCORE_MAX_SONG_S must be a positive integer, got {max_raw!r}"
             )
 
+        # Blank counts as unset, as for the other variables. Whether the name
+        # is a model demucs knows is only found out when it is loaded.
+        demucs_model = (
+            env.get("ENCORE_DEMUCS_MODEL", "").strip() or DEFAULT_DEMUCS_MODEL
+        )
+
         return cls(
             device_override=device,
             cache_dir=cache_dir,
             port=port,
             allowed_origins=origins or DEFAULT_ORIGINS,
             max_song_s=max_song_s,
+            demucs_model=demucs_model,
         )

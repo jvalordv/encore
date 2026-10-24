@@ -152,6 +152,7 @@ def test_a_link_makes_a_song_named_after_the_video(
         "url": URL,
         "duration_s": 635.0,
         "video_id": VIDEO_ID,
+        "stem_gain": 1.0,
     }
     assert client.get(f"/songs/{SONG_ID}").json()["title"] == "Big Buck Bunny"
 

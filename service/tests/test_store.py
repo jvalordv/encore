@@ -717,3 +717,248 @@ def test_set_duration_still_updates_the_status_when_meta_is_gone(
 
     assert status.duration_s == 3.5
     assert not (store.song_dir(song_id) / "meta.json").exists()
+
+
+# --- stems ------------------------------------------------------------------
+
+
+def test_stem_path_finds_only_a_finished_stem_by_its_fixed_name(
+    store: SongStore, new_song: Callable
+) -> None:
+    song_id = new_song()
+    folder = store.song_dir(song_id)
+    assert store.stem_path(song_id, "vocals") is None
+    assert store.stem_path(song_id, "no_vocals") is None
+    # Part-written files and look-alikes are not stems.
+    for name in ("vocals.flac.part", "vocals.wav", "drums.flac"):
+        (folder / name).write_bytes(b"x")
+    scratch = folder / ".separate"
+    scratch.mkdir()
+    (scratch / "vocals.flac").write_bytes(b"x")
+    assert store.stem_path(song_id, "vocals") is None
+
+    (folder / "vocals.flac").write_bytes(b"fLaC")
+    assert store.stem_path(song_id, "vocals") == folder / "vocals.flac"
+    assert store.stem_path(song_id, "no_vocals") is None
+    (folder / "no_vocals.flac").write_bytes(b"fLaC")
+    assert store.stem_path(song_id, "no_vocals") == folder / "no_vocals.flac"
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        "",
+        "drums",
+        "other",
+        "VOCALS",
+        "vocals.flac",
+        "vocals/",
+        "../source",
+        "..\\source",
+        "../vocals",
+        "vocals\n",
+        "source.wav",
+        "meta.json",
+    ],
+)
+def test_stem_path_never_builds_a_path_from_the_name_it_is_given(
+    store: SongStore, new_song: Callable, stem: str
+) -> None:
+    song_id = new_song()
+    folder = store.song_dir(song_id)
+    # Everything a name could point at exists, so only the whitelist says no.
+    (folder / "vocals.flac").write_bytes(b"fLaC")
+    (folder / "no_vocals.flac").write_bytes(b"fLaC")
+    (folder / "drums.flac").write_bytes(b"fLaC")
+    assert store.stem_path(song_id, stem) is None
+
+
+def test_stem_path_of_an_invalid_song_id_is_none(store: SongStore) -> None:
+    for bad in INVALID_IDS:
+        assert store.stem_path(bad, "vocals") is None
+
+
+def test_install_stem_moves_a_finished_file_into_place(
+    store: SongStore, new_song: Callable
+) -> None:
+    song_id = new_song()
+    work = store.song_dir(song_id) / ".separate"
+    work.mkdir()
+    finished = work / "vocals.flac"
+    finished.write_bytes(b"fLaC finished")
+
+    target = store.install_stem(song_id, "vocals", finished)
+
+    assert target == store.song_dir(song_id) / "vocals.flac"
+    assert target.read_bytes() == b"fLaC finished"
+    assert not finished.exists()
+    assert store.stem_path(song_id, "vocals") == target
+    assert store.stem_path(song_id, "no_vocals") is None
+
+
+def test_install_stem_replaces_an_earlier_stem_whole(
+    store: SongStore, new_song: Callable
+) -> None:
+    song_id = new_song()
+    folder = store.song_dir(song_id)
+    (folder / "no_vocals.flac").write_bytes(b"old")
+    finished = folder / "next.flac"
+    finished.write_bytes(b"new")
+
+    store.install_stem(song_id, "no_vocals", finished)
+
+    assert (folder / "no_vocals.flac").read_bytes() == b"new"
+
+
+def test_install_stem_rejects_a_stem_that_is_not_one(
+    store: SongStore, new_song: Callable
+) -> None:
+    song_id = new_song()
+    finished = store.song_dir(song_id) / "x.flac"
+    finished.write_bytes(b"x")
+    for stem in ("drums", "../source", ""):
+        with pytest.raises(ValueError, match="Unknown stem"):
+            store.install_stem(song_id, stem, finished)
+    assert finished.exists()
+    assert store.stem_path(song_id, "vocals") is None
+
+
+def test_install_stem_rejects_an_invalid_song_id(
+    store: SongStore, tmp_path: Path
+) -> None:
+    finished = tmp_path / "x.flac"
+    finished.write_bytes(b"x")
+    with pytest.raises(ValueError, match="Invalid song id"):
+        store.install_stem("../x", "vocals", finished)
+    assert finished.exists()
+
+
+def test_install_stem_rides_out_a_briefly_locked_target(
+    store: SongStore, new_song: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    song_id = new_song()
+    finished = store.song_dir(song_id) / "scanned.flac"
+    finished.write_bytes(b"fLaC")
+    real_replace = os.replace
+    attempts: list[int] = []
+
+    def locked_once(src: object, dst: object) -> None:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise PermissionError("held open by a scanner")
+        real_replace(src, dst)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(store_module, "_REPLACE_RETRY_S", 0.0)
+    with monkeypatch.context() as patch:
+        patch.setattr(store_module.os, "replace", locked_once)
+        store.install_stem(song_id, "vocals", finished)
+
+    assert len(attempts) == 2
+    assert store.stem_path(song_id, "vocals") is not None
+
+
+def test_a_song_starts_with_a_stem_gain_of_one(
+    store: SongStore, new_song: Callable
+) -> None:
+    song_id = new_song()
+    meta = store.read_meta(song_id)
+    assert meta is not None and meta.stem_gain == 1.0
+
+
+def test_meta_written_before_stems_existed_still_reads(
+    store: SongStore, new_song: Callable
+) -> None:
+    song_id = new_song()
+    path = store.song_dir(song_id) / "meta.json"
+    old = json.loads(path.read_text("utf-8"))
+    del old["stem_gain"]
+    path.write_text(json.dumps(old), "utf-8")
+
+    meta = store.read_meta(song_id)
+
+    assert meta is not None and meta.stem_gain == 1.0
+
+
+def test_set_stem_gain_changes_only_the_gain(
+    store: SongStore, new_link: Callable
+) -> None:
+    song_id = new_link()
+    before = store.read_meta(song_id)
+    assert before is not None
+
+    store.set_stem_gain(song_id, 0.8325)
+
+    after = store.read_meta(song_id)
+    assert after is not None
+    assert after.stem_gain == 0.8325
+    assert after.model_copy(update={"stem_gain": 1.0}) == before
+    assert list(store.song_dir(song_id).glob("*.tmp")) == []
+    # The status is not touched: the gain is not part of what the browser polls.
+    status = store.read_status(song_id)
+    assert status is not None and "stem_gain" not in status.model_dump()
+
+
+@pytest.mark.parametrize("gain", [1.0, 0.999, 1e-6])
+def test_set_stem_gain_takes_any_gain_up_to_one(
+    store: SongStore, new_song: Callable, gain: float
+) -> None:
+    song_id = new_song()
+    store.set_stem_gain(song_id, gain)
+    meta = store.read_meta(song_id)
+    assert meta is not None and meta.stem_gain == gain
+
+
+@pytest.mark.parametrize("gain", [0.0, -0.5, 1.0001, 2.0, float("nan"), float("inf")])
+def test_set_stem_gain_rejects_a_gain_that_cannot_be_a_scale_down(
+    store: SongStore, new_song: Callable, gain: float
+) -> None:
+    song_id = new_song()
+    before = store.read_meta(song_id)
+
+    with pytest.raises(ValidationError):
+        store.set_stem_gain(song_id, gain)
+
+    # A rejected gain never reaches the file, which would then not read.
+    assert store.read_meta(song_id) == before
+
+
+def test_set_stem_gain_needs_a_meta(store: SongStore, new_song: Callable) -> None:
+    song_id = new_song()
+    (store.song_dir(song_id) / "meta.json").unlink()
+    with pytest.raises(FileNotFoundError, match="No meta"):
+        store.set_stem_gain(song_id, 0.9)
+    assert not (store.song_dir(song_id) / "meta.json").exists()
+
+
+def test_set_stem_gain_rejects_an_invalid_song_id(store: SongStore) -> None:
+    with pytest.raises(ValueError, match="Invalid song id"):
+        store.set_stem_gain("../x", 0.9)
+
+
+def test_set_stem_gain_does_not_undo_a_concurrent_duration_change(
+    store: SongStore, new_link: Callable
+) -> None:
+    song_id = new_link()
+    barrier = threading.Barrier(2)
+
+    def gain() -> None:
+        barrier.wait()
+        for n in range(50):
+            store.set_stem_gain(song_id, 0.5 + n / 200)
+
+    def duration() -> None:
+        barrier.wait()
+        for n in range(50):
+            store.set_duration(song_id, 100.0 + n)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(gain), pool.submit(duration)]
+        for future in futures:
+            future.result()
+
+    meta = store.read_meta(song_id)
+    assert meta is not None
+    # Each writer's last value stands: neither read the file before the other's
+    # write and wrote it back over it.
+    assert meta.stem_gain == 0.5 + 49 / 200
+    assert meta.duration_s == 149.0
