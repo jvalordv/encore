@@ -278,14 +278,40 @@ lyrics, and scores each take against it.
   s, (c) what the player reports during a pre-roll ad, (d) owner-side, with
   speakers: whether Chrome's echo cancellation removes the embed's audio
   from the mic. Go/no-go from the numbers, written down.
+  - **Spike done (2026-10-23): GO.** Page served by Vite on :5180, driven
+    from the built-in browser. Embed loaded from `http://localhost` on
+    both `www.youtube.com` and `www.youtube-nocookie.com` with `origin`
+    set and a `strict-origin-when-cross-origin` referrer meta; no onError,
+    no 153. The iframe posts its time about every 267 ms (224 to 304); the
+    API wrapper extrapolates between posts, so `getCurrentTime()` changes
+    on every call. Over 60 s on three runs the reported clock stayed
+    within 9.8, 9.9 and 13.6 ms (p95) of a straight line at 0.9995 to
+    0.9999 of wall rate, with a few sub-20 ms backward corrections a
+    minute. One 20 s run (nocookie) had a single ~100 ms backward slip.
+    State sequence: onReady 0.3 to 0.4 s after load, buffering, playing at
+    0.6 to 0.8 s. Rates 0.25 to 2. No ad appeared (pane likely signed out),
+    so ad behaviour is unobserved. Unmuted autoplay without a gesture
+    played in the pane, which is not what stock Chrome does.
+  - Caveat: the pane was hidden (requestAnimationFrame dead, timers not
+    throttled), so the numbers are indicative. Still owner-side: re-run
+    on a visible pane or stock Chrome; the speaker echo test; the constant
+    offset between reported time and the sound; a real pre-roll ad;
+    autoplay blocked in stock Chrome.
+  - Decisions from the spike (now in `docs/ARCHITECTURE.md`): privacy
+    host `youtube-nocookie.com`; read `getCurrentTime()` and guard it
+    (hold small backward corrections, treat big jumps and stalls as a
+    discontinuity); live pitch stamped to embed time, takes recorded in
+    Embedded mode marked approximate until the owner-side numbers land;
+    detect ads by video id and duration; start only on the Play press.
   Then build: a link box under the dropzone and a paste handler on the
   page; pure `parseYouTubeUrl` (watch, youtu.be, shorts, embed,
   music.youtube, `t=` start; anything else is null); a `Transport`
   interface extracted from `player.ts` (state, positionS, durationS, play,
   pause, seek) with the existing player and a new `YouTubeTransport` behind
   it, so `frameToSongTime`, the lane and recording read one clock. The
-  YouTube transport anchors on each polled `getCurrentTime()` and
-  interpolates between polls with `performance.now()`. The IFrame API
+  YouTube transport reads `getCurrentTime()` with the guard described
+  under "Embedded clock, as measured" (the spike showed the wrapper
+  already extrapolates, so no interpolation of our own). The IFrame API
   script loads only when a link is used, so the app stays offline-clean.
   The player sits in its own pane at least 480 by 270, never covered, never
   hidden, and starts on the Play press (a user gesture). Errors 2, 5, 100,

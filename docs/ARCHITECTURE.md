@@ -66,9 +66,27 @@ reference melody, lyrics, scoring, and coaching when it is up.
     accuracy, so scoring only ever runs on the engine clock.
   - *One transport interface.* `Transport` (state, positionS, durationS,
     play, pause, seek) has two implementations, the audio player and
-    `YouTubeTransport`. The latter anchors on each polled time and
-    interpolates with `performance.now()`. Everything downstream
-    (`frameToSongTime`, the lane, recording) reads the active transport.
+    `YouTubeTransport`. Everything downstream (`frameToSongTime`, the lane,
+    recording) reads the active transport.
+  - *Embedded clock, as measured* (P2-T1c spike). The iframe posts its time
+    about every 267 ms and the API wrapper extrapolates between posts, so
+    `getCurrentTime()` is already smooth: steady-state p95 within about
+    10 to 14 ms of a straight line, with occasional backward corrections
+    under 20 ms and a rare stall of about 100 ms. `YouTubeTransport` reads
+    it on every query and guards it: while playing, a backward step of up
+    to 250 ms is held (position does not go backwards; it waits for the
+    clock to catch up); a jump beyond 250 ms either way, or no advance for
+    more than 300 ms of wall time while the state says playing, is a
+    discontinuity, handled like a seek. Paused or buffering reports the
+    raw value.
+  - *What Embedded mode claims.* Live pitch is stamped to embed time. A
+    take recorded in Embedded mode carries `clock: "embed"` and the UI
+    calls its alignment approximate, until the owner-side timing on a
+    visible page and the constant output offset are measured; then this
+    line is revisited.
+  - *Host.* `https://www.youtube-nocookie.com` (privacy-enhanced mode):
+    it loads from localhost like the main host and sets no cookies until
+    playback, which suits a local-first app.
   - *Latency.* Calibration measures our own output path with our chirp. The
     embed adds a path we cannot play a chirp through, so it gets its own
     stored offset, adjustable in the same latency field.
@@ -85,8 +103,14 @@ reference melody, lyrics, scoring, and coaching when it is up.
     scheme that sends a Referer (unverified for Tauri's custom scheme;
     check in P6-T1). Errors 101 and 150 (embedding disabled by the owner of
     the video) fall back to Prepared mode when the service is up.
-  - *Ads.* A pre-roll ad plays inside the embed and the clock stays the
-    player's; behaviour during ads is measured in the spike, not assumed.
+  - *Ads.* A pre-roll ad plays inside the embed. No ad appeared in the
+    spike, so its reporting is unobserved: the transport treats
+    `getVideoData().video_id` differing from the requested id, or the
+    duration changing mid-play, as an ad. During one it reports state `ad`
+    (not playing): nothing is stamped or recorded, and the lane says so.
+  - *Autoplay.* Playback starts only on the Play press (a user gesture);
+    `onAutoplayBlocked` gets a plain message. The spike's pane allowed
+    unmuted autoplay, which stock Chrome does not, so nothing relies on it.
 - **Live pitch.** McLeod Pitch Method (normalised square difference) in an
   AudioWorklet, 2048 window, 480 hop (10 ms), clarity gate at 0.9 for
   voiced. Hand-written and unit-tested; no DSP dependency. Accuracy target
