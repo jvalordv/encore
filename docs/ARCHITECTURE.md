@@ -157,33 +157,47 @@ reference melody, lyrics, scoring, and coaching when it is up.
 - **Song sources.** A song enters as an uploaded file or a YouTube link;
   everything after intake is identical.
   - *File:* `POST /songs`, id is the sha256 of the bytes.
-  - *Link:* `POST /songs/url` with `{url}`. The route checks the host
-    against an allow list (`youtube.com`, `www.`/`m.`/`music.youtube.com`,
-    `youtu.be`; https only; a playlist link means its one video), asks
-    yt-dlp for metadata without downloading (video id, title, duration,
-    live flag), rejects live streams and anything longer than
-    `ENCORE_MAX_SONG_S` (default 900), and answers with a `SongStatus`
-    whose id is `yt-<video id>`. A repeat of the same video is a cache hit.
-    The metadata lookup runs in the request (a second or two); the download
-    is the first job in the queue.
+  - *Link:* `POST /songs/url` with `{url}`. `youtube.parse_youtube_url`
+    takes https or scheme-less links on exactly `youtube.com`,
+    `www.`/`m.`/`music.youtube.com`, `youtu.be` and
+    `www.youtube-nocookie.com` (ASCII hosts, no userinfo, no port), with
+    `/watch?v=`, `/shorts/`, `/embed/`, `/live/`, `/v/` or a youtu.be path;
+    a playlist link means its one video. Only the rebuilt
+    `https://www.youtube.com/watch?v=<id>` ever reaches yt-dlp, so no other
+    extractor or host can be reached. The route asks yt-dlp for metadata
+    without downloading, rejects live, upcoming and unknown-length videos
+    and anything longer than `ENCORE_MAX_SONG_S` (default 900) with a 422,
+    answers yt-dlp failures with a 502, and returns a `SongStatus` whose id
+    is `yt-<video id>`. A repeat of the same video is a cache hit with no
+    lookup. The lookup runs in the request (about 2 s); the download is the
+    first job in the queue. `src/audio/youtube-url.ts` applies the same
+    rules in the browser (P2-T1c), checked against the same table.
   - *Fetch step:* `SongStatus.steps` gains `fetch` (`skipped` for uploads).
-    yt-dlp takes the best audio stream and ffmpeg normalises it to
-    `source.flac`: lossless from whatever YouTube served, decodable by every
-    browser, about half the size of WAV. The browser polls one status for
-    fetch, separation, reference and lyrics.
+    `fetch.py` downloads the best audio stream into `<song>/.fetch/` as
+    `download.<ext>`, has ffmpeg write 16-bit FLAC there, and moves it into
+    place as `source.flac` in one step; `.fetch` is removed whatever
+    happens. ffmpeg folds anything over two channels down to stereo
+    (`aformat=channel_layouts=mono|stereo`): YouTube's best stream can be
+    5.1, with the vocal in the centre channel that keeping two channels
+    would drop. A 10.6 min video fetched in about 6 s. The browser polls one
+    status for fetch, separation, reference and lyrics; progress is 0 to
+    0.85 downloading, 0.95 converted, 1.0 saved.
   - *Safety:* yt-dlp is driven through its Python API with a fixed option
-    set, never options from the request. Output goes to
-    `source.%(ext)s` inside the song's own cache folder, so titles never
-    become paths. `noplaylist` is always on.
+    set, never options from the request; `noplaylist` is always on; titles
+    never become paths. ffmpeg runs from an argument list, never a shell.
+    yt-dlp expands `$NAME` in output paths, so a cache folder with a `$` in
+    it is refused with a message rather than written elsewhere.
   - *Failure:* YouTube changes break yt-dlp every few weeks. Its message
-    goes verbatim into the fetch step's `error` with the hint to update it
-    (`uv lock --upgrade-package yt-dlp && uv sync`). Tests inject a fake
-    extractor, so CI never touches the network.
-  - *JS runtime:* recent yt-dlp releases may need an external JavaScript
-    runtime to solve YouTube's player challenges. The owner's machine has
-    Node, not Deno. The worker checks the installed yt-dlp's documentation,
-    wires whichever runtime is on PATH, and fails with a plain message if
-    there is none.
+    goes into the fetch step's `error` as "<what failed>: <why>" with the
+    hint to update it (`uv lock --upgrade-package yt-dlp && uv sync`). Tests
+    inject fakes, so CI never touches the network.
+  - *JS runtime (checked against yt-dlp 2026.10.21):* full YouTube support
+    needs `yt-dlp-ejs` plus a JavaScript runtime (Deno, Node, Bun or
+    QuickJS). The dependency is `yt-dlp[default]`, which pins a matching
+    `yt-dlp-ejs`, and the service passes whichever of Deno and Node is on
+    PATH (Node here). Without one yt-dlp falls back to a reduced mode that
+    still worked for the test video but offers fewer formats; failures then
+    carry a note saying no runtime was found.
   - *Karaoke uploads* download fine but contain no vocal. The reference
     step reports `skipped` with a reason when `vocals.wav` is near silent
     (P2-T3 follow-up) instead of drawing a flat contour.

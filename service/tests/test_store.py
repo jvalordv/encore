@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from encore_service import store as store_module
 from encore_service.pipeline import initial_status
@@ -496,3 +496,224 @@ def test_ids_waiting_to_run_ignores_what_is_not_a_song(
 
 def test_ids_waiting_to_run_copes_with_a_missing_cache(tmp_path: Path) -> None:
     assert SongStore(tmp_path / "never-made").ids_waiting_to_run() == []
+
+
+LINK_ID = "yt-dQw4w9WgXcQ"
+
+
+def link_meta(title: str = "Clip") -> SongMeta:
+    return SongMeta(
+        source="youtube",
+        title=title,
+        url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        duration_s=212.0,
+        video_id="dQw4w9WgXcQ",
+    )
+
+
+def test_add_link_creates_a_song_that_has_no_audio_yet(store: SongStore) -> None:
+    meta = link_meta()
+    status = initial_status(LINK_ID, meta)
+
+    stored = store.add_link(LINK_ID, meta, status)
+
+    assert stored == status
+    assert store.exists(LINK_ID)
+    assert store.read_meta(LINK_ID) == meta
+    assert store.read_status(LINK_ID) == status
+    assert store.source_path(LINK_ID) is None
+    assert status.steps.fetch.state == "queued"
+    names = sorted(path.name for path in store.song_dir(LINK_ID).iterdir())
+    assert names == ["meta.json", "status.json"]
+
+
+def test_add_link_for_a_cached_song_keeps_it_as_it_is(store: SongStore) -> None:
+    first = link_meta("First")
+    store.add_link(LINK_ID, first, initial_status(LINK_ID, first))
+    store.update_step(LINK_ID, "fetch", state="done", progress=1.0)
+    cached = store.read_status(LINK_ID)
+
+    other = link_meta("Second")
+    stored = store.add_link(LINK_ID, other, initial_status(LINK_ID, other))
+
+    assert stored == cached
+    assert store.read_status(LINK_ID) == cached
+    assert store.read_meta(LINK_ID) == first
+
+
+@pytest.mark.parametrize("failing_file", ["meta.json", "status.json"])
+def test_add_link_writes_the_status_last(
+    store: SongStore, monkeypatch: pytest.MonkeyPatch, failing_file: str
+) -> None:
+    meta = link_meta()
+    real_write = store_module._write_json
+
+    def crash(path: Path, model: BaseModel) -> None:
+        if path.name == failing_file:
+            raise OSError("the machine went away")
+        real_write(path, model)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(store_module, "_write_json", crash)
+        with pytest.raises(OSError, match="went away"):
+            store.add_link(LINK_ID, meta, initial_status(LINK_ID, meta))
+
+    # Whichever write the crash cut short, what is left is not a song: the
+    # status is written after the meta, so there is none without it.
+    assert store.song_dir(LINK_ID).is_dir()
+    assert not store.exists(LINK_ID)
+    # Adding the link again completes it.
+    store.add_link(LINK_ID, meta, initial_status(LINK_ID, meta))
+    assert store.exists(LINK_ID)
+    assert store.read_meta(LINK_ID) == meta
+
+
+def test_add_link_rejects_a_status_for_another_song(store: SongStore) -> None:
+    meta = link_meta()
+    with pytest.raises(ValueError, match="Status is for"):
+        store.add_link(LINK_ID, meta, initial_status("yt-AbCdEfGhIjK", meta))
+    assert not store.song_dir(LINK_ID).exists()
+
+
+def test_add_link_rejects_an_invalid_id(store: SongStore, tmp_path: Path) -> None:
+    meta = link_meta()
+    with pytest.raises(ValueError, match="Invalid song id"):
+        store.add_link("../x", meta, initial_status("../x", meta))
+    assert list(tmp_path.iterdir()) == []
+
+
+def add_link_from_two_threads(store: SongStore, song_id: str) -> list[SongStatus]:
+    """Two requests for one video, released together; what each was told."""
+    barrier = threading.Barrier(2)
+
+    def add(title: str) -> SongStatus:
+        meta = link_meta(title)
+        status = initial_status(song_id, meta)
+        barrier.wait()
+        return store.add_link(song_id, meta, status)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first, second = pool.submit(add, "A"), pool.submit(add, "B")
+        return [first.result(), second.result()]
+
+
+def test_two_requests_for_one_video_make_one_song(store: SongStore) -> None:
+    for number in range(25):
+        song_id = f"yt-{number:011d}"
+        results = add_link_from_two_threads(store, song_id)
+
+        # Both callers are told about the one song that exists, and its meta
+        # is the one of the request that created it.
+        assert results[0] == results[1]
+        meta = store.read_meta(song_id)
+        assert meta is not None
+        assert meta.title == results[0].title
+        assert store.read_status(song_id) == results[0]
+        files = sorted(path.name for path in store.song_dir(song_id).iterdir())
+        assert files == ["meta.json", "status.json"]
+    assert len(list(store.root.iterdir())) == 25
+
+
+def test_install_source_moves_a_finished_file_into_place(
+    store: SongStore, new_link: Callable
+) -> None:
+    song_id = new_link()
+    work = store.song_dir(song_id) / ".fetch"
+    work.mkdir()
+    finished = work / "source.flac"
+    finished.write_bytes(b"fLaC finished")
+
+    target = store.install_source(song_id, finished, ".flac")
+
+    assert target == store.song_dir(song_id) / "source.flac"
+    assert target.read_bytes() == b"fLaC finished"
+    assert not finished.exists()
+    assert store.source_path(song_id) == target
+
+
+def test_install_source_replaces_an_earlier_source(
+    store: SongStore, new_link: Callable
+) -> None:
+    song_id = new_link()
+    folder = store.song_dir(song_id)
+    (folder / "source.flac").write_bytes(b"old")
+    finished = folder / "next.flac"
+    finished.write_bytes(b"new")
+
+    store.install_source(song_id, finished, ".flac")
+
+    assert (folder / "source.flac").read_bytes() == b"new"
+
+
+def test_install_source_rejects_an_unknown_extension(
+    store: SongStore, new_link: Callable
+) -> None:
+    song_id = new_link()
+    finished = store.song_dir(song_id) / "x.exe"
+    finished.write_bytes(b"x")
+    with pytest.raises(ValueError, match="extension"):
+        store.install_source(song_id, finished, ".exe")
+    assert finished.exists()
+    assert store.source_path(song_id) is None
+
+
+def test_install_source_rides_out_a_briefly_locked_target(
+    store: SongStore, new_link: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    song_id = new_link()
+    finished = store.song_dir(song_id) / "scanned.flac"
+    finished.write_bytes(b"fLaC")
+    real_replace = os.replace
+    attempts: list[int] = []
+
+    def locked_once(src: object, dst: object) -> None:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise PermissionError("held open by a scanner")
+        real_replace(src, dst)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(store_module, "_REPLACE_RETRY_S", 0.0)
+    with monkeypatch.context() as patch:
+        patch.setattr(store_module.os, "replace", locked_once)
+        store.install_source(song_id, finished, ".flac")
+
+    assert len(attempts) == 2
+    assert store.source_path(song_id) is not None
+
+
+def test_set_duration_updates_meta_and_status_together(
+    store: SongStore, new_link: Callable
+) -> None:
+    song_id = new_link()
+    before = store.read_status(song_id)
+    assert before is not None
+    assert before.duration_s == 200.0
+
+    status = store.set_duration(song_id, 635.02)
+
+    assert status.duration_s == 635.02
+    assert store.read_status(song_id) == status
+    meta = store.read_meta(song_id)
+    assert meta is not None
+    assert meta.duration_s == 635.02
+    # Nothing else about the song moved.
+    assert (meta.title, meta.video_id) == ("Linked", "dQw4w9WgXcQ")
+    assert status.steps == before.steps
+    assert (status.title, status.source) == (before.title, before.source)
+
+
+def test_set_duration_needs_a_song(store: SongStore) -> None:
+    with pytest.raises(FileNotFoundError):
+        store.set_duration("yt-dQw4w9WgXcQ", 1.0)
+
+
+def test_set_duration_still_updates_the_status_when_meta_is_gone(
+    store: SongStore, new_link: Callable
+) -> None:
+    song_id = new_link()
+    (store.song_dir(song_id) / "meta.json").unlink()
+
+    status = store.set_duration(song_id, 3.5)
+
+    assert status.duration_s == 3.5
+    assert not (store.song_dir(song_id) / "meta.json").exists()

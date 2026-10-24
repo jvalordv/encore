@@ -3,15 +3,18 @@
 `POST /songs` takes an uploaded audio file, names the song by the sha256 of
 its bytes, stores it in the cache and queues its preparation. Adding the same
 file again is a cache hit that queues whatever has not finished, and puts back
-the audio if that has gone missing from the cache. `GET
-/songs/{id}` reports per-step progress for the browser to poll, and `GET
+the audio if that has gone missing from the cache. `POST /songs/url` takes a
+link to one YouTube video instead: it checks the link, asks YouTube what the
+video is, and creates the song as `yt-<video id>` for the fetch step to fill.
+`GET /songs/{id}` reports per-step progress for the browser to poll, and `GET
 /songs/{id}/audio` serves the stored source so a song can be reloaded without
-the original file. Storage lives in `store.py`, the queue in `jobs.py` and the
-steps in `pipeline.py`; this module is the HTTP edge over them.
+the original file. Storage lives in `store.py`, the queue in `jobs.py`, the
+steps in `pipeline.py` and the YouTube access in `youtube.py`; this module is
+the HTTP edge over them.
 """
 
 import hashlib
-from functools import partial
+import math
 from pathlib import Path, PureWindowsPath
 from typing import Annotated, BinaryIO
 
@@ -19,9 +22,11 @@ import soundfile as sf
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
+from encore_service import youtube
+from encore_service.config import Settings
 from encore_service.jobs import JobQueue
-from encore_service.pipeline import initial_status, prepare
-from encore_service.schemas import SongStatus
+from encore_service.pipeline import initial_status, queue_preparation
+from encore_service.schemas import SongLinkRequest, SongStatus
 from encore_service.store import AUDIO_MEDIA_TYPES, SongMeta, SongStore
 
 router = APIRouter(prefix="/songs", tags=["songs"])
@@ -34,6 +39,13 @@ _MIB = 1024 * 1024
 MAX_UPLOAD_BYTES = 200 * _MIB
 _CHUNK_BYTES = _MIB
 _TITLE_MAX_CHARS = 200
+_SECONDS_PER_MINUTE = 60
+
+NOT_A_LINK_MESSAGE = (
+    "Not a YouTube video link. Paste a link to one video "
+    "(youtube.com/watch?v=..., youtu.be/..., or a Shorts link)."
+)
+LIVE_MESSAGE = "Live streams and premieres cannot be practised; pick a finished video."
 
 
 def _receive(source: BinaryIO, part: Path) -> str:
@@ -102,18 +114,15 @@ def create_song(
     part = store.incoming_path()
     try:
         song_id = _receive(file.file, part)
-        status = store.read_status(song_id)
         # A cached song with no audio goes through add_upload too, which keeps
         # the upload as the audio it lost.
-        if status is None or store.source_path(song_id) is None:
+        if not store.exists(song_id) or store.source_path(song_id) is None:
             meta = SongMeta(
                 source="file",
                 title=_title_from(name.stem),
                 duration_s=_duration_s(part),
             )
-            status = store.add_upload(
-                song_id, part, ext, meta, initial_status(song_id, meta)
-            )
+            store.add_upload(song_id, part, ext, meta, initial_status(song_id, meta))
     finally:
         # Gone already after a successful move; this catches every error path
         # and the cache hit, which leaves the upload where it was streamed.
@@ -121,8 +130,64 @@ def create_song(
 
     # Idempotent: a repeat while the song is queued or running is ignored, and
     # a repeat after a failure retries the steps that did not finish.
-    jobs.submit(song_id, partial(prepare, store, song_id))
-    return status
+    return queue_preparation(store, jobs, song_id)
+
+
+@router.post(
+    "/url",
+    response_model=SongStatus,
+    responses={
+        422: {"description": "Not a link to one finished video, or too long."},
+        502: {"description": "YouTube, or yt-dlp, could not answer."},
+    },
+)
+def create_song_from_link(body: SongLinkRequest, request: Request) -> SongStatus:
+    """Accept a link to one YouTube video, queue it, and return its status."""
+    store: SongStore = request.app.state.store
+    jobs: JobQueue = request.app.state.jobs
+    settings: Settings = request.app.state.settings
+
+    video_id = youtube.parse_youtube_url(body.url)
+    if video_id is None:
+        raise HTTPException(status_code=422, detail=NOT_A_LINK_MESSAGE)
+    song_id = f"yt-{video_id}"
+
+    # A repeat of a video needs no question to YouTube: the song is cached,
+    # and adding it again retries whatever did not finish.
+    if store.exists(song_id):
+        return queue_preparation(store, jobs, song_id)
+
+    try:
+        info = youtube.lookup(video_id, settings)
+    except youtube.YtDlpError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=youtube.describe_failure("YouTube lookup failed", exc),
+        ) from exc
+    if info.is_live or info.duration_s is None:
+        raise HTTPException(status_code=422, detail=LIVE_MESSAGE)
+    if info.duration_s > settings.max_song_s:
+        minutes = math.ceil(info.duration_s / _SECONDS_PER_MINUTE)
+        limit = math.ceil(settings.max_song_s / _SECONDS_PER_MINUTE)
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"This video is {minutes} min long; "
+                f"the limit is {limit} min (ENCORE_MAX_SONG_S)."
+            ),
+        )
+
+    meta = SongMeta(
+        source="youtube",
+        title=_title_from(info.title),
+        url=youtube.canonical_url(video_id),
+        duration_s=info.duration_s,
+        video_id=video_id,
+    )
+    # If another request created the song since the check above, this keeps
+    # its status and the preparation below is queued once either way.
+    store.add_link(song_id, meta, initial_status(song_id, meta))
+    return queue_preparation(store, jobs, song_id)
 
 
 @router.get(

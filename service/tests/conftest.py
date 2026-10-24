@@ -3,18 +3,26 @@
 `store` is a song cache in a temporary folder. `new_song` and `new_link` put a
 song in it the way the routes do, so store and pipeline tests start from real
 cache contents rather than hand-built folders. Every test also runs with the
-step registry emptied (see `no_runners`).
+step registry emptied (see `no_runners`) and with yt-dlp out of reach (see
+`no_unfaked_yt_dlp`). `ydl`, `fakes` and `node_only` keep the YouTube code
+away from the network, ffmpeg and whatever this machine has on PATH.
 """
 
 import hashlib
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 
-from encore_service import pipeline
+from encore_service import pipeline, youtube
 from encore_service.pipeline import initial_status
 from encore_service.store import SongMeta, SongStore
+from tests.fakes import FetchFakes, Ydl, install_fake_fetch, install_fake_ydl
+
+UNFAKED = (
+    "A test reached yt-dlp without a fake. Use the `ydl` fixture, or replace "
+    "youtube.lookup or the fetch calls (see tests/fakes.py)."
+)
 
 
 @pytest.fixture(autouse=True)
@@ -27,6 +35,30 @@ def no_runners(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     for step in pipeline.RUNNERS:
         monkeypatch.setitem(pipeline.RUNNERS, step, None)
+
+
+@pytest.fixture(autouse=True)
+def no_unfaked_yt_dlp(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
+    """Fail a test that reaches yt-dlp without a fake, so none touches YouTube.
+
+    `lookup` and `download_audio` both build `youtube.yt_dlp.YoutubeDL`, so
+    replacing that class closes every way to YouTube. The attempt is also
+    remembered and fails the test afterwards: both functions turn any error
+    into a YtDlpError, which a route turns into a 502, and a test that expects
+    a 502 would otherwise pass for the wrong reason. The `ydl` fixture runs
+    after this one and puts its fake in the class's place. Yields the list of
+    attempts, which only the test of this guard needs.
+    """
+    reached: list[str] = []
+
+    class Unfaked:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            reached.append(UNFAKED)
+            raise AssertionError(UNFAKED)
+
+    monkeypatch.setattr(youtube.yt_dlp, "YoutubeDL", Unfaked)
+    yield reached
+    assert not reached, UNFAKED
 
 
 @pytest.fixture
@@ -69,3 +101,23 @@ def new_link(store: SongStore) -> Callable[..., str]:
         return song_id
 
     return make
+
+
+@pytest.fixture
+def ydl(monkeypatch: pytest.MonkeyPatch) -> Ydl:
+    """A fake yt_dlp.YoutubeDL that records what it is given."""
+    return install_fake_ydl(monkeypatch)
+
+
+@pytest.fixture
+def node_only(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict[str, str]]:
+    """Pretend Node is the one JavaScript runtime on PATH, whatever is there."""
+    runtimes = {"node": {"path": "/opt/node/node"}}
+    monkeypatch.setattr(youtube, "js_runtimes", lambda: runtimes)
+    return runtimes
+
+
+@pytest.fixture
+def fakes(monkeypatch: pytest.MonkeyPatch) -> FetchFakes:
+    """Fake download and conversion for the fetch step; see tests/fakes.py."""
+    return install_fake_fetch(monkeypatch)

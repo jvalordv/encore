@@ -10,7 +10,6 @@ songs that were queued but never reached are queued again.
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from functools import partial
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from encore_service import __version__
 from encore_service.config import Settings
 from encore_service.jobs import JobQueue
-from encore_service.pipeline import prepare
+from encore_service.pipeline import queue_preparation
 from encore_service.routes import analyze, duet, gpu, health, songs
 from encore_service.store import SongStore
 
@@ -47,11 +46,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # A song queued when the last run stopped never got its turn, and nothing
     # else would ever submit it, so it would read "queued" for good. One with
     # a failed step is left for the person to add again (see the store).
-    waiting = store.ids_waiting_to_run()
-    for song_id in waiting:
-        jobs.submit(song_id, partial(prepare, store, song_id))
-    if waiting:
-        logger.info("Resuming preparation for %d queued song(s)", len(waiting))
+    resumed = 0
+    for song_id in store.ids_waiting_to_run():
+        # Queueing reads and writes the song's status file, so one damaged
+        # song could otherwise keep the whole service from starting.
+        try:
+            queue_preparation(store, jobs, song_id)
+        except Exception:
+            logger.exception("Could not resume song %s", song_id)
+        else:
+            resumed += 1
+    if resumed:
+        logger.info("Resuming preparation for %d queued song(s)", resumed)
     jobs.start()
     app.state.store = store
     app.state.jobs = jobs

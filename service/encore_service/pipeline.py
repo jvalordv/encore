@@ -6,13 +6,18 @@ progress. The work of a step is a runner registered in `RUNNERS`. A step with
 no runner yet is reported as skipped, with a note naming the ROADMAP task that
 builds it, so the browser can tell "not built" from "failed". To add a runner,
 import it here and replace its `None` in `RUNNERS`; nothing else changes.
+`queue_preparation` is how a song gets onto the job queue: the routes and the
+start-up resume all go through it.
 """
 
 import logging
 import math
 import time
 from collections.abc import Callable
+from functools import partial
 
+from encore_service.fetch import fetch_source
+from encore_service.jobs import JobQueue
 from encore_service.schemas import (
     SongSource,
     SongStatus,
@@ -34,7 +39,7 @@ Runner = Callable[[SongStore, str, Report], None]
 
 # Step name -> its runner, or None while the step is not built.
 RUNNERS: dict[StepName, Runner | None] = {
-    "fetch": None,
+    "fetch": fetch_source,
     "separation": None,
     "reference": None,
     "lyrics": None,
@@ -114,12 +119,75 @@ def make_reporter(
     return report
 
 
+def queue_preparation(store: SongStore, jobs: JobQueue, song_id: str) -> SongStatus:
+    """Queue a song's preparation and return the status to show for it.
+
+    When the queue takes the job, every step that is not done and has work to
+    do for this song goes back to `queued` (progress cleared, no error or
+    detail), so a step that failed or was skipped does not keep reading that
+    way while its retry waits, and the status returned is the one after that
+    reset. A fetch whose audio has gone missing counts as not done. A song
+    that is already queued or running is left as it is and its current status
+    returned. Raises FileNotFoundError for a song with no status.
+    """
+    reset: list[SongStatus] = []
+    accepted = jobs.submit(
+        song_id,
+        partial(prepare, store, song_id),
+        # Run by the queue before the worker can see the job. Resetting after
+        # submit returned would race the worker, which could have failed or
+        # finished a step already: the reset would then bury its result.
+        on_accepted=lambda: reset.append(_reset_unfinished(store, song_id)),
+    )
+    if accepted:
+        return reset[0]
+    status = store.read_status(song_id)
+    if status is None:
+        raise FileNotFoundError(f"No status stored for song {song_id}")
+    return status
+
+
+def _reset_unfinished(store: SongStore, song_id: str) -> SongStatus:
+    """Queue every unfinished step that applies again; returns the status."""
+    status = store.read_status(song_id)
+    if status is None:
+        raise FileNotFoundError(f"No status stored for song {song_id}")
+    for step in STEP_ORDER:
+        current: StepStatus = getattr(status.steps, step)
+        if not _applies(step, status.source) or _is_done(store, song_id, step, status):
+            continue
+        if current == StepStatus():
+            continue
+        status = store.update_step(
+            song_id, step, state="queued", progress=0.0, error=None, detail=None
+        )
+    return status
+
+
+def _is_done(
+    store: SongStore, song_id: str, step: StepName, status: SongStatus
+) -> bool:
+    """Whether a step is done and what it made is still there.
+
+    Only the fetch leaves something to look for: the song's audio. A link whose
+    fetch finished but whose audio has since gone missing from the cache is not
+    done, whatever its status says, or adding the link again could never fetch
+    the audio back. An upload gets its audio back by being added again instead.
+    """
+    if getattr(status.steps, step).state != "done":
+        return False
+    if step == "fetch" and _applies(step, status.source):
+        return store.source_path(song_id) is not None
+    return True
+
+
 def prepare(store: SongStore, song_id: str) -> None:
     """Run each step of a song that is not done yet, in order.
 
     Safe to repeat: finished steps are left alone and every other step is
     judged afresh, so a step skipped as "not built yet" runs once its runner
-    is registered and a failed step is retried.
+    is registered, a failed step is retried and a fetch whose audio has gone
+    missing is run again.
     """
     for step in STEP_ORDER:
         # Read on every turn: the step before this one decides what it does.
@@ -127,7 +195,7 @@ def prepare(store: SongStore, song_id: str) -> None:
         if status is None:
             logger.warning("Song %s vanished before it was prepared", song_id)
             return
-        if getattr(status.steps, step).state == "done":
+        if _is_done(store, song_id, step, status):
             continue
         _run_step(store, song_id, step, status)
 

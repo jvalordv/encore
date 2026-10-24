@@ -5,10 +5,13 @@ pin down the pipeline's rules without any model or network.
 """
 
 import logging
-from collections.abc import Callable
+import threading
+from collections.abc import Callable, Iterator
 
 import pytest
 
+from encore_service import pipeline
+from encore_service.jobs import JobQueue
 from encore_service.pipeline import (
     MIN_PROGRESS_INTERVAL_S,
     MIN_PROGRESS_STEP,
@@ -17,8 +20,9 @@ from encore_service.pipeline import (
     initial_status,
     make_reporter,
     prepare,
+    queue_preparation,
 )
-from encore_service.schemas import SongSteps, StepStatus
+from encore_service.schemas import SongStatus, SongSteps, StepStatus
 from encore_service.store import SongMeta, SongStore
 
 
@@ -372,6 +376,47 @@ def test_a_failed_fetch_leaves_nothing_to_separate(
     assert separation.count == 0
 
 
+def test_a_done_fetch_runs_again_when_its_audio_has_gone_missing(
+    store: SongStore, new_link: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    song_id = new_link()
+    # The fetch finished once; the file it made was lost from the cache after.
+    store.update_step(song_id, "fetch", state="done", progress=1.0)
+    assert store.source_path(song_id) is None
+
+    def fetch(s: SongStore, sid: str, report: Callable[[float], None]) -> None:
+        (s.song_dir(sid) / "source.flac").write_bytes(b"fLaC")
+
+    fetching, separation = Calls(fetch), Calls(_ok)
+    monkeypatch.setitem(RUNNERS, "fetch", fetching)
+    monkeypatch.setitem(RUNNERS, "separation", separation)
+
+    prepare(store, song_id)
+
+    # Not "Needs fetch" for good: the fetch ran, and the audio is back.
+    assert fetching.count == 1
+    status = store.read_status(song_id)
+    assert status is not None
+    assert status.steps.fetch.state == "done"
+    assert status.steps.separation.state == "done"
+    assert separation.count == 1
+
+
+def test_a_done_fetch_is_left_alone_while_its_audio_is_there(
+    store: SongStore, new_link: Callable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    song_id = new_link()
+    store.update_step(song_id, "fetch", state="done", progress=1.0)
+    (store.song_dir(song_id) / "source.flac").write_bytes(b"fLaC")
+    fetching = Calls(_ok)
+    monkeypatch.setitem(RUNNERS, "fetch", fetching)
+
+    prepare(store, song_id)
+
+    assert fetching.count == 0
+    assert store.read_status(song_id) is not None
+
+
 def test_an_upload_that_lost_its_audio_is_told_to_be_added_again(
     store: SongStore, new_song: Callable, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -494,3 +539,250 @@ def test_the_reporter_clamps_and_ignores_nonsense(
 
     report(1.0000001)  # a runner's rounding must not fail the step
     assert _separation(store, song_id).progress == 1.0
+
+
+# --- queue_preparation -----------------------------------------------------
+
+WAIT_S = 10.0
+QUEUED = StepStatus()  # queued, no progress, no error, no detail
+
+
+@pytest.fixture
+def jobs() -> Iterator[JobQueue]:
+    """A job queue stopped after the test; a test starts it when it needs to."""
+    job_queue = JobQueue()
+    yield job_queue
+    job_queue.stop(timeout=WAIT_S)
+
+
+def _status(store: SongStore, song_id: str) -> SongStatus:
+    status = store.read_status(song_id)
+    assert status is not None
+    return status
+
+
+def test_queue_preparation_puts_unfinished_steps_back_to_queued(
+    store: SongStore, jobs: JobQueue, new_link: Callable
+) -> None:
+    song_id = new_link()
+    store.update_step(song_id, "fetch", state="failed", progress=0.4, error="boom")
+    store.update_step(song_id, "separation", state="skipped", detail="Needs fetch")
+    store.update_step(song_id, "reference", state="failed", error="old failure")
+    store.update_step(song_id, "lyrics", state="running", progress=0.2)
+
+    returned = queue_preparation(store, jobs, song_id)
+
+    # The status handed back is the one after the reset, and so is the file.
+    for name in STEP_ORDER:
+        assert getattr(returned.steps, name) == QUEUED
+    assert _status(store, song_id) == returned
+    # Nothing but the steps changed.
+    assert (returned.song_id, returned.source) == (song_id, "youtube")
+    assert returned.title == "Linked"
+    assert returned.duration_s == 200.0
+
+
+def test_queue_preparation_leaves_done_steps_alone(
+    store: SongStore, jobs: JobQueue, new_link: Callable
+) -> None:
+    song_id = new_link()
+    # A fetch is only done while the audio it made is in the cache.
+    (store.song_dir(song_id) / "source.flac").write_bytes(b"fLaC")
+    store.update_step(song_id, "fetch", state="done", progress=1.0)
+    store.update_step(song_id, "separation", state="failed", error="out of memory")
+    store.update_step(song_id, "reference", state="skipped", detail="Needs separation")
+
+    returned = queue_preparation(store, jobs, song_id)
+
+    assert returned.steps.fetch == StepStatus(state="done", progress=1.0)
+    assert returned.steps.separation == QUEUED
+    assert returned.steps.reference == QUEUED
+    assert returned.steps.lyrics == QUEUED
+
+
+def test_queue_preparation_queues_a_done_fetch_whose_audio_has_gone_missing(
+    store: SongStore, jobs: JobQueue, new_link: Callable
+) -> None:
+    song_id = new_link()
+    store.update_step(song_id, "fetch", state="done", progress=1.0)
+    store.update_step(song_id, "separation", state="skipped", detail="Needs fetch")
+    assert store.source_path(song_id) is None
+
+    returned = queue_preparation(store, jobs, song_id)
+
+    # Adding the link again is how a lost download is repaired, so the status
+    # must not go on saying the download is done.
+    assert returned.steps.fetch == QUEUED
+    assert returned.steps.separation == QUEUED
+    assert _status(store, song_id) == returned
+
+
+def test_queue_preparation_keeps_fetch_skipped_for_an_upload(
+    store: SongStore, jobs: JobQueue, new_song: Callable
+) -> None:
+    song_id = new_song()
+    store.update_step(song_id, "separation", state="failed", error="no")
+
+    returned = queue_preparation(store, jobs, song_id)
+
+    # An upload arrives with its audio, so fetch never applies to it.
+    assert returned.steps.fetch == StepStatus(state="skipped")
+    assert returned.steps.separation == QUEUED
+    assert _status(store, song_id) == returned
+
+
+def test_queue_preparation_of_a_song_with_nothing_to_reset_returns_it_as_it_is(
+    store: SongStore, jobs: JobQueue, new_song: Callable
+) -> None:
+    song_id = new_song()
+    before = _status(store, song_id)
+    assert queue_preparation(store, jobs, song_id) == before
+    assert _status(store, song_id) == before
+
+
+def test_queue_preparation_queues_one_prepare_job_for_the_song(
+    store: SongStore,
+    jobs: JobQueue,
+    new_song: Callable,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    song_id = new_song()
+    separation = Calls(_ok)
+    monkeypatch.setitem(RUNNERS, "separation", separation)
+
+    queue_preparation(store, jobs, song_id)
+    # Still pending, as the worker has not started: a repeat is not queued.
+    assert jobs.submit(song_id, lambda: None) is False
+    jobs.start()
+    assert jobs.wait_idle(WAIT_S)
+
+    assert separation.count == 1
+    assert _separation(store, song_id).state == "done"
+
+
+def test_queue_preparation_changes_nothing_for_a_song_already_queued(
+    store: SongStore, jobs: JobQueue, new_song: Callable
+) -> None:
+    song_id = new_song()
+    # Accepted, and the worker is not started, so the job stays queued.
+    queue_preparation(store, jobs, song_id)
+    store.update_step(song_id, "separation", state="failed", error="late news")
+    queued = _status(store, song_id)
+
+    again = queue_preparation(store, jobs, song_id)
+
+    # The failure is not wiped: that job has not run yet, and a reset now
+    # would hide a result the person has not seen.
+    assert again == queued
+    assert again.steps.separation.state == "failed"
+    assert _status(store, song_id) == queued
+
+
+def test_queue_preparation_returns_a_running_song_unchanged(
+    store: SongStore,
+    jobs: JobQueue,
+    new_song: Callable,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    song_id = new_song()
+    started, release = threading.Event(), threading.Event()
+
+    def separate(s: SongStore, sid: str, report: Callable[[float], None]) -> None:
+        report(0.5)
+        started.set()
+        assert release.wait(WAIT_S)
+
+    monkeypatch.setitem(RUNNERS, "separation", separate)
+    jobs.start()
+    first = queue_preparation(store, jobs, song_id)
+    assert first.steps.separation == QUEUED
+    assert started.wait(WAIT_S)
+    running = _status(store, song_id)
+    assert (running.steps.separation.state, running.steps.separation.progress) == (
+        "running",
+        0.5,
+    )
+
+    again = queue_preparation(store, jobs, song_id)
+
+    assert again == running
+    assert _status(store, song_id) == running
+    release.set()
+    assert jobs.wait_idle(WAIT_S)
+    assert _separation(store, song_id).state == "done"
+
+
+def test_the_reset_lands_before_a_worker_can_start_the_job(
+    store: SongStore,
+    jobs: JobQueue,
+    new_song: Callable,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    song_id = new_song()
+    store.update_step(song_id, "separation", state="failed", error="old failure")
+    store.update_step(song_id, "reference", state="failed", error="old failure")
+    at_entry: list[str] = []
+
+    def separate(s: SongStore, sid: str, report: Callable[[float], None]) -> None:
+        # Runs on the worker, the moment it has the job.
+        status = s.read_status(sid)
+        assert status is not None
+        at_entry.append(status.steps.reference.state)
+        raise RuntimeError("new failure")
+
+    real_reset = pipeline._reset_unfinished
+
+    def slow_reset(s: SongStore, sid: str) -> SongStatus:
+        # Hand a worker that already holds the job time to finish it. A reset
+        # that waited for the job to be queued would then bury its result;
+        # one that runs first just waits out the timeout, as no job can run.
+        jobs.wait_idle(timeout=0.3)
+        return real_reset(s, sid)
+
+    monkeypatch.setattr(pipeline, "_reset_unfinished", slow_reset)
+    monkeypatch.setitem(RUNNERS, "separation", separate)
+    jobs.start()
+
+    returned = queue_preparation(store, jobs, song_id)
+    assert jobs.wait_idle(WAIT_S)
+
+    # The job saw the reset steps, not the failures they had before...
+    assert at_entry == ["queued"]
+    assert returned.steps.separation == QUEUED
+    # ...and what it found afterwards stands.
+    step = _separation(store, song_id)
+    assert (step.state, step.error) == ("failed", "new failure")
+    reference = _status(store, song_id).steps.reference
+    assert (reference.state, reference.error) == ("skipped", None)
+
+
+def test_queue_preparation_for_a_song_that_is_gone_raises_and_frees_the_key(
+    store: SongStore, jobs: JobQueue
+) -> None:
+    with pytest.raises(FileNotFoundError):
+        queue_preparation(store, jobs, "9" * 64)
+    # Nothing was queued under the id.
+    jobs.start()
+    assert jobs.wait_idle(WAIT_S)
+    assert jobs.submit("9" * 64, lambda: None) is True
+
+
+def test_a_song_can_be_queued_again_once_its_job_has_finished(
+    store: SongStore,
+    jobs: JobQueue,
+    new_song: Callable,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    song_id = new_song()
+    separation = Calls(_boom)
+    monkeypatch.setitem(RUNNERS, "separation", separation)
+    jobs.start()
+
+    queue_preparation(store, jobs, song_id)
+    assert jobs.wait_idle(WAIT_S)
+    assert _separation(store, song_id).state == "failed"
+
+    retry = queue_preparation(store, jobs, song_id)
+    assert retry.steps.separation == QUEUED
+    assert jobs.wait_idle(WAIT_S)
+    assert separation.count == 2

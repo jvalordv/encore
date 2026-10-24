@@ -195,3 +195,95 @@ def test_a_stopped_queue_refuses_work_and_cannot_restart(jobs: JobQueue) -> None
         jobs.submit("song", lambda: None)
     with pytest.raises(RuntimeError, match="restarted"):
         jobs.start()
+
+
+def test_on_accepted_runs_before_the_job_does(jobs: JobQueue) -> None:
+    order: list[str] = []
+    jobs.start()
+    accepted = jobs.submit(
+        "song",
+        lambda: order.append("job"),
+        on_accepted=lambda: order.append("hook"),
+    )
+    assert accepted is True
+    assert jobs.wait_idle(WAIT_S)
+    assert order == ["hook", "job"]
+
+
+def test_on_accepted_holds_the_job_back_until_it_has_returned(
+    jobs: JobQueue,
+) -> None:
+    in_hook, release = threading.Event(), threading.Event()
+    order: list[str] = []
+
+    def slow_hook() -> None:
+        in_hook.set()
+        assert release.wait(WAIT_S)
+        order.append("hook")
+
+    jobs.start()
+    submitter = threading.Thread(
+        target=jobs.submit,
+        args=("song", lambda: order.append("job")),
+        kwargs={"on_accepted": slow_hook},
+    )
+    submitter.start()
+    assert in_hook.wait(WAIT_S)
+    release.set()
+    submitter.join(WAIT_S)
+    assert jobs.wait_idle(WAIT_S)
+    assert order == ["hook", "job"]
+
+
+def test_on_accepted_is_skipped_for_a_key_already_queued(jobs: JobQueue) -> None:
+    calls: list[str] = []
+    # The worker is not started, so the first job stays queued.
+    assert jobs.submit("song", lambda: None, on_accepted=lambda: calls.append("1"))
+    assert not jobs.submit("song", lambda: None, on_accepted=lambda: calls.append("2"))
+    assert calls == ["1"]
+
+
+def test_on_accepted_is_skipped_for_a_key_already_running(jobs: JobQueue) -> None:
+    started, release = threading.Event(), threading.Event()
+    calls: list[str] = []
+
+    def hold() -> None:
+        started.set()
+        release.wait(WAIT_S)
+
+    jobs.start()
+    jobs.submit("song", hold)
+    assert started.wait(WAIT_S)
+    assert not jobs.submit("song", hold, on_accepted=lambda: calls.append("hook"))
+    release.set()
+    assert jobs.wait_idle(WAIT_S)
+    assert calls == []
+
+
+def test_a_failing_on_accepted_frees_the_key_and_queues_nothing(
+    jobs: JobQueue,
+) -> None:
+    ran: list[str] = []
+
+    def broken() -> None:
+        raise OSError("disk full")
+
+    with pytest.raises(OSError, match="disk full"):
+        jobs.submit("song", lambda: ran.append("first"), on_accepted=broken)
+
+    jobs.start()
+    # Nothing is pending, so the key was freed and the job never queued.
+    assert jobs.wait_idle(WAIT_S)
+    assert ran == []
+    assert jobs.submit("song", lambda: ran.append("second")) is True
+    assert jobs.wait_idle(WAIT_S)
+    assert ran == ["second"]
+
+
+def test_a_stopped_queue_does_not_call_on_accepted(jobs: JobQueue) -> None:
+    calls: list[str] = []
+    jobs.start()
+    jobs.stop(timeout=WAIT_S)
+    with pytest.raises(RuntimeError, match="stopped"):
+        jobs.submit("song", lambda: None, on_accepted=lambda: calls.append("hook"))
+    assert calls == []

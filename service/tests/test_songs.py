@@ -7,6 +7,7 @@ and the job queue are the ones the service uses, over a temporary cache.
 import hashlib
 import io
 import json
+import logging
 import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -486,6 +487,44 @@ def test_songs_queued_when_the_service_stopped_are_prepared_on_the_next_start(
     assert sorted(prepared) == sorted([first, second])
 
 
+def test_a_song_that_cannot_be_resumed_does_not_stop_the_service_starting(
+    tmp_path: Path,
+    new_song: Callable[..., str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # The queue runs songs in name order; the broken one is the first.
+    broken, healthy = sorted([new_song(WAV), new_song(OTHER_WAV)])
+    prepared: list[str] = []
+    real_reset = pipeline._reset_unfinished
+
+    def reset(store: SongStore, song_id: str) -> object:
+        if song_id == broken:
+            raise OSError("the disk would not answer")
+        return real_reset(store, song_id)
+
+    def separate(
+        store: SongStore, song_id: str, report: Callable[[float], None]
+    ) -> None:
+        prepared.append(song_id)
+
+    monkeypatch.setattr(pipeline, "_reset_unfinished", reset)
+    monkeypatch.setitem(pipeline.RUNNERS, "separation", separate)
+
+    with caplog.at_level(logging.INFO, logger="encore_service.app"):
+        with TestClient(create_app(Settings(cache_dir=tmp_path))) as client:
+            wait_idle(client)
+            steps = client.get(f"/songs/{healthy}").json()["steps"]
+            assert steps["separation"]["state"] == "done"
+
+    # The healthy song was resumed, the broken one was not queued at all, and
+    # the log says which one and why.
+    assert prepared == [healthy]
+    assert f"Could not resume song {broken}" in caplog.text
+    assert "the disk would not answer" in caplog.text
+    assert "Resuming preparation for 1 queued song(s)" in caplog.text
+
+
 def test_a_song_with_an_interrupted_step_waits_to_be_added_again(
     tmp_path: Path,
     new_song: Callable[..., str],
@@ -534,3 +573,102 @@ def test_songs_survive_a_restart(tmp_path: Path) -> None:
     with TestClient(create_app(settings)) as second:
         assert second.get(f"/songs/{song_id}").json()["title"] == "tone"
         assert second.get(f"/songs/{song_id}/audio").content == WAV
+
+
+def test_a_failed_step_reads_queued_in_the_re_add_response(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail_first(
+        store: SongStore, song_id: str, report: Callable[[float], None]
+    ) -> None:
+        raise RuntimeError("first failure")
+
+    monkeypatch.setitem(pipeline.RUNNERS, "separation", fail_first)
+    song_id = post(client).json()["song_id"]
+    wait_idle(client)
+    failed = client.get(f"/songs/{song_id}").json()["steps"]["separation"]
+    assert (failed["state"], failed["error"]) == ("failed", "first failure")
+
+    def fail_second(
+        store: SongStore, song_id: str, report: Callable[[float], None]
+    ) -> None:
+        raise RuntimeError("second failure")
+
+    monkeypatch.setitem(pipeline.RUNNERS, "separation", fail_second)
+    steps = post(client).json()["steps"]
+
+    # The retry is queued, so the failure is not shown beside it.
+    queued = {"state": "queued", "progress": 0.0, "error": None, "detail": None}
+    assert steps["separation"] == queued
+    assert steps["reference"] == queued  # it had been skipped for want of audio
+    assert steps["lyrics"] == queued
+    assert steps["fetch"]["state"] == "skipped"  # an upload has no fetch
+    wait_idle(client)
+    after = client.get(f"/songs/{song_id}").json()["steps"]["separation"]
+    assert (after["state"], after["error"]) == ("failed", "second failure")
+
+
+def test_a_re_add_of_a_running_song_returns_its_status_unchanged(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reported, release = threading.Event(), threading.Event()
+
+    def separate(
+        store: SongStore, song_id: str, report: Callable[[float], None]
+    ) -> None:
+        report(0.5)
+        reported.set()
+        assert release.wait(WAIT_S)
+
+    monkeypatch.setitem(pipeline.RUNNERS, "separation", separate)
+    song_id = post(client).json()["song_id"]
+    assert reported.wait(WAIT_S)
+    running = client.get(f"/songs/{song_id}").json()
+    assert running["steps"]["separation"]["state"] == "running"
+
+    again = post(client)
+
+    assert again.json() == running
+    assert client.get(f"/songs/{song_id}").json() == running
+    release.set()
+    wait_idle(client)
+
+
+def test_a_song_resumed_at_start_does_not_read_as_skipped_while_it_waits(
+    tmp_path: Path, new_song: Callable[..., str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The queue runs songs in name order, so the first one holds up the second.
+    first, second = sorted([new_song(WAV), new_song(OTHER_WAV)])
+    store = SongStore(tmp_path)
+    # What an earlier run left: a step skipped as "not built yet" next to
+    # steps still queued, which is why the song is resumed at all.
+    store.update_step(
+        second, "separation", state="skipped", detail="Not built yet (ROADMAP P2-T2)"
+    )
+    started, release = threading.Event(), threading.Event()
+
+    def separate(
+        store: SongStore, song_id: str, report: Callable[[float], None]
+    ) -> None:
+        if song_id == first:
+            started.set()
+            assert release.wait(WAIT_S)
+
+    monkeypatch.setitem(pipeline.RUNNERS, "separation", separate)
+
+    with TestClient(create_app(Settings(cache_dir=tmp_path))) as client:
+        assert started.wait(WAIT_S)
+        waiting = client.get(f"/songs/{second}").json()["steps"]["separation"]
+        # Its turn has not come, and it no longer carries the old note.
+        assert waiting == {
+            "state": "queued",
+            "progress": 0.0,
+            "error": None,
+            "detail": None,
+        }
+        release.set()
+        wait_idle(client)
+        done = client.get(f"/songs/{second}").json()["steps"]["separation"]
+
+    assert done["state"] == "done"
+    assert done["detail"] is None

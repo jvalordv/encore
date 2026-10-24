@@ -3,7 +3,9 @@
 A song lives in `<cache_dir>/<song_id>/` as `source.<ext>` (the audio),
 `meta.json` (what the song is) and `status.json` (how far preparation has
 got). Uploads stream into `<cache_dir>/.incoming/` first and are moved into
-place once hashed. The routes, the job queue and the preparation steps all
+place once hashed. A linked song is created with no audio at all; its fetch
+step works in a folder of its own and moves the finished file into place
+(`install_source`). The routes, the job queue and the preparation steps all
 reach the cache through `SongStore`, so this is the one module that builds a
 path from an id, and the id check that guards against path traversal lives
 here too.
@@ -248,6 +250,62 @@ class SongStore:
             folder.mkdir(parents=True, exist_ok=True)
             _replace(part, folder / f"source{ext}")
             _write_json(folder / META_FILE, meta)
+            _write_json(folder / STATUS_FILE, status)
+            return status
+
+    def add_link(self, song_id: str, meta: SongMeta, status: SongStatus) -> SongStatus:
+        """Create a linked song that has no audio yet.
+
+        Like `add_upload` without a part file: returns the stored status,
+        `status` for a new song or the existing one when another request
+        created the song first, and writes the status last so a crash
+        part-way leaves no song behind.
+        """
+        folder = self.song_dir(song_id)
+        if status.song_id != song_id:
+            raise ValueError(f"Status is for {status.song_id!r}, not {song_id!r}")
+        # Held across the whole creation, as in add_upload, so two requests
+        # for the same video cannot interleave their writes.
+        with self._lock:
+            existing = _load(folder / STATUS_FILE, SongStatus)
+            if existing is not None:
+                return existing
+            folder.mkdir(parents=True, exist_ok=True)
+            _write_json(folder / META_FILE, meta)
+            _write_json(folder / STATUS_FILE, status)
+            return status
+
+    def install_source(self, song_id: str, finished: Path, ext: str) -> Path:
+        """Move a finished audio file into the song's folder as `source<ext>`.
+
+        The move is atomic, so `source<ext>` is either absent or whole and a
+        half-written download is never served. `finished` should be on the
+        same volume as the cache, which a file in the song's own folder is.
+        """
+        if ext not in AUDIO_MEDIA_TYPES:
+            raise ValueError(f"Unsupported source extension: {ext!r}")
+        target = self.song_dir(song_id) / f"source{ext}"
+        with self._lock:
+            _replace(finished, target)
+        return target
+
+    def set_duration(self, song_id: str, duration_s: float) -> SongStatus:
+        """Record a song's measured length in meta.json and status.json.
+
+        Both files change under one hold of the lock, so no reader sees them
+        disagree. Returns the new status; raises FileNotFoundError when the
+        song has no status.
+        """
+        folder = self.song_dir(song_id)
+        with self._lock:
+            status = _load(folder / STATUS_FILE, SongStatus)
+            if status is None:
+                raise FileNotFoundError(f"No status stored for song {song_id}")
+            meta = _load(folder / META_FILE, SongMeta)
+            if meta is not None:
+                meta.duration_s = duration_s
+                _write_json(folder / META_FILE, meta)
+            status.duration_s = duration_s
             _write_json(folder / STATUS_FILE, status)
             return status
 

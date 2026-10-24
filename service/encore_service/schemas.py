@@ -5,6 +5,8 @@ field; `src/service/types.ts` mirrors them by hand, so change both together.
 Feature names follow the "What we measure" table in docs/COACHING.md. The
 helper models (MidiRange, SongSteps, Alignment, Evidence, and the feature
 groups) exist only to give the nested objects in that block a name.
+SongLinkRequest is the one request body that is not an upload: it carries the
+link posted to /songs/url.
 """
 
 from typing import Literal, Self
@@ -116,6 +118,12 @@ class SongStatus(BaseModel):
     duration_s: float | None = None
     source: SongSource = "file"
     steps: SongSteps = Field(default_factory=SongSteps)
+
+
+class SongLinkRequest(BaseModel):
+    """Body of POST /songs/url: a link to one YouTube video, as pasted."""
+
+    url: str
 
 
 class IntonationFeatures(BaseModel):

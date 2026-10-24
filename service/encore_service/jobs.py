@@ -65,14 +65,28 @@ class JobQueue:
         if was_running and thread is not None:
             thread.join(timeout)
 
-    def submit(self, key: str, job: Job) -> bool:
-        """Queue `job` under `key`; False if that key is queued or running."""
+    def submit(
+        self, key: str, job: Job, on_accepted: Callable[[], None] | None = None
+    ) -> bool:
+        """Queue `job` under `key`; False if that key is queued or running.
+
+        `on_accepted` runs once the key is taken and before the worker can
+        see the job, so it can write what the job will read. It holds the
+        queue's lock: keep it short. If it raises, the key is released, the
+        job is not queued and the error reaches the caller.
+        """
         with self._cond:
             if self._state == "stopped":
                 raise RuntimeError("The job queue has been stopped.")
             if key in self._pending:
                 return False
             self._pending.add(key)
+            if on_accepted is not None:
+                try:
+                    on_accepted()
+                except BaseException:
+                    self._pending.discard(key)
+                    raise
             # Inside the lock so queue order is submission order.
             self._items.put((key, job))
             return True

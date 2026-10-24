@@ -20,6 +20,9 @@ DEFAULT_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
 # service/cache, next to the package rather than relative to the working
 # directory, so the cache is the same wherever uvicorn is launched from.
 DEFAULT_CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
+# Longest YouTube video, in seconds, that a link may bring in: 15 minutes
+# fits any song, and keeps a long mix or a stream from filling the cache.
+DEFAULT_MAX_SONG_S = 900
 
 
 def cuda_available() -> bool:
@@ -41,6 +44,7 @@ class Settings:
     cache_dir: Path = DEFAULT_CACHE_DIR
     port: int = DEFAULT_PORT
     allowed_origins: tuple[str, ...] = DEFAULT_ORIGINS
+    max_song_s: int = DEFAULT_MAX_SONG_S
 
     @cached_property
     def device(self) -> str:
@@ -73,9 +77,22 @@ class Settings:
             if o.strip()
         )
 
+        max_raw = env.get("ENCORE_MAX_SONG_S", "").strip()
+        try:
+            max_song_s = int(max_raw) if max_raw else DEFAULT_MAX_SONG_S
+        except ValueError:
+            max_song_s = 0
+        if max_song_s < 1:
+            # One message for "not a number" and "not above zero": a limit of
+            # zero would refuse every video, so it can only be a mistake.
+            raise ValueError(
+                f"ENCORE_MAX_SONG_S must be a positive integer, got {max_raw!r}"
+            )
+
         return cls(
             device_override=device,
             cache_dir=cache_dir,
             port=port,
             allowed_origins=origins or DEFAULT_ORIGINS,
+            max_song_s=max_song_s,
         )

@@ -251,7 +251,7 @@ lyrics, and scores each take against it.
     the body. An ASGI size guard would reject early. Low value on loopback.
   - Follow-up (P2-T2): `duration_s` is None for m4a (libsndfile cannot read
     AAC); fill it in meta and status once the audio is decoded.
-- [ ] **P2-T1b** (S) **YouTube intake, service. Owner priority.**
+- [x] **P2-T1b** (S) **YouTube intake, service. Owner priority.**
   `POST /songs/url` with `{url}` per "Song sources" in
   `docs/ARCHITECTURE.md`: host allow list, metadata lookup through yt-dlp's
   Python API without downloading, reject live and over-long videos
@@ -268,6 +268,37 @@ lyrics, and scores each take against it.
   failure path. One manual run against a real, short, freely licensed video
   recorded in the task notes. `service/README.md` gets a YouTube section
   with the personal-use note.
+  - Done: `youtube.py` (parser, canonical URL, lookup, download, ffmpeg),
+    `fetch.py` (the runner), `POST /songs/url`, `queue_preparation`,
+    `add_link`, `ENCORE_MAX_SONG_S`; 507 service tests. Review fixes: a
+    `$` in the cache path made yt-dlp write elsewhere (now refused with a
+    message); a link whose audio was lost could never be re-fetched (a done
+    fetch with no audio now counts as not done). `queue_preparation` resets
+    steps through an `on_accepted` hook under the queue lock, because
+    reset-after-submit races the worker (a test proves the naive order
+    fails).
+  - Real run (2026-10-23, yt-dlp 2026.10.21, yt-dlp-ejs 0.8.0, Node 24,
+    ffmpeg 9.0.2): Big Buck Bunny (CC BY) looked up in 2.2 s, fetched in
+    about 6 s; repeats of youtu.be/shorts/watch forms answered in under
+    15 ms with no YouTube request. Nonexistent id gave the 502 with hint;
+    over-length gave the 422. The best stream was AAC 5.1, so the
+    orchestrator added the stereo downmix (`aformat=mono|stereo`) with a
+    real-ffmpeg test that a centre-only 5.1 tone survives in both sides.
+  - Contract for P2-T1d: `SongLinkRequest {url}`; 200 SongStatus, 422 plain
+    `detail` (not a link, live or unknown length, too long), 502 with the
+    yt-dlp text and update hint. A fetch `error` reads "what failed: why".
+    `GET /audio` answers 409 for a link whose audio is gone until it is
+    added again: treat that as "add again".
+  - Follow-up: Node older than 22 (or Deno older than 2.3) is skipped by
+    yt-dlp without a word, so the no-runtime note never shows. Probe
+    `node --version` and log the yt-dlp version and runtime at start.
+  - Follow-up: a crash mid-download leaves `<song>/.fetch/` until that
+    song is fetched again; `recover_interrupted` could clear it.
+  - Follow-up: a cache-hit re-add skips the lookup, so a lowered
+    `ENCORE_MAX_SONG_S` does not apply to songs already cached.
+  - Follow-up: song folders are named by case-sensitive video ids; on
+    Windows two ids differing only in case would share a folder.
+    Astronomically rare; revisit only if ids ever collide.
 - [ ] **P2-T1c** (S) **Play a YouTube link inside the app. Owner priority.**
   No service needed. Design in `docs/ARCHITECTURE.md` (YouTube playback in
   the app). Start with a **spike**, recorded in this task's notes before
