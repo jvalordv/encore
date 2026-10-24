@@ -7,11 +7,20 @@ resume protocol in `CLAUDE.md`.
 
 ## Current state
 
-- **Last done:** P1-T9 and P1-T10 (calibration that survives a room;
-  speaker mode), then a Windows fix: `test/skins.test.ts` failed on CRLF
-  checkouts (`core.autocrlf`), now `\r?\n` (`b462609`). 491 unit tests
-  green; `npm run e2e` not re-run this session since nothing touched audio
-  or UI. Nothing tried on real speakers yet.
+- **Last done:** P2-T1 (service song intake: cache, one-at-a-time job
+  queue, step pipeline with a runner registry, status and audio routes;
+  183 service tests). Before it: a Windows CRLF fix to
+  `test/skins.test.ts` (`b462609`). 491 unit tests green. Speaker mode
+  still untried on real speakers.
+- **Workflow:** the orchestrator (Opus) runs each wave as a Workflow:
+  Sonnet implementer, three review lenses, adversarial verification of
+  findings, fixer, critic. Then it reviews the diff itself and commits.
+  Browser-side work runs in a git worktree and merges at the end, so the
+  owner's dev server on :5173 reloads once.
+- **e2e on this machine:** Playwright's Chromium was missing (earlier runs
+  were elsewhere). `npx playwright install chromium` hung once on the
+  headless-shell download and was retried; if `npm run e2e` says the
+  executable does not exist, rerun that install.
 - **In progress:** no code. The owner is running the speaker/calibration
   checklist below on real hardware and has not reported results yet. When
   they do: fix what the status lines and their notes show, as `P1-T10`
@@ -214,7 +223,7 @@ built bundle and the tracker reports the right pitch. `e2e` stays out of
 Goal: the service isolates the vocal, the app shows the reference melody and
 lyrics, and scores each take against it.
 
-- [ ] **P2-T1** (S) Song intake. Service `POST /songs` accepts an audio file,
+- [x] **P2-T1** (S) Song intake. Service `POST /songs` accepts an audio file,
   hashes it, stores under `service/cache/<hash>/`, returns `song_id`.
   `GET /songs/{id}` reports status per step (fetch, separation, reference
   analysis, lyrics) with progress; `fetch` is `skipped` for uploads. Add
@@ -225,6 +234,23 @@ lyrics, and scores each take against it.
   (Song sources). Extend `SongSteps`/`SongStatus` in `schemas.py` (`fetch`,
   `title`, `duration_s`, `source`) and mirror in `types.ts` later (P2-T5).
   Tests with a tiny synthetic WAV; no models needed.
+  - Done: `store.py`, `jobs.py`, `pipeline.py`, lifespan in `app.py`,
+    routes in `routes/songs.py`; 183 service tests. Review (three lenses,
+    probe-verified) found two real bugs, both fixed with tests that fail
+    when reverted: songs queued at a restart were stranded, and a job
+    raising `SystemExit` killed the worker silently.
+  - `tests/conftest.py` resets every `pipeline.RUNNERS` entry to None per
+    test. A task that registers a runner must register it in its own tests
+    with `monkeypatch.setitem`, or tests would start real downloads/models.
+  - Follow-up (P2-T1b): a re-add returns the stored status, so a `failed`
+    step still reads failed while its retry is queued. Add one
+    `queue_preparation(store, jobs, song_id)` in `pipeline.py` used by both
+    routes and the lifespan: submit, and when accepted reset non-done
+    applicable steps to `queued` (clear error/detail) before returning.
+  - Follow-up: the 200 MiB limit is checked after the framework has spooled
+    the body. An ASGI size guard would reject early. Low value on loopback.
+  - Follow-up (P2-T2): `duration_s` is None for m4a (libsndfile cannot read
+    AAC); fill it in meta and status once the audio is decoded.
 - [ ] **P2-T1b** (S) **YouTube intake, service. Owner priority.**
   `POST /songs/url` with `{url}` per "Song sources" in
   `docs/ARCHITECTURE.md`: host allow list, metadata lookup through yt-dlp's
@@ -288,6 +314,11 @@ lyrics, and scores each take against it.
   working. Tests for the client against a stubbed `fetch` (progress,
   failure, cache hit, abort on a second load via `loadToken`) and for the
   drift rule; one e2e with the service routes stubbed.
+  - Note (from P2-T1): a song interrupted by a service restart has one
+    `failed` step and its later steps stay `queued` until it is added
+    again. Polling must treat any `failed` step as settling the song (stop
+    polling, show the error and an "Add again" action), not wait for every
+    step to leave `queued`.
 - [ ] **P2-T2** (S) Separation. Demucs (`htdemucs_ft`) producing
   `vocals.wav` and `no_vocals.wav`. Configurable model id. Honour
   `ENCORE_DEVICE` env (`cuda` default when available).
@@ -297,7 +328,9 @@ lyrics, and scores each take against it.
   rules). Save `reference.json` using the contour and notes schemas.
   - Follow-up (from P2-T1b): when `vocals.wav` is near silent (a karaoke
     upload linked from YouTube), mark the step `skipped` with a reason the
-    browser can show, not a flat contour.
+    browser can show, not a flat contour. Today a runner can only finish
+    (done) or raise (failed): add a `StepSkipped(reason)` exception that
+    `pipeline._run_step` turns into `skipped` with that detail.
 - [ ] **P2-T4** (S) Lyrics. WhisperX on `vocals.wav` for word-level
   timestamps, saved as `lyrics.json`. Language auto-detected. Degrade
   gracefully when no words are found (instrumental, rap flagged as

@@ -9,6 +9,7 @@ from encore_service.schemas import (
     Note,
     Recommendation,
     SongStatus,
+    SongSteps,
     TakeAnalysis,
 )
 
@@ -37,28 +38,76 @@ def test_contour_rejects_mismatched_lengths() -> None:
 
 def test_song_status_round_trips() -> None:
     raw = {
-        "song_id": "ab12",
+        "song_id": "yt-dQw4w9WgXcQ",
+        "title": "Tone",
+        "duration_s": 212.5,
+        "source": "youtube",
         "steps": {
-            "separation": {"state": "done", "progress": 1.0, "error": None},
-            "reference": {"state": "running", "progress": 0.4, "error": None},
-            "lyrics": {"state": "failed", "progress": 0.0, "error": "no words"},
+            "fetch": {"state": "done", "progress": 1.0, "error": None, "detail": None},
+            "separation": {
+                "state": "done",
+                "progress": 1.0,
+                "error": None,
+                "detail": None,
+            },
+            "reference": {
+                "state": "running",
+                "progress": 0.4,
+                "error": None,
+                "detail": None,
+            },
+            "lyrics": {
+                "state": "skipped",
+                "progress": 0.0,
+                "error": None,
+                "detail": "Not built yet (ROADMAP P2-T4)",
+            },
         },
     }
     status = SongStatus.model_validate(raw)
     assert status.steps.reference.progress == 0.4
+    assert status.steps.lyrics.detail == "Not built yet (ROADMAP P2-T4)"
     assert status.model_dump() == raw
+
+
+def test_song_status_keeps_a_failure_message_in_error() -> None:
+    status = SongStatus.model_validate(
+        {"song_id": "ab12", "steps": {"lyrics": {"state": "failed", "error": "no"}}}
+    )
+    assert status.steps.lyrics.error == "no"
+    assert status.steps.lyrics.detail is None
 
 
 def test_song_status_defaults_to_queued() -> None:
     status = SongStatus(song_id="ab12")
+    assert status.steps.fetch.state == "queued"
     assert status.steps.separation.state == "queued"
     assert status.steps.lyrics.progress == 0.0
+    assert status.steps.separation.detail is None
+    # A bare status is an upload with nothing known about it yet.
+    assert status.source == "file"
+    assert status.title is None
+    assert status.duration_s is None
+
+
+def test_song_steps_run_in_order_with_fetch_first() -> None:
+    assert list(SongSteps.model_fields) == [
+        "fetch",
+        "separation",
+        "reference",
+        "lyrics",
+    ]
 
 
 def test_step_state_is_restricted() -> None:
     raw = {"song_id": "x", "steps": {"lyrics": {"state": "paused"}}}
     with pytest.raises(ValidationError):
         SongStatus.model_validate(raw)
+
+
+def test_song_source_is_restricted() -> None:
+    with pytest.raises(ValidationError):
+        SongStatus.model_validate({"song_id": "x", "source": "vimeo"})
 
 
 def test_take_analysis_accepts_empty_features() -> None:

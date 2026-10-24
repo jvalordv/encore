@@ -13,6 +13,10 @@ from pydantic import BaseModel, Field, model_validator
 
 # Lifecycle of one song preparation step.
 StepState = Literal["queued", "running", "done", "failed", "skipped"]
+# The preparation steps, in the order they run.
+StepName = Literal["fetch", "separation", "reference", "lyrics"]
+# How a song entered the service; only linked songs have a fetch step to run.
+SongSource = Literal["file", "youtube"]
 # General judges a take alone; match judges it against the original vocal.
 RecommendationMode = Literal["general", "match"]
 # How loudly the report card presents a recommendation.
@@ -91,12 +95,14 @@ class StepStatus(BaseModel):
 
     state: StepState = "queued"
     progress: float = Field(default=0.0, ge=0, le=1)
-    error: str | None = None
+    error: str | None = None  # why a step failed
+    detail: str | None = None  # why a step was skipped, shown to the user
 
 
 class SongSteps(BaseModel):
-    """The three preparation steps every song goes through."""
+    """The four preparation steps in run order; fetch is skipped for uploads."""
 
+    fetch: StepStatus = Field(default_factory=StepStatus)
     separation: StepStatus = Field(default_factory=StepStatus)
     reference: StepStatus = Field(default_factory=StepStatus)
     lyrics: StepStatus = Field(default_factory=StepStatus)
@@ -106,6 +112,9 @@ class SongStatus(BaseModel):
     """Preparation status of one song, polled by the browser."""
 
     song_id: str
+    title: str | None = None
+    duration_s: float | None = None
+    source: SongSource = "file"
     steps: SongSteps = Field(default_factory=SongSteps)
 
 

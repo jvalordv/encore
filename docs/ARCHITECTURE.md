@@ -116,11 +116,20 @@ reference melody, lyrics, scoring, and coaching when it is up.
   praat-parselmouth. `ENCORE_DEVICE` selects `cuda` or `cpu`.
 - **Jobs.** One worker thread, FIFO. A 4070 Ti (12 GB) handles demucs,
   crepe, and whisper comfortably one at a time, not concurrently. Status is
-  polled; no websockets needed.
+  polled; no websockets needed. `jobs.py` is the queue (idempotent per song,
+  survives a job that raises or exits), `pipeline.py` the steps (a runner
+  registry; a step with no runner reads "skipped: Not built yet (ROADMAP
+  ...)"), `store.py` the cache. On start the service marks steps a crash
+  left `running` as failed ("Add the song again to retry") and resumes songs
+  that were queued but never reached; a failed song is never auto-resumed,
+  so a file that crashes a step cannot crash-loop the service.
 - **Cache.** `service/cache/<song_id>/` holds `source.<ext>`, `meta.json`
   (title, source, url, duration), `vocals.wav`, `no_vocals.wav`,
   `reference.json`, `lyrics.json`, `status.json`. Deleting the folder
-  re-prepares the song. Never committed.
+  re-prepares the song. Never committed. Uploads stream into
+  `service/cache/.incoming/` and are moved into place once hashed; JSON is
+  written atomically and `status.json` last, so a half-made folder is not a
+  song. Only a finished `source.<ext>` from a fixed list is ever served.
 - **Song sources.** A song enters as an uploaded file or a YouTube link;
   everything after intake is identical.
   - *File:* `POST /songs`, id is the sha256 of the bytes.
@@ -173,7 +182,8 @@ Reference    { contour: Contour, notes: Note[], range: {low_midi, high_midi},
 Lyrics       { words: {start_s, end_s, text, line: number}[], language }
 SongStatus   { song_id, title?, duration_s?, source: file|youtube,
                steps: {fetch|separation|reference|lyrics:
-               {state: queued|running|done|failed|skipped, progress, error?}} }
+               {state: queued|running|done|failed|skipped, progress, error?,
+                detail?}} }                       // detail: why it skipped
 TakeAnalysis { contour, notes, alignment: {offset_s, dtw_path?},
                features: Features, recommendations: Recommendation[] }
 Features     see docs/COACHING.md
