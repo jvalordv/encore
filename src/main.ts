@@ -3,8 +3,8 @@
  * registry, applies the saved skin (Studio by default), then builds the
  * Session, hands it the pitch lane, mounts the UI on the markup in index.html
  * and starts the per-frame loop. Nothing needs a running service: the whole
- * practice loop (drop a song, pick a mic, sing, see the pitch) lives in the
- * browser.
+ * practice loop (drop a song or paste a YouTube link, pick a mic, sing, see
+ * the pitch) lives in the browser.
  *
  * Debug and test hook: `window.encore = { session, store }` is always set.
  * `session` is the Session (its intents, and `session.parts` for the audio

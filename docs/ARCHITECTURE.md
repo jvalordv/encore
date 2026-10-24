@@ -89,10 +89,24 @@ reference melody, lyrics, scoring, and coaching when it is up.
     playback, which suits a local-first app.
   - *Latency.* Calibration measures our own output path with our chirp. The
     embed adds a path we cannot play a chirp through, so it gets its own
-    stored offset, adjustable in the same latency field.
+    setting, `embedOffsetS` (default 0, clamped to plus or minus 0.5 s),
+    added to the calibrated latency in `frameToSongTime` only while the
+    YouTube transport is active, with its own "YouTube video offset" field
+    shown only then.
   - *Echo.* Whether Chrome's echo cancellation references the embed's audio
-    in speaker mode is unverified; the P2-T1c spike checks it on real
-    speakers before the mode is advertised.
+    in speaker mode is unverified; it needs the owner's real speakers
+    before the mode is advertised for YouTube songs.
+  - *Lifecycle, as built* (`src/audio/youtube-transport.ts`). A link is
+    cued, not autoplayed. A seek on a cued player would start playback, so
+    the transport re-cues at the new position instead. A video that cannot
+    play here fails 150 to 250 ms after `onReady` with the state still
+    unstarted, so a load is only "ready" after a short settle window. A new
+    link replaces the current song only once it has loaded; a failed link
+    keeps the old song and says so. Starting the video from YouTube's own
+    controls goes through the same guards as the app's Play (no playback
+    during calibration, the saved mic reopened). The player sits in
+    `#stage` above the pitch lane and is torn down (player, listeners,
+    timers) when a file is dropped.
   - *Player rules we follow* (YouTube's required minimum functionality): at
     least 480 by 270, never covered by overlays, never hidden while playing,
     started by a user gesture, one auto-playing player per page. The IFrame
@@ -101,8 +115,10 @@ reference melody, lyrics, scoring, and coaching when it is up.
     page keeps a referrer policy of `strict-origin-when-cross-origin`, the
     iframe sets `origin`, and a desktop shell must serve the app from a
     scheme that sends a Referer (unverified for Tauri's custom scheme;
-    check in P6-T1). Errors 101 and 150 (embedding disabled by the owner of
-    the video) fall back to Prepared mode when the service is up.
+    check in P6-T1). Errors 101 and 150 come both from videos whose owner
+    disables embedding and, as the live check showed, from ids that do not
+    exist, so the message says either may be the cause. P2-T1d offers
+    Prepared mode for them when the service is up.
   - *Ads.* A pre-roll ad plays inside the embed. No ad appeared in the
     spike, so its reporting is unobserved: the transport treats
     `getVideoData().video_id` differing from the requested id, or the

@@ -20,6 +20,7 @@ import {
   wrapLoop,
 } from '../src/audio/player';
 import type { PlayerEvent } from '../src/audio/player';
+import type { Transport } from '../src/audio/transport';
 
 describe('clampSeek', () => {
   it('keeps in-range positions and clamps both ends', () => {
@@ -695,6 +696,67 @@ describe('Player stems', () => {
     player.seek(10);
     player.play();
     expect(player.songTimeAtContext(2 + LEAD + 3)).toBeCloseTo(13, 9);
+  });
+});
+
+describe('Player as a Transport', () => {
+  it('can be used wherever a Transport is wanted', async () => {
+    const { player } = await loaded();
+    const transport: Transport = player;
+    expect(transport.clock).toBe('engine');
+    expect(transport.state).toBe('ready');
+    expect(transport.durationS).toBe(60);
+    expect(transport.info?.name).toBe('song.mp3');
+    expect(transport.loop).toBeNull();
+  });
+
+  it('reads position and length through the transport names', async () => {
+    const { player, ctx } = await loaded();
+    expect(player.positionS).toBe(0);
+    player.seek(12);
+    expect(player.positionS).toBe(12);
+    player.play();
+    ctx.currentTime = LEAD + 3;
+    expect(player.positionS).toBeCloseTo(15, 9);
+    expect(player.positionS).toBe(player.position());
+  });
+
+  it('has no length and no song before one is loaded', () => {
+    const { player } = setup();
+    expect(player.durationS).toBe(0);
+    expect(player.positionS).toBe(0);
+    expect(player.info).toBeNull();
+    expect(player.state).toBe('empty');
+  });
+
+  it('drives play, pause, stop, seek and loop through the transport interface', async () => {
+    const { player, ctx } = await loaded();
+    const transport: Transport = player;
+    const heard: string[] = [];
+    const offs = (['play', 'pause', 'seek', 'loop'] as const).map((e) =>
+      transport.on(e, () => heard.push(e)),
+    );
+    transport.seek(20);
+    transport.play();
+    ctx.currentTime = LEAD + 2;
+    transport.setLoop({ startS: 21, endS: 25 });
+    expect(transport.loop).toEqual({ startS: 21, endS: 25 });
+    transport.pause();
+    transport.stop();
+    expect(transport.state).toBe('ready');
+    for (const off of offs) off();
+    expect(heard).toEqual(['seek', 'play', 'loop', 'pause', 'seek']);
+  });
+
+  it('never fires the "state" event, whose job its other events already do', async () => {
+    const { player } = await loaded();
+    const heard: string[] = [];
+    player.on('state', () => heard.push('state'));
+    player.seek(3);
+    player.play();
+    player.pause();
+    player.stop();
+    expect(heard).toEqual([]);
   });
 });
 

@@ -1,7 +1,8 @@
 /**
  * Take storage. A take is one recorded attempt at a song: the WAV blob, the
- * live pitch frames, the calibrated latency it was recorded with and, later,
- * the service's analysis. They live in IndexedDB (see "Storage" in
+ * live pitch frames, the latency it was recorded with, the clock its song time
+ * came from (the audio engine's, or an embedded video's approximate one) and,
+ * later, the service's analysis. They live in IndexedDB (see "Storage" in
  * docs/ARCHITECTURE.md) because a WAV outgrows localStorage within a minute.
  * The store sits behind the small TakeStore interface so the shell can swap in
  * a native one, and so everything that lists or plays takes can be tested
@@ -11,6 +12,12 @@
  */
 import type { PitchFrame } from '../analysis/pitch';
 
+/**
+ * The clock a take's song time came from: the audio engine's sample-accurate
+ * one, or a YouTube embed's reported time, which is only approximate.
+ */
+export type TakeClock = 'engine' | 'embed';
+
 /** The list-view slice of a take: everything except the heavy payloads. */
 export interface TakeSummary {
   id: string;
@@ -19,6 +26,10 @@ export interface TakeSummary {
   /** Epoch milliseconds when the take was saved. */
   createdAt: number;
   durationS: number;
+  /**
+   * Total latency the take was aligned with: the calibrated round trip, plus
+   * the embed offset when the clock is 'embed'.
+   */
   latencyS: number;
   sampleRate: number;
   /**
@@ -27,6 +38,13 @@ export interface TakeSummary {
    * it still loads; playback treats a missing value as 0.
    */
   startedAtSongS?: number;
+  /** Absent on takes saved before embedded video; read it with takeClockOf. */
+  clock?: TakeClock;
+}
+
+/** The clock of a take; takes saved without one came from the engine. */
+export function takeClockOf(take: Pick<TakeSummary, 'clock'>): TakeClock {
+  return take.clock === 'embed' ? 'embed' : 'engine';
 }
 
 /** A stored take with its payloads. */
@@ -89,6 +107,7 @@ function toSummary(record: TakeRecord): TakeSummary {
     sampleRate: record.sampleRate,
   };
   if (record.startedAtSongS !== undefined) summary.startedAtSongS = record.startedAtSongS;
+  if (record.clock !== undefined) summary.clock = record.clock;
   return summary;
 }
 

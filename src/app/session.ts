@@ -2,18 +2,26 @@
  * The Session owns every long-lived object of the practice loop (audio
  * engine, player, mic, tracker, recorder, take store, settings) and the
  * StateStore the UI reads. The UI never touches those objects; it calls the
- * intents here (loadSong, play, chooseInput, calibrate, toggleRecord, ...) and
- * renders the state they leave behind. That is also what makes the shell
- * portable: a native window only has to call the same intents (see "Built to
- * become an app" in docs/ARCHITECTURE.md).
+ * intents here (loadSong, loadLink, play, chooseInput, calibrate,
+ * toggleRecord, ...) and renders the state they leave behind. That is also
+ * what makes the shell portable: a native window only has to call the same
+ * intents (see "Built to become an app" in docs/ARCHITECTURE.md).
+ *
+ * The song comes from one of two transports (src/audio/transport.ts): the
+ * audio Player for a dropped file, or a YouTubeTransport for a pasted link.
+ * Exactly one is active, and everything that needs the song's position or
+ * state (the lane, recording, loop A/B, the seek bar, the clock readout)
+ * reads the active one; loading a file or a link swaps it once it is ready,
+ * and a load that fails leaves the song in use as it was.
  *
  * Browsers want a user gesture before they start audio or open a mic, so each
  * intent that needs one does it itself and is meant to be called straight from
  * a click or key handler. Song time is the master clock: tracker frames arrive
  * stamped with context time and are moved onto song time, minus the calibrated
- * round-trip latency, before they reach the lane or a take. The maths for that
- * is in the pure exports at the top (frameToSongTime and friends), tested
- * without any audio. Importing this file touches no browser API.
+ * round-trip latency (and, for a YouTube video, the embed offset), before they
+ * reach the lane or a take. The maths for that is in the pure exports at the
+ * top (frameToSongTime and friends), tested without any audio. Importing this
+ * file touches no browser API.
  */
 import type { PitchFrame } from '../analysis/pitch';
 import { PitchTracker } from '../analysis/pitch-tracker';
@@ -24,23 +32,53 @@ import type { LatencyResult } from '../audio/latency';
 import { classifyMicError, listInputDevices, MicCapture, onDeviceChange } from '../audio/mic';
 import type { InputDevice, MonitorMode } from '../audio/mic';
 import { normaliseLoop, Player } from '../audio/player';
-import type { LoopRegion, SongInfo } from '../audio/player';
+import type { SongInfo } from '../audio/player';
 import { Recorder } from '../audio/recorder';
 import type { TakeRecording } from '../audio/recorder';
+import { isRunning } from '../audio/transport';
+import type {
+  ClockKind,
+  LoopRegion,
+  TrackInfo,
+  Transport,
+  TransportEvent,
+  TransportState,
+} from '../audio/transport';
 import { decodeWav, encodeWavBlob, songTimeOfSample } from '../audio/wav';
+import { loadYouTubeApi } from '../audio/youtube-api';
+import type { YouTubeApi } from '../audio/youtube-api';
+import { EmbedClosedError, YouTubeTransport } from '../audio/youtube-transport';
+import type { EmbedHost } from '../audio/youtube-transport';
+import { parseYouTubeUrl } from '../audio/youtube-url';
 import type { PitchLane } from '../render/pitch-lane';
-import { loadSettings, MAX_LATENCY_S, saveSettings } from './settings';
+import {
+  clampEmbedOffsetS,
+  loadSettings,
+  MAX_EMBED_OFFSET_S,
+  MAX_LATENCY_S,
+  saveSettings,
+} from './settings';
 import type { Settings } from './settings';
-import { describeMonitor, formatClock, StateStore } from './state';
+import { describeLoadFailure, describeMonitor, formatClock, StateStore } from './state';
 import type { AppState } from './state';
 import { localStorageStore } from './storage';
 import type { KeyValueStore } from './storage';
 import { memoryTakeStore, openTakeStore } from './takes';
-import type { TakeStore } from './takes';
+import type { TakeRecord, TakeStore } from './takes';
 
 /** Stem ids; 'original' is the player's own and is never removed. */
 const ORIGINAL_STEM = 'original';
 const TAKE_STEM = 'take';
+/** Every event a transport can send; the Session listens to all of them. */
+const TRANSPORT_EVENTS: readonly TransportEvent[] = [
+  'load',
+  'play',
+  'pause',
+  'seek',
+  'ended',
+  'loop',
+  'state',
+];
 /** Level of the song while a take plays over it, so the voice stays clear. */
 export const DUCKED_ORIGINAL_GAIN = 0.6;
 /** Seconds of song heard before the take's first sample when it is played. */
@@ -62,13 +100,21 @@ const LOW_CONFIDENCE = 0.6;
 /** Said when headphone mode opened a mic the browser still processes. */
 const PROCESSING_KEPT_ON =
   'This browser kept voice processing on for that mic, which flattens dynamics. Try another input.';
+/** Longest wait for a video to start when Record has to press Play for it. */
+const EMBED_START_TIMEOUT_MS = 4000;
+/** Said while an advertisement is in the video player. */
+const AD_STATUS = 'An ad is playing in the video. Nothing is drawn or recorded until it ends.';
+/** The same, shorter, across the pitch lane. */
+const AD_LANE_NOTICE = 'Ad playing: pitch is paused';
 
 /**
  * Song time of a pitch frame. The frame was stamped `frameT` on the context
  * clock; the song was at `positionNow` when the context read `contextNow`, and
  * the singer was reacting to audio that left the speakers `latencyS` before
- * the mic stamped it. Inside a loop, a frame from just before a wrap is folded
- * back into the previous pass instead of landing before the loop's start.
+ * the mic stamped it. `embedOffsetS` is extra delay for the path calibration
+ * cannot measure (a YouTube video's own audio output); it is 0 for a file.
+ * Inside a loop, a frame from just before a wrap is folded back into the
+ * previous pass instead of landing before the loop's start.
  */
 export function frameToSongTime(
   frameT: number,
@@ -76,14 +122,31 @@ export function frameToSongTime(
   positionNow: number,
   latencyS: number,
   loop: LoopRegion | null = null,
+  embedOffsetS = 0,
 ): number {
-  const songTime = positionNow - (contextNow - frameT) - latencyS;
+  const songTime = positionNow - (contextNow - frameT) - latencyS - embedOffsetS;
   if (!loop || loop.endS <= loop.startS) return songTime;
   const inside = positionNow >= loop.startS && positionNow < loop.endS;
   if (!inside || songTime >= loop.startS) return songTime;
   const length = loop.endS - loop.startS;
   const into = (songTime - loop.startS) % length;
   return loop.startS + (into < 0 ? into + length : into);
+}
+
+/** A frame this close behind the one before it is clock jitter, not a seek. */
+export const FRAME_JITTER_S = 0.05;
+/** How far past the previous frame a jittered frame is placed. */
+const FRAME_STEP_S = 1e-6;
+
+/**
+ * Keeps the stamps of an embedded video's frames in order. The video's clock
+ * runs smoothly while the audio context's is read in steps of a buffer, about
+ * 10 ms, so two frames can come out a few milliseconds the wrong way round. A
+ * frame less than FRAME_JITTER_S behind the one before it is put just after
+ * it; a bigger step back is a seek or a loop wrap and is left alone.
+ */
+export function orderedFrameTime(t: number, previousT: number): number {
+  return t <= previousT && previousT - t < FRAME_JITTER_S ? previousT + FRAME_STEP_S : t;
 }
 
 /** Index of the first frame at or after `t`; frames must be sorted by t. */
@@ -125,7 +188,7 @@ export function loopWithPoint(
 }
 
 /** The lane methods the Session drives; PitchLane satisfies them. */
-export type LaneSink = Pick<PitchLane, 'setTime' | 'pushFrame' | 'clearFrames'>;
+export type LaneSink = Pick<PitchLane, 'setTime' | 'pushFrame' | 'clearFrames' | 'setNotice'>;
 
 /** The audio objects behind the Session, exposed for tests and debugging. */
 export interface SessionParts {
@@ -145,6 +208,11 @@ export interface SessionOptions {
   takes?: TakeStore | Promise<TakeStore>;
   /** State to write into; default is a fresh store. */
   store?: StateStore;
+  /**
+   * Loads the YouTube IFrame API when a link is first used; the default
+   * fetches Google's script. Tests and the end-to-end run substitute a stub.
+   */
+  youtubeApi?: () => Promise<YouTubeApi>;
 }
 
 /** What openInput says once open: the plain line, the mode's line, or none. */
@@ -165,15 +233,35 @@ interface Replay {
   next: number;
 }
 
+/**
+ * A take playing by itself, over no song: what replaying a take under a
+ * YouTube video does, since the video's sound cannot be mixed with it. The
+ * playhead is the take's own, on song time.
+ */
+interface SoloTake {
+  source: AudioBufferSourceNode;
+  /** Context time at which the take's first sample plays. */
+  startedAtContextS: number;
+  /** Song time of the take's first sample, with its latency shift applied. */
+  offsetS: number;
+}
+
 /** What a recording in progress needs to remember until it is saved. */
 interface Recording {
-  song: SongInfo;
+  song: TrackInfo;
   /** True when Record started the song, so stopping Record pauses it again. */
   startedPlayback: boolean;
+  /** The clock the song time came from, kept with the take. */
+  clock: ClockKind;
 }
 
 function messageOf(error: unknown): string {
   return error instanceof Error && error.message ? error.message : String(error);
+}
+
+/** The page's origin, which the YouTube iframe wants; empty outside a page. */
+function pageOrigin(): string {
+  return globalThis.location?.origin ?? '';
 }
 
 function sleep(ms: number): Promise<void> {
@@ -203,6 +291,8 @@ export class Session {
   private lastPatchMs = -Infinity;
   private level = 0;
   private latestFrame: PitchFrame | null = null;
+  // Song time of the last frame stamped, to keep an embed's stamps in order.
+  private lastFrameT = Number.NEGATIVE_INFINITY;
   // Bumped by every open and close of the mic, so a slow permission prompt
   // that finishes after a newer choice cannot overwrite it.
   private inputToken = 0;
@@ -213,16 +303,34 @@ export class Session {
   private takeFrames: PitchFrame[] | null = null;
   private finishing: Promise<void> | null = null;
   private replay: Replay | null = null;
+  private solo: SoloTake | null = null;
+  // The transport everything reads: the audio player, or the YouTube embed
+  // once a link has loaded. Null only when this browser has no Web Audio.
+  private active: Transport | null = null;
+  // The YouTube transport that is the song, or null. Another may be loading
+  // behind it (`loadingEmbed`) and takes over only once it is ready, so a link
+  // that fails to load costs the song in use nothing.
+  private embed: YouTubeTransport | null = null;
+  private loadingEmbed: YouTubeTransport | null = null;
+  private embedHost: EmbedHost | null = null;
+  private readonly loadApi: () => Promise<YouTubeApi>;
+  // The state the last sync saw, to notice an ad starting or ending.
+  private lastState: TransportState = 'empty';
 
   constructor(options: SessionOptions = {}) {
     this.store = options.store ?? new StateStore();
     this.settingsStore = options.settings ?? localStorageStore();
     this.current = loadSettings(this.settingsStore);
     this.takesReady = Promise.resolve(options.takes ?? openTakeStore()).catch(() => memoryTakeStore());
+    this.loadApi = options.youtubeApi ?? (() => loadYouTubeApi());
     this.parts = this.buildParts();
+    this.active = this.parts?.player ?? null;
 
     const sinkCapable = typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;
-    this.store.patch({ tracker: this.trackerSupported ? 'idle' : 'unsupported' });
+    this.store.patch({
+      tracker: this.trackerSupported ? 'idle' : 'unsupported',
+      embedOffsetS: this.current.embedOffsetS,
+    });
     this.store.patchSection('input', {
       deviceId: this.current.inputDeviceId,
       monitor: this.current.monitor,
@@ -242,10 +350,23 @@ export class Session {
     return this.devices;
   }
 
+  /** The active transport (audio player or YouTube); null without Web Audio. */
+  get transport(): Transport | null {
+    return this.active;
+  }
+
   /** Hands the Session the lane it should scroll and feed. */
   attachLane(lane: LaneSink): void {
     this.lane = lane;
-    lane.setTime(this.parts?.player.position() ?? 0);
+    lane.setTime(this.currentPosition());
+  }
+
+  /**
+   * Hands the Session the pane the YouTube player is built into. Without one a
+   * pasted link is refused; null takes it away again.
+   */
+  attachEmbedHost(host: EmbedHost | null): void {
+    this.embedHost = host;
   }
 
   /**
@@ -266,7 +387,7 @@ export class Session {
     this.schedule(frame);
   }
 
-  /** Stops the loop, the device watch and the mic. */
+  /** Stops the loop, the device watch, the YouTube player and the mic. */
   dispose(): void {
     this.running = false;
     if (this.rafId !== null) globalThis.cancelAnimationFrame(this.rafId);
@@ -274,6 +395,9 @@ export class Session {
     this.rafId = this.timerId = null;
     this.stopDeviceWatch?.();
     this.stopDeviceWatch = null;
+    this.stopSolo();
+    this.discardLoadingEmbed();
+    this.disposeEmbed();
     this.parts?.tracker.disconnect();
     this.parts?.mic.close();
   }
@@ -304,66 +428,167 @@ export class Session {
     const parts = this.parts;
     if (!parts) return;
     const token = ++this.loadToken;
+    // A link still loading is overtaken by this file, whatever comes of it.
+    this.discardLoadingEmbed();
     if (this.store.state.recording) await this.finishRecording();
     this.store.setStatus(`Loading ${file.name}…`);
     let info: SongInfo;
     try {
       info = await parts.player.load(file);
     } catch (error) {
-      if (token === this.loadToken) this.store.setStatus(messageOf(error), 'error');
+      this.reportLoadFailure(token, error);
       return;
     }
     if (token !== this.loadToken) return;
-    // load() already dropped the stems, so the take is gone; forget it too.
-    this.replay = null;
-    this.store.patch({ playingTakeId: null });
+    // A file replaces any YouTube video, and the audio player is the
+    // transport again; load() already dropped its stems, so a take that was
+    // replaying is gone, and is forgotten here too. A take begun on the video
+    // while the file decoded ends with it: closing the player sends no event.
+    if (this.store.state.recording) void this.finishRecording();
+    this.disposeEmbed();
+    this.activate(parts.player);
+    this.endReplay();
     this.lane?.clearFrames();
     await this.refreshTakes();
     const next = this.store.state.input.open ? 'Press Space to play.' : 'Pick a microphone, then press Play.';
     this.store.setStatus(`Loaded ${info.name} (${formatClock(info.durationS)}). ${next}`);
   }
 
+  /**
+   * Loads a pasted YouTube link into the embedded player and makes it the
+   * song, the way loadSong does for a file: a recording in progress is
+   * finished, a newer load wins over an older one, the lane is cleared and the
+   * takes are those of the video. The API script is fetched now, on first use.
+   * The song in use, a file or another video, stays as it is and stays
+   * playable until the new video is ready, so a link that cannot be loaded
+   * leaves it alone, as a bad file does. Nothing plays until Play is pressed.
+   */
+  async loadLink(text: string): Promise<void> {
+    const parts = this.parts;
+    if (!parts) return;
+    const link = parseYouTubeUrl(text);
+    if (!link) {
+      this.store.setStatus('That does not look like a YouTube link.', 'warn');
+      return;
+    }
+    const host = this.embedHost;
+    if (!host) {
+      this.store.setStatus('This page has no place to show the YouTube player.', 'error');
+      return;
+    }
+    const token = ++this.loadToken;
+    // A link still loading is overtaken by this one.
+    this.discardLoadingEmbed();
+    if (this.store.state.recording) await this.finishRecording();
+    this.store.setStatus('Loading the YouTube video…');
+    let api: YouTubeApi;
+    try {
+      api = await this.loadApi();
+    } catch (error) {
+      this.reportLoadFailure(token, error);
+      return;
+    }
+    if (token !== this.loadToken) return;
+
+    // The new player is built behind the one in use (the pane keeps it out of
+    // reach), so the song carries on until this one is ready.
+    const transport = new YouTubeTransport({ api, host, origin: pageOrigin() });
+    this.loadingEmbed = transport;
+    // With no video on the page yet, the pane opens now: a player loads with
+    // the size it will have.
+    if (this.embed === null) this.store.patch({ embed: { videoId: link.videoId } });
+    this.watch(transport);
+    transport.onNotice((notice) => {
+      if (this.embed === transport) this.store.setStatus(notice.text, notice.kind);
+    });
+    let info: TrackInfo;
+    try {
+      info = await transport.load(link.videoId, link.startS);
+    } catch (error) {
+      // A newer load closed this player; it has already taken over.
+      if (error instanceof EmbedClosedError) return;
+      this.discardLoadingEmbed(transport);
+      this.reportLoadFailure(token, error);
+      return;
+    }
+    if (token !== this.loadToken || this.loadingEmbed !== transport) {
+      this.discardLoadingEmbed(transport);
+      return;
+    }
+
+    // Ready: it takes over from the song in use, which is paused and, if it
+    // was a video, closed. A take begun on that song while this loaded ends
+    // with it: closing the player sends no event.
+    if (this.store.state.recording) void this.finishRecording();
+    const previous = this.embed;
+    this.loadingEmbed = null;
+    this.embed = transport;
+    this.store.patch({ embed: { videoId: link.videoId } });
+    this.activate(transport);
+    previous?.destroy();
+    this.endReplay();
+    this.lane?.clearFrames();
+    // Said before the takes are read, so a message the player sends meanwhile
+    // (it can still fail once cued) is the last word, not this one.
+    const song = transport.info ?? info;
+    const next = this.store.state.input.open ? 'Press Space to play.' : 'Pick a microphone, then press Play.';
+    const length = song.durationS > 0 ? ` (${formatClock(song.durationS)})` : '';
+    this.store.setStatus(`Loaded ${song.name}${length} from YouTube. ${next}`);
+    await this.refreshTakes();
+  }
+
   /** Plays, resuming the saved mic first if none is open. */
   play(): void {
     const parts = this.parts;
-    if (!parts) return;
-    if (parts.player.state === 'empty') {
-      this.store.setStatus('Drop an audio file on the page to start.');
+    const transport = this.active;
+    if (!parts || !transport) return;
+    if (transport.state === 'empty') {
+      this.store.setStatus('Drop an audio file on the page or paste a YouTube link to start.');
       return;
     }
     // The song would drown the chirps; the Play button is already disabled,
     // and this keeps the Space key from starting it anyway.
     if (this.store.state.calibrating) return;
-    parts.player.play();
+    // A take playing by itself yields to the song.
+    if (this.solo) this.stopTake();
+    // The audio player starts the context itself; the embed does not touch it,
+    // and live pitch needs it running.
+    if (transport.clock === 'embed') void parts.engine.resume().catch(() => {});
+    transport.play();
     this.reopenSavedInput();
   }
 
   /** Pauses at the current position. */
   pause(): void {
-    this.parts?.player.pause();
+    this.active?.pause();
   }
 
-  /** Play when paused, pause when playing. */
+  /** Play when paused, pause when playing (or buffering, or in an ad). */
   togglePlay(): void {
-    if (this.store.state.player === 'playing') this.pause();
+    if (isRunning(this.store.state.player)) this.pause();
     else this.play();
   }
 
   /** Stops, ending any recording, and returns to the start. */
   stop(): void {
     if (this.store.state.recording) void this.finishRecording();
-    this.parts?.player.stop();
+    if (this.solo) this.stopTake();
+    this.active?.stop();
   }
 
   /** Moves the playhead to `s` seconds; this ends a recording in progress. */
   seek(s: number): void {
-    if (this.hasSong()) this.parts?.player.seek(s);
+    if (!this.hasSong()) return;
+    if (this.solo) this.stopTake();
+    this.active?.seek(s);
   }
 
   /** Moves the playhead by `ds` seconds, negative for back. */
   nudge(ds: number): void {
-    const player = this.parts?.player;
-    if (player && this.hasSong()) player.seek(player.position() + ds);
+    const transport = this.active;
+    if (!transport || !this.hasSong()) return;
+    if (this.solo) this.stopTake();
+    transport.seek(transport.positionS + ds);
   }
 
   /**
@@ -371,12 +596,12 @@ export class Session {
    * clears the loop if there is one, else loops a short stretch from here.
    */
   toggleLoop(a?: number, b?: number): void {
-    const player = this.parts?.player;
-    if (!player || !this.hasSong() || !this.canEditLoop()) return;
+    const transport = this.active;
+    if (!transport || !this.hasSong() || !this.canEditLoop()) return;
     if (a !== undefined && b !== undefined) {
       this.applyLoop(normaliseLoop({ startS: a, endS: b }, this.store.state.durationS));
-    } else if (player.loop) {
-      player.setLoop(null);
+    } else if (transport.loop) {
+      transport.setLoop(null);
       this.store.setStatus('Loop off.');
     } else {
       this.setLoopPoint('a');
@@ -385,16 +610,16 @@ export class Session {
 
   /** Marks the loop's start (A) or end (B) at the current position. */
   setLoopPoint(which: 'a' | 'b'): void {
-    const player = this.parts?.player;
-    if (!player || !this.hasSong() || !this.canEditLoop()) return;
+    const transport = this.active;
+    if (!transport || !this.hasSong() || !this.canEditLoop()) return;
     const { durationS } = this.store.state;
-    const region = loopWithPoint(which, player.position(), player.loop, durationS);
+    const region = loopWithPoint(which, transport.positionS, transport.loop, durationS);
     if (!this.applyLoop(region)) return;
     // B is pressed at the playhead, so the loop ends where the song already
     // is. A run that starts past a loop's end plays on, so without this jump
     // the loop would never engage and the passage could not be repeated.
-    const loop = player.loop;
-    if (which === 'b' && loop && player.position() >= loop.endS) player.seek(loop.startS);
+    const loop = transport.loop;
+    if (which === 'b' && loop && transport.positionS >= loop.endS) transport.seek(loop.startS);
   }
 
   // ---- Devices and latency ------------------------------------------------
@@ -569,8 +794,12 @@ export class Session {
     const state = this.store.state;
     if (!parts || state.calibrating || state.recording || this.startingRecord) return;
     if (!(await this.ensureInput())) return;
-    const resume = state.player === 'playing';
-    if (resume) parts.player.pause();
+    // The song, whether a file or a YouTube video, would drown the chirps; a
+    // take playing by itself would too, and is simply stopped.
+    if (this.solo) this.stopTake();
+    const transport = this.active;
+    const resume = transport !== null && isRunning(state.player);
+    if (resume) transport.pause();
     this.store.patch({ calibrating: true });
     this.store.setStatus('Calibrating: keep quiet and listen for the chirps.');
     try {
@@ -585,7 +814,7 @@ export class Session {
       this.store.patch({ calibrating: false });
       // Only a song still paused where calibration left it is resumed; one the
       // singer replaced or stopped meanwhile is left alone.
-      if (resume && parts.player.state === 'paused') parts.player.play();
+      if (resume && transport === this.active && transport.state === 'paused') transport.play();
     }
   }
 
@@ -641,6 +870,31 @@ export class Session {
     this.refreshLatency();
   }
 
+  /**
+   * Sets the extra delay, in seconds, applied on top of the latency while a
+   * YouTube video is the song: the video's own audio output is a path
+   * calibration cannot play a chirp through. Limited to plus or minus 0.5 s.
+   */
+  setEmbedOffset(s: number): void {
+    if (this.store.state.recording) {
+      this.store.setStatus('Stop recording before changing the embed offset.', 'warn');
+      this.store.patch({ embedOffsetS: this.current.embedOffsetS });
+      return;
+    }
+    if (!Number.isFinite(s)) {
+      this.store.setStatus('The embed offset must be a number of milliseconds.', 'warn');
+      this.store.patch({ embedOffsetS: this.current.embedOffsetS });
+      return;
+    }
+    const offset = clampEmbedOffsetS(s);
+    this.current.embedOffsetS = offset;
+    this.persist();
+    this.store.patch({ embedOffsetS: offset });
+    if (offset !== s) {
+      this.store.setStatus(`The embed offset is limited to ${MAX_EMBED_OFFSET_S * 1000} ms either way.`, 'warn');
+    }
+  }
+
   /** Sets the clarity a frame needs to count as voiced (0..1). */
   setClarity(v: number): void {
     if (!Number.isFinite(v)) return;
@@ -660,18 +914,22 @@ export class Session {
     if (this.store.state.recording) {
       const started = this.recording?.startedPlayback ?? false;
       const done = this.finishRecording();
-      if (started) this.parts?.player.pause();
+      if (started) this.active?.pause();
       await done;
       return;
     }
     await this.startRecording();
   }
 
-  /** Plays a saved take under the song, aligned as it was sung. */
+  /**
+   * Plays a saved take under the song, aligned as it was sung. Under a
+   * YouTube video the take plays by itself instead, because the video's sound
+   * cannot be mixed with it, and the status line says so.
+   */
   async playTake(id: string): Promise<void> {
     const parts = this.parts;
     const state = this.store.state;
-    if (!parts || state.recording || state.calibrating) return;
+    if (!parts || !this.active || state.recording || state.calibrating) return;
     try {
       const take = await (await this.takesReady).get(id);
       if (!take) {
@@ -689,6 +947,10 @@ export class Session {
       // The sung audio trails the song by the latency it was recorded with, so
       // it is placed that much earlier to sound the way it was meant to.
       const offsetS = songTimeOfSample(0, wav.sampleRate, take.startedAtSongS ?? 0, take.latencyS);
+      if (this.active?.clock === 'embed') {
+        this.playTakeAlone(parts, id, take, buffer, offsetS);
+        return;
+      }
       parts.player.addStem(TAKE_STEM, buffer, offsetS);
       parts.player.setStemGain(TAKE_STEM, 1);
       parts.player.setStemGain(ORIGINAL_STEM, DUCKED_ORIGINAL_GAIN);
@@ -703,16 +965,46 @@ export class Session {
     }
   }
 
+  /**
+   * Plays the take by itself, because the song is a YouTube video whose sound
+   * cannot be mixed with it. The video is paused so it does not talk over the
+   * take, and the lane follows the take's own playhead.
+   */
+  private playTakeAlone(
+    parts: SessionParts,
+    id: string,
+    take: TakeRecord,
+    buffer: AudioBuffer,
+    offsetS: number,
+  ): void {
+    const { engine } = parts;
+    this.endReplay();
+    this.active?.pause();
+    void engine.resume().catch(() => {});
+    const source = engine.context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(engine.master);
+    source.onended = () => {
+      if (this.solo?.source === source) this.stopTake();
+    };
+    const startedAtContextS = engine.now();
+    source.start();
+    this.solo = { source, startedAtContextS, offsetS };
+    this.replay = { frames: take.frames, next: firstFrameIndex(take.frames, offsetS - REPLAY_BACK_S) };
+    this.lane?.clearFrames();
+    this.store.patch({ playingTakeId: id });
+    this.store.setStatus(
+      `Playing the take by itself from ${formatClock(take.startedAtSongS ?? 0)}: ` +
+        'replay over a YouTube video is not synced yet.',
+    );
+  }
+
   /** Stops the take, restores the song's level and pauses. */
   stopTake(): void {
-    const parts = this.parts;
-    if (!parts || this.store.state.playingTakeId === null) return;
-    parts.player.removeStem(TAKE_STEM);
-    parts.player.setStemGain(ORIGINAL_STEM, 1);
-    this.replay = null;
-    this.store.patch({ playingTakeId: null });
+    if (!this.parts || this.store.state.playingTakeId === null) return;
+    this.endReplay();
     this.lane?.clearFrames();
-    parts.player.pause();
+    this.active?.pause();
   }
 
   /** Deletes a take from storage. */
@@ -754,17 +1046,7 @@ export class Session {
   }
 
   private wire(parts: SessionParts): void {
-    const events = ['load', 'play', 'pause', 'seek', 'ended', 'loop'] as const;
-    for (const event of events) {
-      parts.player.on(event, () => {
-        this.syncPlayer(parts.player);
-        // A take assumes the song advanced in real time from one anchor, so
-        // anything that moves or stops the song ends it.
-        const breaksTake = event === 'pause' || event === 'seek' || event === 'ended';
-        if (breaksTake && this.store.state.recording) void this.finishRecording();
-        if (event === 'seek') this.resyncReplay();
-      });
-    }
+    this.watch(parts.player);
     parts.tracker.onFrame((frame) => this.onFrame(parts, frame));
     parts.mic.onEnded(() => this.onMicEnded(parts));
     if (!this.trackerSupported) {
@@ -775,16 +1057,199 @@ export class Session {
     }
   }
 
-  private syncPlayer(player: Player): void {
-    const position = player.position();
+  /** Follows a transport's events; only the active transport's are acted on. */
+  private watch(transport: Transport): void {
+    for (const event of TRANSPORT_EVENTS) {
+      transport.on(event, () => this.onTransportEvent(transport, event));
+    }
+  }
+
+  private onTransportEvent(transport: Transport, event: TransportEvent): void {
+    if (transport !== this.active) return;
+    // A start is the move from not going to going, so note where it was.
+    const wasRunning = isRunning(this.lastState);
+    this.syncTransport();
+    // The video can also be started with YouTube's own controls in the
+    // iframe, which never pass through play().
+    if (transport.clock === 'embed' && !wasRunning && isRunning(transport.state)) {
+      this.embedStarted(transport);
+    }
+    // A take assumes the song advanced in real time from one anchor, so
+    // anything that moves or stops the song ends it: a seek, the end, a pause,
+    // or the embed stalling to buffer or showing an ad.
+    const breaksTake = event === 'seek' || event === 'ended' || transport.state !== 'playing';
+    if (breaksTake && this.store.state.recording) void this.finishRecording();
+    if (event === 'seek') this.resyncReplay();
+  }
+
+  /**
+   * The video has started, or begun to buffer for it, from a state where it
+   * was not going. play() does the following before it asks the video to
+   * play, but the iframe's own controls skip it, so it is done here as well:
+   * a calibration run is not played over, a take playing by itself yields,
+   * the audio context runs for the live pitch and the saved mic is reopened.
+   */
+  private embedStarted(transport: Transport): void {
+    if (this.store.state.calibrating) {
+      // The video would drown the chirps; the Play button is disabled for the
+      // same reason.
+      transport.pause();
+      this.store.setStatus('Wait for calibration to finish before playing the video.', 'warn');
+      return;
+    }
+    // Not stopTake(): that would pause the video that has just started.
+    if (this.solo) {
+      this.endReplay();
+      this.lane?.clearFrames();
+    }
+    void this.parts?.engine.resume().catch(() => {});
+    this.reopenSavedInput();
+  }
+
+  /** Copies the active transport's state into the store and the lane. */
+  private syncTransport(): void {
+    const transport = this.active;
+    if (!transport) return;
+    const position = this.currentPosition();
+    const state = transport.state;
     this.store.patch({
-      song: player.info,
-      player: player.state,
+      song: transport.info,
+      player: state,
+      clock: transport.clock,
       positionS: position,
-      loop: player.loop,
-      durationS: player.info?.durationS ?? 0,
+      loop: transport.loop,
+      durationS: transport.durationS,
     });
     this.lane?.setTime(position);
+    this.lane?.setNotice(state === 'ad' ? AD_LANE_NOTICE : null);
+    this.noteAd(state);
+  }
+
+  /** Says so on the status line when an ad starts or ends. */
+  private noteAd(state: TransportState): void {
+    const before = this.lastState;
+    this.lastState = state;
+    if (state === 'ad' && before !== 'ad') this.store.setStatus(AD_STATUS, 'warn');
+    else if (before === 'ad' && state !== 'ad') this.store.setStatus('The ad ended.');
+  }
+
+  /**
+   * Makes `next` the transport everything reads. The one it replaces is
+   * paused so two sources are never heard, and a take that was replaying
+   * against it is let go.
+   */
+  private activate(next: Transport): void {
+    const previous = this.active;
+    this.active = next;
+    if (previous !== next) {
+      previous?.pause();
+      this.endReplay();
+      this.lane?.clearFrames();
+      this.lastState = 'empty';
+      this.lastFrameT = Number.NEGATIVE_INFINITY;
+    }
+    this.syncTransport();
+  }
+
+  /**
+   * Closes the YouTube player that is the song and hands the song back to the
+   * audio player. The embed is only ever set together with being the active
+   * transport, so there is always something to hand back.
+   */
+  private disposeEmbed(): void {
+    const embed = this.embed;
+    if (!embed) return;
+    this.embed = null;
+    embed.destroy();
+    this.store.patch({ embed: null });
+    if (this.parts) this.activate(this.parts.player);
+  }
+
+  /**
+   * Closes the video that is loading (the one given, or whichever there is)
+   * and puts the pane back as the song in use needs it: shown for a video,
+   * hidden for a file.
+   */
+  private discardLoadingEmbed(which?: YouTubeTransport): void {
+    const loading = this.loadingEmbed;
+    if (!loading || (which !== undefined && loading !== which)) return;
+    this.loadingEmbed = null;
+    loading.destroy();
+    this.store.patch({ embed: this.embed ? { videoId: this.embed.videoId } : null });
+  }
+
+  /**
+   * Puts a failed load on the status line, unless a newer load has taken the
+   * line over. A failed load leaves the song in use alone, so when there is
+   * one the message says it is still loaded: it may well be playing on beside
+   * a red error.
+   */
+  private reportLoadFailure(token: number, error: unknown): void {
+    if (token !== this.loadToken) return;
+    this.store.setStatus(describeLoadFailure(messageOf(error), this.hasSong()), 'error');
+  }
+
+  /** Stops whatever take is replaying, on the song or by itself. */
+  private endReplay(): void {
+    const wasSolo = this.solo !== null;
+    this.stopSolo();
+    const player = this.parts?.player;
+    if (player && !wasSolo && this.store.state.playingTakeId !== null) {
+      player.removeStem(TAKE_STEM);
+      player.setStemGain(ORIGINAL_STEM, 1);
+    }
+    this.replay = null;
+    this.store.patch({ playingTakeId: null });
+  }
+
+  private stopSolo(): void {
+    const solo = this.solo;
+    if (!solo) return;
+    this.solo = null;
+    solo.source.onended = null;
+    try {
+      solo.source.stop();
+    } catch {
+      // Already stopped; either way it is silent.
+    }
+    solo.source.disconnect();
+  }
+
+  /** The playhead: the take's own while it plays by itself, else the song's. */
+  private currentPosition(): number {
+    const solo = this.solo;
+    if (solo && this.parts) {
+      return solo.offsetS + Math.max(0, this.parts.engine.now() - solo.startedAtContextS);
+    }
+    return this.active?.positionS ?? 0;
+  }
+
+  /** Extra delay for the YouTube path; zero for a file. */
+  private embedOffsetNow(): number {
+    return this.active?.clock === 'embed' ? this.current.embedOffsetS : 0;
+  }
+
+  /**
+   * Resolves true once the transport is playing, false if it is not within
+   * `timeoutMs`. The audio player is playing the moment play() returns; the
+   * embed takes a few hundred milliseconds (buffering) after the press.
+   */
+  private waitForPlaying(transport: Transport, timeoutMs: number): Promise<boolean> {
+    if (transport.state === 'playing') return Promise.resolve(true);
+    if (timeoutMs <= 0) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const unsubscribe: Array<() => void> = [];
+      const finish = (playing: boolean): void => {
+        clearTimeout(timer);
+        for (const off of unsubscribe) off();
+        resolve(playing);
+      };
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      const check = (): void => {
+        if (transport.state === 'playing') finish(true);
+      };
+      for (const event of ['play', 'state'] as const) unsubscribe.push(transport.on(event, check));
+    });
   }
 
   private schedule(frame: (nowMs: number) => void): void {
@@ -797,8 +1262,8 @@ export class Session {
 
   private tick(nowMs: number): void {
     const parts = this.parts;
-    if (!parts) return;
-    const position = parts.player.position();
+    if (!parts || !this.active) return;
+    const position = this.currentPosition();
     this.lane?.setTime(position);
     this.feedReplay(position);
     if (nowMs - this.lastPatchMs < PATCH_INTERVAL_MS) return;
@@ -817,11 +1282,24 @@ export class Session {
 
   private onFrame(parts: SessionParts, frame: PitchFrame): void {
     this.latestFrame = frame;
-    const { player, engine } = parts;
-    // Off the song clock there is no song time to put the frame at; the
-    // readout still follows lastFrame.
-    if (player.state !== 'playing') return;
-    const t = frameToSongTime(frame.t, engine.now(), player.position(), this.latencyOrZero(), player.loop);
+    const transport = this.active;
+    if (!transport) return;
+    // Read before the state: for an embed the position is what notices an ad
+    // that began since the last poll, so the state is true only after it.
+    const positionS = transport.positionS;
+    // Off the song clock there is no song time to put the frame at (paused,
+    // buffering, or an ad in the video); the readout still follows lastFrame.
+    if (transport.state !== 'playing') return;
+    let t = frameToSongTime(
+      frame.t,
+      parts.engine.now(),
+      positionS,
+      this.latencyOrZero(),
+      transport.loop,
+      this.embedOffsetNow(),
+    );
+    if (transport.clock === 'embed') t = orderedFrameTime(t, this.lastFrameT);
+    this.lastFrameT = t;
     this.takeFrames?.push({ t, f0: frame.f0, clarity: frame.clarity, rms: frame.rms });
     // While a take replays, its own trace owns the lane.
     if (this.store.state.playingTakeId === null) {
@@ -908,13 +1386,18 @@ export class Session {
 
   /** Applies a loop and says so; false when it was refused as too short. */
   private applyLoop(region: LoopRegion | null): boolean {
-    const player = this.parts?.player;
-    if (!player) return false;
+    const transport = this.active;
+    if (!transport) return false;
     if (!region) {
       this.store.setStatus('That loop is too short; move the other end further away.', 'warn');
       return false;
     }
-    player.setLoop(region);
+    transport.setLoop(region);
+    if (!transport.loop) {
+      // A video's length can still be unknown just after it loads.
+      this.store.setStatus('The loop could not be set yet; the length of the song is not known.', 'warn');
+      return false;
+    }
     this.store.setStatus(`Loop ${formatClock(region.startS)} to ${formatClock(region.endS)}.`);
     return true;
   }
@@ -957,14 +1440,15 @@ export class Session {
 
   private async startRecording(): Promise<void> {
     const parts = this.parts;
+    const transport = this.active;
     const state = this.store.state;
-    if (!parts || this.startingRecord || state.calibrating) return;
-    const song = parts.player.info;
+    if (!parts || !transport || this.startingRecord || state.calibrating) return;
+    const song = transport.info;
     if (!song) {
       this.store.setStatus('Load a song before recording.', 'warn');
       return;
     }
-    if (parts.player.loop) {
+    if (transport.loop) {
       // Looped passes would break the one-anchor timing a take relies on.
       this.store.setStatus('Clear the loop (L) to record; looped passes cannot be recorded yet.', 'warn');
       return;
@@ -979,25 +1463,41 @@ export class Session {
         this.store.setStatus('Recording needs AudioWorklet, which is unavailable here.', 'error');
         return;
       }
-      const startedPlayback = parts.player.state !== 'playing';
+      const embed = transport.clock === 'embed';
+      const startedPlayback = transport.state !== 'playing';
       if (startedPlayback) {
-        parts.player.play();
-        // The player starts its sources a few milliseconds ahead; wait for
-        // them so position() is the true song time the recorder will anchor to.
+        if (embed) void parts.engine.resume().catch(() => {});
+        transport.play();
+        // The audio player starts its sources a few milliseconds ahead and the
+        // embed needs a moment to buffer; wait for them so the position is the
+        // true song time the recorder will anchor to.
+        const started = await this.waitForPlaying(transport, embed ? EMBED_START_TIMEOUT_MS : 0);
+        if (!started && embed) {
+          this.store.setStatus(
+            transport.state === 'ad'
+              ? 'An ad is playing in the video. Press Record again when it ends.'
+              : 'The video did not start, so recording was not started. Press Play on the video, then Record.',
+            'warn',
+          );
+        }
         await sleep(RECORD_LEAD_MS);
       }
-      if (parts.player.state !== 'playing') return;
-      await parts.recorder.start(parts.player.position(), this.latencyOrZero());
-      this.recording = { song, startedPlayback };
+      if (transport !== this.active || transport.state !== 'playing') return;
+      await parts.recorder.start(transport.positionS, this.latencyOrZero() + this.embedOffsetNow());
+      this.recording = { song, startedPlayback, clock: transport.clock };
       this.takeFrames = [];
       this.store.patch({ recording: true });
+      const approximate = embed ? ' Timing over a YouTube video is approximate.' : '';
       if (this.store.state.latencyS === null) {
-        this.store.setStatus('Recording. Latency is not calibrated, so timing will read late.', 'warn');
+        this.store.setStatus(
+          `Recording. Latency is not calibrated, so timing will read late.${approximate}`,
+          'warn',
+        );
       } else {
-        this.store.setStatus('Recording. Press R to stop.');
+        this.store.setStatus(`Recording. Press R to stop.${approximate}`);
       }
       // A pause during the worklet load came before `recording` was true.
-      if (parts.player.state !== 'playing') void this.finishRecording();
+      if (transport.state !== 'playing') void this.finishRecording();
     } catch (error) {
       this.store.setStatus(`Could not start recording: ${messageOf(error)}`, 'error');
     } finally {
@@ -1016,7 +1516,7 @@ export class Session {
     this.store.setStatus('Saving take…');
     this.finishing = (async () => {
       try {
-        await this.saveTake(await parts.recorder.stop(), frames, meta.song);
+        await this.saveTake(await parts.recorder.stop(), frames, meta.song, meta.clock);
       } catch (error) {
         this.store.setStatus(`Could not save the take: ${messageOf(error)}`, 'error');
       } finally {
@@ -1028,7 +1528,12 @@ export class Session {
     return this.finishing;
   }
 
-  private async saveTake(rec: TakeRecording, frames: PitchFrame[], song: SongInfo): Promise<void> {
+  private async saveTake(
+    rec: TakeRecording,
+    frames: PitchFrame[],
+    song: TrackInfo,
+    clock: ClockKind,
+  ): Promise<void> {
     if (rec.pcm.length === 0) {
       this.store.setStatus('Nothing was recorded.', 'warn');
       return;
@@ -1039,9 +1544,12 @@ export class Session {
       songName: song.name,
       createdAt: Date.now(),
       durationS: rec.durationS,
+      // For an embed take this includes the embed offset in force, so the WAV
+      // and the frames below were shifted by the same amount.
       latencyS: rec.latencyS,
       sampleRate: rec.sampleRate,
       startedAtSongS: rec.startedAtSongS,
+      clock,
       // Frames are on song time with the latency already taken off.
       frames,
       wav: encodeWavBlob(rec.pcm, rec.sampleRate, 16),
@@ -1051,7 +1559,7 @@ export class Session {
   }
 
   private async refreshTakes(): Promise<void> {
-    const song = this.parts?.player.info;
+    const song = this.active?.info;
     try {
       const list = song ? await (await this.takesReady).list(song.hash) : [];
       this.store.patch({ takes: list });
@@ -1063,10 +1571,9 @@ export class Session {
   /** Restarts the take trace from a few seconds behind the playhead. */
   private resyncReplay(): void {
     const replay = this.replay;
-    const player = this.parts?.player;
-    if (!replay || !player) return;
+    if (!replay) return;
     this.lane?.clearFrames();
-    replay.next = firstFrameIndex(replay.frames, player.position() - REPLAY_BACK_S);
+    replay.next = firstFrameIndex(replay.frames, this.currentPosition() - REPLAY_BACK_S);
   }
 
   /** Feeds the lane every take frame the playhead has now reached. */

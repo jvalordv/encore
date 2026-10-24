@@ -11,7 +11,7 @@
 import { hzToMidi } from '../analysis/pitch';
 import type { PitchFrame } from '../analysis/pitch';
 import type { MonitorMode } from '../audio/mic';
-import type { LoopRegion, PlayerState, SongInfo } from '../audio/player';
+import type { ClockKind, LoopRegion, TrackInfo, TransportState } from '../audio/transport';
 import { noteName } from '../render/pitch-lane';
 import type { TakeSummary } from './takes';
 
@@ -20,8 +20,19 @@ export type StatusKind = 'info' | 'warn' | 'error';
 
 /** Everything the UI shows; the Session is the only writer. */
 export interface AppState {
-  song: SongInfo | null;
-  player: PlayerState;
+  /** The loaded song, whatever supplies it: a file or a YouTube video. */
+  song: TrackInfo | null;
+  /** State of the active transport (the audio player or the YouTube embed). */
+  player: TransportState;
+  /** The clock the song runs on; 'embed' while a YouTube video plays it. */
+  clock: ClockKind;
+  /**
+   * The YouTube video the pane shows: the one that is the song, or, while no
+   * video is the song yet, the one loading. Null hides the player pane.
+   */
+  embed: { videoId: string } | null;
+  /** Seconds added to the latency while the clock is 'embed'. */
+  embedOffsetS: number;
   positionS: number;
   loop: LoopRegion | null;
   durationS: number;
@@ -64,6 +75,9 @@ export function initialState(): AppState {
   return {
     song: null,
     player: 'empty',
+    clock: 'engine',
+    embed: null,
+    embedOffsetS: 0,
     positionS: 0,
     loop: null,
     durationS: 0,
@@ -268,4 +282,19 @@ export function describePitch(frame: PitchFrame | null): PitchReadout | null {
   const nearest = Math.round(midi);
   // `|| 0` turns -0 into 0 so "-0 cents" never shows.
   return { note: noteName(nearest), cents: Math.round((midi - nearest) * 100) || 0, hz: frame.f0 };
+}
+
+/** Said after a failed load while the song that was loaded before stays. */
+const SONG_KEPT = 'The previous song is still loaded.';
+
+/**
+ * The status line for a file or link that failed to load. A failed load
+ * leaves the song in use as it was, and it may still be playing; an error
+ * alone beside a playing song reads as if that song had gone, so the line
+ * says it is still there. `reason` is the failure in the singer's words.
+ */
+export function describeLoadFailure(reason: string, songKept: boolean): string {
+  if (!songKept) return reason;
+  const text = reason.trimEnd();
+  return `${text}${/[.!?…]$/.test(text) ? '' : '.'} ${SONG_KEPT}`;
 }

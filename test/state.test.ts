@@ -9,14 +9,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_LOOP_S,
+  FRAME_JITTER_S,
   firstFrameIndex,
   frameToSongTime,
   loopWithPoint,
+  orderedFrameTime,
   Session,
 } from '../src/app/session';
 import { loadSettings } from '../src/app/settings';
 import {
   describeHealth,
+  describeLoadFailure,
   describeMonitor,
   describePitch,
   formatClock,
@@ -39,6 +42,9 @@ describe('initialState', () => {
     expect(initialState()).toEqual({
       song: null,
       player: 'empty',
+      clock: 'engine',
+      embed: null,
+      embedOffsetS: 0,
       positionS: 0,
       loop: null,
       durationS: 0,
@@ -448,6 +454,34 @@ describe('describePitch', () => {
   });
 });
 
+describe('describeLoadFailure', () => {
+  const unreachable = 'Could not reach YouTube. Check the connection.';
+  const kept = 'The previous song is still loaded.';
+
+  it('is the reason alone when there is no song to keep', () => {
+    expect(describeLoadFailure(unreachable, false)).toBe(unreachable);
+    // Untouched, whatever it ends with.
+    expect(describeLoadFailure('Could not read "a.mp3"', false)).toBe('Could not read "a.mp3"');
+  });
+
+  it('says the previous song is still loaded when there is one', () => {
+    expect(describeLoadFailure(unreachable, true)).toBe(`${unreachable} ${kept}`);
+  });
+
+  it('ends a reason that has no full stop before adding the sentence', () => {
+    expect(describeLoadFailure('Could not read "a.mp3" as audio this browser can decode', true)).toBe(
+      `Could not read "a.mp3" as audio this browser can decode. ${kept}`,
+    );
+  });
+
+  it('keeps any other sentence ending, and drops trailing space', () => {
+    expect(describeLoadFailure('Is that a video?', true)).toBe(`Is that a video? ${kept}`);
+    expect(describeLoadFailure('No way!', true)).toBe(`No way! ${kept}`);
+    expect(describeLoadFailure('Gave up…', true)).toBe(`Gave up… ${kept}`);
+    expect(describeLoadFailure('Could not reach YouTube.  \n', true)).toBe(`Could not reach YouTube. ${kept}`);
+  });
+});
+
 describe('frameToSongTime', () => {
   it('puts a frame at the song position when it is fresh and latency is zero', () => {
     expect(frameToSongTime(5, 5, 12, 0)).toBe(12);
@@ -491,6 +525,61 @@ describe('frameToSongTime', () => {
 
   it('ignores a loop with no length', () => {
     expect(frameToSongTime(99.9, 100, 10, 0.1, { startS: 10, endS: 10 })).toBeCloseTo(9.8, 9);
+  });
+
+  it('moves back by the embed offset on top of the latency', () => {
+    expect(frameToSongTime(4.98, 5, 10, 0.1, null, 0.06)).toBeCloseTo(9.82, 9);
+    // A negative offset moves the frame later: the sound beats the clock.
+    expect(frameToSongTime(4.98, 5, 10, 0.1, null, -0.04)).toBeCloseTo(9.92, 9);
+  });
+
+  it('is unchanged by an embed offset of zero, which is what a file always gets', () => {
+    expect(frameToSongTime(4.98, 5, 10, 0.1, null, 0)).toBe(frameToSongTime(4.98, 5, 10, 0.1));
+  });
+
+  it('folds an offset frame across a loop wrap the same way', () => {
+    const loop = { startS: 10, endS: 20 };
+    // Wrapped 0.05 s ago; frame 0.05 s old; latency 0.1 plus offset 0.05.
+    expect(frameToSongTime(99.95, 100, 10.05, 0.1, loop, 0.05)).toBeCloseTo(19.85, 9);
+  });
+});
+
+describe('orderedFrameTime', () => {
+  it('leaves frames that are already in order alone', () => {
+    expect(orderedFrameTime(10.01, 10)).toBe(10.01);
+    expect(orderedFrameTime(10, Number.NEGATIVE_INFINITY)).toBe(10);
+  });
+
+  it('puts a frame that came out level or a little behind just after the one before', () => {
+    const level = orderedFrameTime(10, 10);
+    expect(level).toBeGreaterThan(10);
+    expect(level).toBeLessThan(10.00001);
+    const behind = orderedFrameTime(9.9987, 10);
+    expect(behind).toBeGreaterThan(10);
+    expect(behind - 10).toBeLessThan(0.00001);
+  });
+
+  it('leaves a step back of FRAME_JITTER_S or more alone: that is a seek or a loop wrap', () => {
+    expect(FRAME_JITTER_S).toBe(0.05);
+    expect(orderedFrameTime(9.95, 10)).toBe(9.95);
+    expect(orderedFrameTime(9.5, 10)).toBe(9.5);
+    // Just inside and just outside the limit.
+    expect(orderedFrameTime(9.9499, 10)).toBe(9.9499);
+    expect(orderedFrameTime(9.9501, 10)).toBeGreaterThan(10);
+  });
+
+  it('keeps a jittery run strictly increasing and within the jitter of where it was', () => {
+    // 10 ms hops with the stamp wobbling by up to 8 ms: neighbours swap.
+    const stamped = Array.from({ length: 500 }, (_, i) => 30 + i * 0.01 + 0.008 * Math.sin(i * 2.3));
+    expect(stamped.some((v, i) => i > 0 && v <= stamped[i - 1])).toBe(true);
+    const fixed: number[] = [];
+    let previous = Number.NEGATIVE_INFINITY;
+    for (const v of stamped) {
+      previous = orderedFrameTime(v, previous);
+      fixed.push(previous);
+    }
+    for (let i = 1; i < fixed.length; i++) expect(fixed[i]).toBeGreaterThan(fixed[i - 1]);
+    for (let i = 0; i < fixed.length; i++) expect(Math.abs(fixed[i] - stamped[i])).toBeLessThan(0.02);
   });
 });
 
@@ -586,7 +675,16 @@ describe('Session without Web Audio', () => {
     await session.playTake('nope');
     session.stopTake();
     await session.loadSong(new File(['x'], 'a.mp3'));
+    await session.loadLink('https://youtu.be/dQw4w9WgXcQ');
     expect(JSON.stringify(session.store.state)).toBe(before);
+  });
+
+  it('has no transport and reads the lane position as zero', () => {
+    const { session } = bare();
+    expect(session.transport).toBeNull();
+    const lane = { setTime: vi.fn(), pushFrame: vi.fn(), clearFrames: vi.fn(), setNotice: vi.fn() };
+    session.attachLane(lane);
+    expect(lane.setTime).toHaveBeenCalledWith(0);
   });
 
   it('starts and disposes its loop cleanly', async () => {
@@ -619,6 +717,42 @@ describe('Session without Web Audio', () => {
       expect(session.store.state.latencyS).toBe(0.1);
       expect(session.store.state.status.kind).toBe('warn');
     }
+  });
+
+  it('saves the embed offset, limited to plus or minus half a second', () => {
+    const { session, settings } = bare();
+    expect(session.store.state.embedOffsetS).toBe(0);
+    session.setEmbedOffset(0.12);
+    expect(session.store.state.embedOffsetS).toBe(0.12);
+    expect(loadSettings(settings).embedOffsetS).toBe(0.12);
+    expect(session.settings.embedOffsetS).toBe(0.12);
+    session.setEmbedOffset(-0.3);
+    expect(loadSettings(settings).embedOffsetS).toBe(-0.3);
+
+    // Out of range: kept at the limit, and the singer is told.
+    session.setEmbedOffset(0.9);
+    expect(session.store.state.embedOffsetS).toBe(0.5);
+    expect(loadSettings(settings).embedOffsetS).toBe(0.5);
+    expect(session.store.state.status.kind).toBe('warn');
+    expect(session.store.state.status.text).toContain('500 ms');
+  });
+
+  it('refuses an embed offset that is not a number and keeps the old one', () => {
+    const { session, settings } = bare();
+    session.setEmbedOffset(0.08);
+    for (const bad of [NaN, Infinity, -Infinity]) {
+      session.setEmbedOffset(bad);
+      expect(session.store.state.embedOffsetS).toBe(0.08);
+      expect(loadSettings(settings).embedOffsetS).toBe(0.08);
+      expect(session.store.state.status.kind).toBe('warn');
+    }
+  });
+
+  it('starts from the saved embed offset', () => {
+    const settings = memoryStore();
+    settings.set('settings', JSON.stringify({ embedOffsetS: -0.07 }));
+    const session = new Session({ settings, takes: memoryTakeStore() });
+    expect(session.store.state.embedOffsetS).toBe(-0.07);
   });
 
   it('saves the voicing threshold, clamped, and ignores nonsense', () => {

@@ -8,35 +8,33 @@
  * sources are one-shot, so every play, seek and loop change builds a fresh
  * set of sources that all start at the same context time. The transport maths
  * lives in pure exported functions with unit tests; the class is the thin glue
- * around them. DOM-free.
+ * around them. The Player is the engine-clock Transport (see transport.ts):
+ * the Session reads it through that interface, the same way it reads an
+ * embedded YouTube player. DOM-free.
  */
 import type { AudioEngine } from './engine';
+import type { LoopRegion, TrackInfo, Transport, TransportEvent } from './transport';
 
-/** What we know about the loaded song. `hash` is sha256 hex of the file. */
-export interface SongInfo {
-  name: string;
-  durationS: number;
+/**
+ * What we know about the loaded song. `hash` is sha256 hex of the file, or an
+ * 8-character FNV-1a hex when crypto.subtle is missing.
+ */
+export interface SongInfo extends TrackInfo {
   sampleRate: number;
   channels: number;
-  /** sha256 hex; an 8-character FNV-1a hex when crypto.subtle is missing. */
-  hash: string;
-}
-
-/** A section of the song to repeat, in seconds of song time. */
-export interface LoopRegion {
-  startS: number;
-  endS: number;
 }
 
 /** Transport state. 'ready' is loaded and idle at the start. */
 export type PlayerState = 'empty' | 'ready' | 'playing' | 'paused';
 
 /**
- * Things listeners can react to. 'stems' means the stem set or a stem gain
- * changed. 'ended' means the playhead reached the end with no loop; the
- * state is then 'paused' with position() at the song's duration.
+ * Things listeners can react to: the transport events (which never include
+ * 'state' for the player, whose states change only with the other events) and
+ * 'stems', which means the stem set or a stem gain changed. 'ended' means the
+ * playhead reached the end with no loop; the state is then 'paused' with
+ * position() at the song's duration.
  */
-export type PlayerEvent = 'load' | 'play' | 'pause' | 'seek' | 'ended' | 'loop' | 'stems';
+export type PlayerEvent = TransportEvent | 'stems';
 
 /** Id of the stem created by `load()`; it defines the song's duration. */
 const ORIGINAL = 'original';
@@ -185,7 +183,9 @@ interface Stem {
 }
 
 /** Loads a song and plays it with synced stems, loop and clock-derived time. */
-export class Player {
+export class Player implements Transport {
+  /** The audio engine's sample-accurate clock. */
+  readonly clock = 'engine';
   private readonly stems = new Map<string, Stem>();
   private readonly listeners = new Map<PlayerEvent, Set<(p: Player) => void>>();
   private infoValue: SongInfo | null = null;
@@ -216,6 +216,16 @@ export class Player {
   /** The active loop region, or null. */
   get loop(): LoopRegion | null {
     return this.loopValue;
+  }
+
+  /** Song time in seconds; the Transport name for `position()`. */
+  get positionS(): number {
+    return this.position();
+  }
+
+  /** Length of the loaded song, 0 before one is loaded. */
+  get durationS(): number {
+    return this.duration;
   }
 
   /**

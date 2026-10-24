@@ -6,11 +6,18 @@
  * come from skin tokens through src/style.css; this file only sets
  * attributes, text and a few widths, so a new skin never touches it. Keyboard
  * shortcuts live here too (Space, R, L, [ ], arrows) because they are the same
- * intents as the buttons. Importing the file touches no DOM; mountUI does.
+ * intents as the buttons. A YouTube link reaches the Session three ways: the
+ * link box, a paste anywhere on the page, or a link dropped on it; the pane
+ * the player is built into is handed to the Session here. Importing the file
+ * touches no DOM; mountUI does.
  */
+import { isRunning } from '../audio/transport';
+import { domEmbedHost } from '../audio/youtube-transport';
+import { parseYouTubeUrl } from '../audio/youtube-url';
 import type { Session } from './session';
 import { describeHealth, describeMonitor, describePitch, formatClock, meterFraction } from './state';
 import type { AppState } from './state';
+import { takeClockOf } from './takes';
 import type { TakeSummary } from './takes';
 
 /** What mountUI hands back. */
@@ -62,14 +69,46 @@ function isAudioFile(file: File): boolean {
   return file.type.startsWith('audio/') || AUDIO_NAME.test(file.name);
 }
 
+/** Input types that take typed text; a slider or a checkbox takes no paste. */
+const TEXT_INPUT_TYPES: ReadonlySet<string> = new Set([
+  'text',
+  'search',
+  'url',
+  'email',
+  'tel',
+  'password',
+  'number',
+]);
+
+/** True for a field the singer types into, where a paste is theirs to place. */
+function isTextField(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement) return true;
+  return target instanceof HTMLInputElement && TEXT_INPUT_TYPES.has(target.type);
+}
+
+/** The first address in dropped text; uri-list comment lines are skipped. */
+function droppedText(data: DataTransfer | null): string {
+  const text = data?.getData('text/uri-list') || data?.getData('text/plain') || '';
+  return text.split(/\r?\n/).find((line) => line !== '' && !line.startsWith('#')) ?? '';
+}
+
 /** Wires the page's controls to the session and keeps them in step. */
 export function mountUI(session: Session, root: Document = document): UI {
   const { store } = session;
   const get = <T extends HTMLElement>(id: string): T => must<T>(root, id);
+  const app = get('app');
   const dropzone = get('dropzone');
   const songInput = get<HTMLInputElement>('song-input');
+  const linkInput = get<HTMLInputElement>('link-input');
+  const linkLoad = get<HTMLButtonElement>('link-load');
   const songTitle = get('song-title');
   const songDuration = get('song-duration');
+  const embedNote = get('embed-note');
+  const embedRegion = get('embed-region');
+  const embedPlayer = get('embed-player');
+  const embedOffset = get('embed-offset');
+  const embedOffsetInput = get<HTMLInputElement>('embed-offset-input');
   const inputSelect = get<HTMLSelectElement>('input-select');
   const outputSelect = get<HTMLSelectElement>('output-select');
   const refreshButton = get<HTMLButtonElement>('refresh-devices');
@@ -232,6 +271,16 @@ export function mountUI(session: Session, root: Document = document): UI {
     });
 
     row.append(label, play, del);
+    // A take timed against a YouTube video lines up only roughly: the embed's
+    // clock is not sample-accurate and its sound path is not calibrated.
+    if (takeClockOf(take) === 'embed') {
+      row.dataset.clock = 'embed';
+      const note = document.createElement('span');
+      note.className = 'take-note';
+      note.dataset.testid = 'take-note';
+      note.textContent = 'approximate timing';
+      row.append(note);
+    }
     return row;
   }
 
@@ -251,7 +300,8 @@ export function mountUI(session: Session, root: Document = document): UI {
       const busy = state.recording || state.calibrating;
       stopButton.disabled = !song || state.calibrating;
       playButton.disabled = !song || state.calibrating;
-      setText(playButton, state.player === 'playing' ? 'Pause' : 'Play');
+      // Buffering and an ad both mean "going", so the button offers Pause.
+      setText(playButton, isRunning(state.player) ? 'Pause' : 'Play');
       recordButton.disabled = !song || state.calibrating || state.tracker === 'unsupported';
       setText(recordButton, state.recording ? 'Stop take' : 'Record');
       recordButton.classList.toggle('is-recording', state.recording);
@@ -301,6 +351,21 @@ export function mountUI(session: Session, root: Document = document): UI {
       latencyInput.value = state.latencyS === null ? '' : String(Math.round(state.latencyS * 1000));
     }
 
+    // The player pane exists from the moment a link starts loading until the
+    // video is replaced or dropped; what the video gives is stated once it is
+    // the song.
+    if (has('embed')) {
+      embedRegion.hidden = state.embed === null;
+      app.dataset.embed = state.embed === null ? 'off' : 'on';
+    }
+    if (has('clock')) {
+      embedNote.hidden = state.clock !== 'embed';
+      embedOffset.hidden = state.clock !== 'embed';
+    }
+    if (has('embedOffsetS') && document.activeElement !== embedOffsetInput) {
+      embedOffsetInput.value = String(Math.round(state.embedOffsetS * 1000));
+    }
+
     if (has('lastFrame')) renderPitch(state.lastFrame);
 
     if (has('takes', 'playingTakeId', 'recording', 'calibrating')) {
@@ -325,6 +390,28 @@ export function mountUI(session: Session, root: Document = document): UI {
     if (!isAudioFile(file)) store.setStatus(`${file.name} does not look like an audio file.`, 'warn');
     else void session.loadSong(file);
   };
+  const loadLink = (text: string): void => void session.loadLink(text);
+
+  // The player is built into this pane; the Session shows and hides it through
+  // the state (`embed`), never by touching the element.
+  session.attachEmbedHost(domEmbedHost(embedPlayer));
+  cleanups.push(() => session.attachEmbedHost(null));
+
+  listen(linkLoad, 'click', () => loadLink(linkInput.value));
+  listen(linkInput, 'keydown', (ev) => {
+    if (ev.key !== 'Enter') return;
+    ev.preventDefault();
+    loadLink(linkInput.value);
+  });
+  // A link pasted anywhere loads, unless it is going into a field of its own;
+  // into the link box it also loads, and the text stays there to be seen.
+  listenDoc('paste', (ev) => {
+    if (isTextField(ev.target) && ev.target !== linkInput) return;
+    const text = ev.clipboardData?.getData('text') ?? '';
+    if (!parseYouTubeUrl(text)) return;
+    if (ev.target !== linkInput) ev.preventDefault();
+    loadLink(text);
+  });
 
   listen(dropzone, 'click', () => songInput.click());
   listen(dropzone, 'keydown', (ev) => {
@@ -351,7 +438,14 @@ export function mountUI(session: Session, root: Document = document): UI {
   listenDoc('drop', (ev) => {
     ev.preventDefault();
     dropzone.classList.remove('is-over');
-    loadFile(ev.dataTransfer?.files[0]);
+    const file = ev.dataTransfer?.files[0];
+    if (file) {
+      loadFile(file);
+      return;
+    }
+    // A link dragged in from another tab arrives as text, not as a file.
+    const text = droppedText(ev.dataTransfer);
+    if (parseYouTubeUrl(text)) loadLink(text);
   });
 
   listen(inputSelect, 'change', () => {
@@ -376,6 +470,12 @@ export function mountUI(session: Session, root: Document = document): UI {
   listen(latencyInput, 'change', () => {
     const text = latencyInput.value.trim();
     session.setLatency(text === '' ? null : Number(text) / 1000);
+  });
+  listen(embedOffsetInput, 'change', () => {
+    const text = embedOffsetInput.value.trim();
+    session.setEmbedOffset(text === '' ? 0 : Number(text) / 1000);
+    // The field keeps focus after Enter, so show what was really kept.
+    embedOffsetInput.value = String(Math.round(store.state.embedOffsetS * 1000));
   });
   clarityInput.value = String(session.settings.clarityThreshold);
   setText(clarityValue, Number(clarityInput.value).toFixed(2));

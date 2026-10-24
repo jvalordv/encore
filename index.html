@@ -10,6 +10,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- YouTube's embedded player refuses to load (error 153) when no Referer
+         reaches it. Keep the origin on cross-origin requests; do not tighten. -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta name="description" content="Karaoke practice and vocal coaching, solo or duet." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d0f12'/%3E%3Cpath d='M13 22V9l9-2v13' fill='none' stroke='%234cc2ff' stroke-width='2' stroke-linejoin='round'/%3E%3Ccircle cx='10.5' cy='22' r='3' fill='%234cc2ff'/%3E%3Ccircle cx='19.5' cy='20' r='3' fill='%234cc2ff'/%3E%3C/svg%3E" />
     <!-- Display fonts for the Arcade and Dreamhouse skins. Every font stack
@@ -46,12 +49,17 @@
       <aside id="song-panel" aria-label="Song">
         <h2 class="panel-title">Song</h2>
         <div id="dropzone" class="dropzone" data-testid="dropzone" role="button" tabindex="0">
-          Drop an mp3 here, or click to choose one
+          Drop an mp3 here, click to choose one, or paste a YouTube link
         </div>
         <input id="song-input" data-testid="song-input" type="file" accept="audio/*" hidden />
+        <div class="link-row">
+          <input id="link-input" data-testid="link-input" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="YouTube link" aria-label="YouTube link" />
+          <button type="button" id="link-load" data-testid="link-load" title="Load the YouTube link">Load</button>
+        </div>
         <div class="song-info">
           <div id="song-title" class="song-title" data-testid="song-title">No song loaded</div>
           <div id="song-duration" class="song-meta" data-testid="song-duration"></div>
+          <p id="embed-note" class="song-meta" data-testid="embed-note" hidden>Playing in YouTube's player. Live pitch and takes work here; the reference melody, scoring and stems need the song prepared, which is not built yet.</p>
         </div>
 
         <section class="panel-group" aria-label="Devices">
@@ -83,6 +91,13 @@
             <span class="unit">ms</span>
             <button type="button" id="calibrate-button" data-testid="calibrate" title="Play chirps and time the echo">Calibrate</button>
           </div>
+          <div id="embed-offset" class="embed-offset" data-testid="embed-offset" hidden>
+            <label class="field" for="embed-offset-input">YouTube video offset</label>
+            <div class="latency-row">
+              <input id="embed-offset-input" data-testid="embed-offset-input" type="number" min="-500" max="500" step="1" inputmode="numeric" placeholder="ms" aria-label="YouTube video offset in milliseconds" title="Extra delay, added to the latency while a YouTube video is loaded: the video's own sound path cannot be timed with chirps. From -500 to 500 ms." />
+              <span class="unit">ms</span>
+            </div>
+          </div>
           <label class="field" for="clarity-input">Voicing threshold <output id="clarity-value" class="song-meta"></output></label>
           <input id="clarity-input" data-testid="clarity-input" type="range" min="0.5" max="0.99" step="0.01" />
         </section>
@@ -94,13 +109,23 @@
         </section>
       </aside>
 
-      <main id="pitch-lane" aria-label="Pitch lane">
-        <canvas id="lane-canvas"></canvas>
-        <div id="pitch-readout" class="pitch-readout" data-testid="pitch-readout" hidden>
-          <div class="pitch-note"><span id="pitch-note" data-testid="pitch-note"></span> <span id="pitch-cents" class="pitch-cents"></span></div>
-          <div class="tuner" aria-hidden="true"><div id="tuner-marker" class="tuner-marker"></div></div>
-        </div>
-      </main>
+      <div id="stage">
+        <!-- YouTube's embedded player. It is never covered, clipped, scaled or
+             restyled, and at least 480 by 270 (the lane is a sibling, not an
+             overlay); skins style only the frame around it. Hidden until a
+             link is loaded. -->
+        <section id="embed-region" class="embed-region" data-testid="embed-region" aria-label="YouTube player" hidden>
+          <div id="embed-player" class="embed-player" data-testid="embed-player"></div>
+        </section>
+
+        <main id="pitch-lane" aria-label="Pitch lane">
+          <canvas id="lane-canvas"></canvas>
+          <div id="pitch-readout" class="pitch-readout" data-testid="pitch-readout" hidden>
+            <div class="pitch-note"><span id="pitch-note" data-testid="pitch-note"></span> <span id="pitch-cents" class="pitch-cents"></span></div>
+            <div class="tuner" aria-hidden="true"><div id="tuner-marker" class="tuner-marker"></div></div>
+          </div>
+        </main>
+      </div>
 
       <section id="controls" aria-label="Transport">
         <div class="control-group">

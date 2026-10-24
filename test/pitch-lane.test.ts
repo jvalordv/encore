@@ -14,6 +14,7 @@ import {
   clarityAlpha,
   fitRange,
   isBlackKey,
+  laneCaption,
   midiToY,
   noteName,
   referenceSpan,
@@ -33,6 +34,23 @@ import type {
 function frames(count: number, t0 = 0, f0 = 220, clarity = 0.95): LaneFrame[] {
   return Array.from({ length: count }, (_, i) => ({ t: t0 + i * 0.01, f0, clarity }));
 }
+
+describe('laneCaption', () => {
+  it('invites the singer when the lane is empty and nothing needs saying', () => {
+    expect(laneCaption(null, true)).toBe('sing to see your pitch');
+    expect(laneCaption(null, false)).toBeNull();
+  });
+
+  it('lets a notice take the place of the invitation, empty lane or not', () => {
+    expect(laneCaption('Ad playing: pitch is paused', true)).toBe('Ad playing: pitch is paused');
+    expect(laneCaption('Ad playing: pitch is paused', false)).toBe('Ad playing: pitch is paused');
+  });
+
+  it('reads an empty notice as none', () => {
+    expect(laneCaption('', true)).toBe('sing to see your pitch');
+    expect(laneCaption('', false)).toBeNull();
+  });
+});
 
 describe('isBlackKey', () => {
   it('flags the five black pitch classes in every octave', () => {

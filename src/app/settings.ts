@@ -1,7 +1,8 @@
 /**
  * Persistent user settings: the devices last chosen, how the singer monitors
- * the song, the service address, the voicing threshold and the round-trip
- * latency measured for each device pair.
+ * the song, the service address, the voicing threshold, the round-trip
+ * latency measured for each device pair and the extra offset applied while a
+ * YouTube video supplies the song.
  * One object under one storage key, behind the KeyValueStore interface, so a
  * native shell can own storage later (see "Built to become an app" in
  * docs/ARCHITECTURE.md). Loading never throws and never trusts what it reads:
@@ -29,6 +30,12 @@ export interface Settings {
   octaveInvariant: boolean;
   /** Round-trip latency in seconds, keyed by `latencyKey(output, input)`. */
   latencyByDevicePair: Record<string, number>;
+  /**
+   * Seconds added to the latency while a YouTube video is the song, for the
+   * path calibration cannot measure (the embed's own audio output), within
+   * plus or minus MAX_EMBED_OFFSET_S.
+   */
+  embedOffsetS: number;
 }
 
 /** Key inside the key-value store; the localStorage adapter adds `encore.`. */
@@ -36,6 +43,9 @@ export const SETTINGS_KEY = 'settings';
 
 /** Longest latency accepted, matching what latency.ts will load or save. */
 export const MAX_LATENCY_S = 2;
+
+/** Largest embed offset accepted in either direction, in seconds. */
+export const MAX_EMBED_OFFSET_S = 0.5;
 
 /** Frozen so a stray write throws instead of changing every later default. */
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
@@ -46,7 +56,14 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   clarityThreshold: 0.9,
   octaveInvariant: false,
   latencyByDevicePair: Object.freeze({}) as Record<string, number>,
+  embedOffsetS: 0,
 });
+
+/** The offset limited to plus or minus MAX_EMBED_OFFSET_S; NaN reads as 0. */
+export function clampEmbedOffsetS(value: number): number {
+  if (Number.isNaN(value)) return 0;
+  return Math.min(MAX_EMBED_OFFSET_S, Math.max(-MAX_EMBED_OFFSET_S, value));
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -78,6 +95,12 @@ function serviceUrl(value: unknown): string | null {
 function clarity(value: unknown): number {
   const ok = typeof value === 'number' && Number.isFinite(value);
   return ok && value >= 0 && value <= 1 ? value : DEFAULT_SETTINGS.clarityThreshold;
+}
+
+/** A stored embed offset, clamped into range; the default for a non-number. */
+function embedOffset(value: unknown): number {
+  const ok = typeof value === 'number' && Number.isFinite(value);
+  return ok ? clampEmbedOffsetS(value) : DEFAULT_SETTINGS.embedOffsetS;
 }
 
 /** Keeps the entries whose value is a plausible latency; drops the rest. */
@@ -112,6 +135,7 @@ export function sanitizeSettings(value: unknown): Settings {
         ? raw.octaveInvariant
         : DEFAULT_SETTINGS.octaveInvariant,
     latencyByDevicePair: latencies(raw.latencyByDevicePair),
+    embedOffsetS: embedOffset(raw.embedOffsetS),
   };
 }
 

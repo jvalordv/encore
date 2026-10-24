@@ -7,7 +7,7 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PitchFrame } from '../src/analysis/pitch';
-import { idbTakeStore, memoryTakeStore, newTakeId, openTakeStore } from '../src/app/takes';
+import { idbTakeStore, memoryTakeStore, newTakeId, openTakeStore, takeClockOf } from '../src/app/takes';
 import type { TakeRecord, TakeStore } from '../src/app/takes';
 
 afterEach(() => {
@@ -93,6 +93,29 @@ describe.each(stores)('%s', (_name, open) => {
     const [summary] = await store.list();
     expect(summary.id).toBe(id);
     expect('startedAtSongS' in summary).toBe(false);
+  });
+
+  it('keeps the clock a take was recorded on, in the list and in the full take', async () => {
+    const store = await open();
+    const engine = await store.save(make({ clock: 'engine', createdAt: 1 }));
+    const embed = await store.save(make({ clock: 'embed', createdAt: 2 }));
+    const list = await store.list();
+    expect(list.map((t) => [t.id, t.clock])).toEqual([
+      [embed, 'embed'],
+      [engine, 'engine'],
+    ]);
+    expect((await store.get(embed))?.clock).toBe('embed');
+    expect((await store.get(engine))?.clock).toBe('engine');
+  });
+
+  it('leaves the clock out of the summary of a take saved without one', async () => {
+    const store = await open();
+    const id = await store.save(make());
+    const [summary] = await store.list();
+    expect(summary.id).toBe(id);
+    expect('clock' in summary).toBe(false);
+    // Takes from before the embed existed read as engine takes.
+    expect(takeClockOf(summary)).toBe('engine');
   });
 
   it('keeps analysis when present', async () => {
@@ -207,6 +230,15 @@ describe('openTakeStore', () => {
     } finally {
       Reflect.deleteProperty(globalThis, 'indexedDB');
     }
+  });
+});
+
+describe('takeClockOf', () => {
+  it('reads the embed clock as embed and everything else as the engine', () => {
+    expect(takeClockOf({ clock: 'embed' })).toBe('embed');
+    expect(takeClockOf({ clock: 'engine' })).toBe('engine');
+    expect(takeClockOf({})).toBe('engine');
+    expect(takeClockOf({ clock: 'sundial' as never })).toBe('engine');
   });
 });
 

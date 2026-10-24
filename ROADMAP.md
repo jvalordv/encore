@@ -7,24 +7,27 @@ resume protocol in `CLAUDE.md`.
 
 ## Current state
 
-- **Last done:** P2-T1 (service song intake: cache, one-at-a-time job
-  queue, step pipeline with a runner registry, status and audio routes;
-  183 service tests). Before it: a Windows CRLF fix to
-  `test/skins.test.ts` (`b462609`). 491 unit tests green. Speaker mode
-  still untried on real speakers.
+- **Last done:** P2-T1c (a YouTube link plays in the embedded player
+  inside the app, on a shared Transport; 911 unit tests, 30 e2e). Before
+  it P2-T1b (service: `POST /songs/url`, yt-dlp fetch to stereo FLAC; 507
+  service tests) and P2-T1 (song intake, job queue, step pipeline).
+  Speaker mode still untried on real speakers.
 - **Workflow:** the orchestrator (Opus) runs each wave as a Workflow:
   Sonnet implementer, three review lenses, adversarial verification of
   findings, fixer, critic. Then it reviews the diff itself and commits.
   Browser-side work runs in a git worktree and merges at the end, so the
   owner's dev server on :5173 reloads once.
-- **e2e on this machine:** Playwright's Chromium was missing (earlier runs
-  were elsewhere). `npx playwright install chromium` hung once on the
-  headless-shell download and was retried; if `npm run e2e` says the
-  executable does not exist, rerun that install.
-- **In progress:** no code. The owner is running the speaker/calibration
-  checklist below on real hardware and has not reported results yet. When
-  they do: fix what the status lines and their notes show, as `P1-T10`
-  follow-up commits, before taking P2 work that edits `src/`.
+- **e2e on this machine:** `npx playwright install chromium` hung twice
+  here during extraction. The pinned headless shell
+  (`chromium_headless_shell-1194`) is now in
+  `%LOCALAPPDATA%\ms-playwright`, copied from a complete private install,
+  and `npm run e2e` runs. If it ever reports a missing executable, kill
+  any stuck `playwright install` node processes, delete
+  `ms-playwright\__dirlock` and any browser folder without an
+  `INSTALLATION_COMPLETE` file, then reinstall.
+- **In progress:** no code. The owner's speaker/calibration checklist
+  below is still unreported. When it comes in: fix what the status lines
+  show, as `P1-T10` follow-up commits.
 - **Blockers:** none.
 - **Owner priority, stated in session:** pick a YouTube video and have it
   play inside the app, and be parsed like a dropped mp3 ("very important").
@@ -41,19 +44,22 @@ resume protocol in `CLAUDE.md`.
   prepare path opt-in, and the README must not paper over it. **Owner
   decision (2026-10-23): keep the prepare path, opt-in and off by
   default, as specced.** Do not re-ask.
-- **Next:** orchestrator pass (Opus). Two tracks can run at once because
-  they touch different trees: service (P2-T1, then P2-T1b; only
-  `service/`, safe while the owner tests) and browser (P2-T1c, spike
-  first). P2-T1d joins them and goes last. One task per commit.
-- **Machine facts (checked 2026-10-23):** Windows 10, `uv` 0.11.16 and
-  `ffmpeg` 9.0.2 (winget) are on PATH; `node` yes, `deno` no. `service/`
-  has `uv.lock` but no `.venv` yet (`uv sync` not run) and nothing is
-  listening on :8765. The Vite dev server is on :5173 (the owner's).
-- **Repo hygiene done this session:** repo-local git identity set to
-  `Claude <noreply@anthropic.com>` to match history (plain `git commit`
-  works; `git -c ...` does not match the allow rule and prompts). Read-only
-  MCP tools added to `.claude/settings.json`. Edit/Write/PowerShell still
-  prompt unless the owner sets the app's permission mode; not ours to flip.
+- **Next:** P2-T1d (prepare a linked song in the background, opt-in, and
+  switch the clock and sound to the engine; touches `src/` and the client,
+  so a worktree again). Then P2-T2 (separation) on the GPU machine.
+- **Machine facts (checked 2026-10-23):** Windows 10, `uv` 0.11.16,
+  `ffmpeg` 9.0.2 (winget), Node 24 on PATH (yt-dlp's JavaScript runtime);
+  no Deno. `service/.venv` is synced (CPU deps plus yt-dlp[default]).
+  The service is not running by default; the Vite dev server on :5173 is
+  the owner's.
+- **Repo hygiene:** repo-local git identity is `Claude
+  <noreply@anthropic.com>` to match history; use plain `git commit`.
+  `.claude/worktrees/` is in `.git/info/exclude` for worktree tracks. The
+  owner said routine build/check/commit/push need no permission; an edit
+  adding those allow rules to `.claude/settings.json` was blocked by the
+  auto-mode classifier as self-modification, so the owner adds them if
+  wanted (the list is in the session report). `.claude/settings.local.json`
+  (ignored) grants Claude's temp folder for this project.
 - **Owner-side, when convenient:**
   - `git pull`, `npm run dev`. Pick the webcam mic, choose Speakers under
     the mic picker, read the status line: expect "Speaker mode: echo
@@ -72,9 +78,16 @@ resume protocol in `CLAUDE.md`.
   - If bleed persists only when a specific Output is chosen in the picker,
     try System default: Chrome's canceller may not reference a non-default
     output.
-  - GPU machine: install uv and ffmpeg, `uv sync` in `service/`, enable the
-    PyTorch CUDA index per `service/README.md`, `uv sync --extra gpu`, and
-    confirm `GET /gpu` shows `cuda_available: true`.
+  - YouTube in the app (P2-T1c), on a visible window with real speakers:
+    paste a link, press Play, sing a held vowel. Report whether the ribbon
+    tracks you (and in Speakers mode, whether the video's audio bleeds into
+    the mic), whether a pre-roll ad ever shows and what the app says during
+    it, and whether takes over the video line up; nudge "YouTube video
+    offset" until they do and report the value.
+  - GPU machine: uv, ffmpeg and the CPU `uv sync` are done. Still to do:
+    enable the PyTorch CUDA index per `service/README.md`,
+    `uv sync --extra gpu`, and confirm `GET /gpu` shows
+    `cuda_available: true` (needed from P2-T2).
 
 ---
 
@@ -299,7 +312,7 @@ lyrics, and scores each take against it.
   - Follow-up: song folders are named by case-sensitive video ids; on
     Windows two ids differing only in case would share a folder.
     Astronomically rare; revisit only if ids ever collide.
-- [ ] **P2-T1c** (S) **Play a YouTube link inside the app. Owner priority.**
+- [x] **P2-T1c** (S) **Play a YouTube link inside the app. Owner priority.**
   No service needed. Design in `docs/ARCHITECTURE.md` (YouTube playback in
   the app). Start with a **spike**, recorded in this task's notes before
   any wiring: a throwaway page measuring (a) whether the embed loads from
@@ -355,6 +368,44 @@ lyrics, and scores each take against it.
   YouTube).
   Editing `src/` and `index.html` triggers a full reload on a running dev
   server; do it while the owner is not mid-test.
+  - Done: `src/audio/{transport,youtube-url,embed-clock,youtube-api,
+    youtube-transport}.ts`, the link box and page-wide paste, `#stage` with
+    the player above the lane, take `clock: "embed"`, `embedOffsetS`. 911
+    unit tests, 30 e2e (17 new in `e2e/youtube.spec.ts` against a fake
+    IFrame API; the suite never reaches YouTube). Built in a worktree and
+    cherry-picked. Review fixes: the TS parser now matches the service
+    exactly (a Kelvin-sign host, a percent-encoded id and `/watch/?v=` were
+    accepted; checked by a 750,000-link differential run); a failed link no
+    longer destroys the playing song; YouTube's own controls go through the
+    same guards as Play; the player no longer spills out of its frame
+    between 721 and 757 px.
+  - Live check (real YouTube, built-in browser): load, title, duration,
+    Play at real speed, pause, seek, replacing a video, a `?t=30` start.
+    It found that a nonexistent id reports error 150 (the "owner blocks
+    other apps" text was misleading; now it names both causes) and that a
+    failed load left a red error beside a still-playing song (now it says
+    the previous song is still loaded). It also found, against the fake,
+    that 150 arrives 150 to 250 ms after ready (hence a settle window) and
+    that seeking a cued player starts it (hence re-cue).
+  - Owner-side, still open: a real pre-roll ad (the `ad` state rests on
+    assumed signals), unmuted autoplay blocked in stock Chrome, a mic take
+    over the real embed, speaker echo with the embed, and the constant
+    output offset (to pick a default `embedOffsetS`).
+  - Follow-up: replaying a take under an embedded song plays the take
+    alone; synced replay needs the embed and the take started together.
+  - Follow-up: loops over the embed are not gapless (100 ms poll); seek
+    ahead of the loop end.
+  - Follow-up: below about 530 px the page scrolls sideways; put the video
+    under the song panel or offer a compact mode.
+  - Follow-up: a dead player stays on screen after an error past the
+    settle window; offer Close or dispose it.
+  - Follow-up: live streams (duration 0) cannot loop or seek; refuse them
+    with a message, as the service does.
+  - Follow-up: a Session-level test harness with a fake Web Audio, so
+    `loadLink` supersession and teardown are covered below e2e (Session
+    cannot be built under vitest today).
+  - Follow-up (P2-T1d): reuse the `yt-<id>` song key so takes made over the
+    embed line up with the prepared song.
 - [ ] **P2-T1d** (S) **Prepare a linked song for scoring. Owner priority.**
   Needs P2-T1 and P2-T1b. New `src/service/client.ts` (service URL from
   settings; typed wrappers `createSongFromUrl`, `getSong`, `fetchSongAudio`;

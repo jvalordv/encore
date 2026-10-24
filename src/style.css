@@ -38,10 +38,14 @@ body {
     color var(--motion-slow) var(--easing);
 }
 
+/* --stage-min is the least height the lane and the YouTube player (when one is
+   loaded) need together. The page scrolls rather than let the stage shrink
+   below it, so nothing is ever drawn over the player. */
 #app {
+  --embed-w: clamp(480px, 32vw, 640px);
   display: grid;
   grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(var(--stage-min, 0px), 1fr) auto auto;
   grid-template-areas:
     'topbar topbar'
     'song   lane'
@@ -53,9 +57,15 @@ body {
   padding: 12px;
 }
 
+/* Side by side: the player's height plus its frame. */
+#app[data-embed='on'] {
+  --stage-min: calc(var(--embed-w) * 9 / 16 + 32px);
+}
+
 #topbar,
 #song-panel,
 #pitch-lane,
+.embed-region,
 #controls {
   background: var(--color-surface);
   border: var(--border-width) solid var(--color-accent-2);
@@ -137,15 +147,57 @@ body {
   color: var(--color-text);
 }
 
-/* The canvas is taken out of flow so its size can never feed back into the
-   grid cell; PitchLane measures the cell and sizes the bitmap to match. */
-#pitch-lane {
+/* The stage holds the lane and, once a link is loaded, YouTube's player. Wide
+   windows put them side by side so both stay in view; narrower ones stack the
+   player above the lane (see the media query below). */
+#stage {
   grid-area: lane;
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The canvas is taken out of flow so its size can never feed back into the
+   layout; PitchLane measures the box and sizes the bitmap to match. */
+#pitch-lane {
+  flex: 1 1 0;
   position: relative;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: var(--lane-bg);
+}
+
+/* The frame around the YouTube player: a border, a radius and a shadow from
+   the shared tokens, which is all a skin can reach. The player box inside gets
+   a size and nothing else: YouTube's rules forbid covering, clipping or
+   restyling the embed, so nothing is positioned over it, nothing clips it
+   (the frame has padding and no overflow rule) and no filter, opacity or
+   transform is applied to it or to anything around it. */
+.embed-region {
+  flex: none;
+  align-self: flex-start;
+  padding: 8px;
+}
+
+.embed-player {
+  position: relative;
+  width: var(--embed-w);
+  min-width: 480px;
+  min-height: 270px;
+  aspect-ratio: 16 / 9;
+}
+
+/* Each player gets a slot the iframe fills; flex avoids the inline gap an
+   iframe would otherwise leave under itself. While one video loads behind
+   another their slots lie on top of each other, the one in use on top (see
+   domEmbedHost in src/audio/youtube-transport.ts). */
+.embed-slot {
+  position: absolute;
+  inset: 0;
+  display: flex;
 }
 
 #lane-canvas {
@@ -245,6 +297,23 @@ input[type='range'] {
   border-left-color: var(--color-miss);
 }
 
+/* Below this the lane would be squeezed beside a 480 pixel player, so the
+   player sits above it instead. The lane keeps a usable height, and the stage
+   asks for the player's height, a gap and that lane. */
+@media (max-width: 1149px) {
+  #stage {
+    flex-direction: column;
+  }
+
+  #pitch-lane {
+    min-height: 160px;
+  }
+
+  #app[data-embed='on'] {
+    --stage-min: calc(var(--embed-w) * 9 / 16 + 32px + 12px + 160px);
+  }
+}
+
 @media (max-width: 900px) {
   #app {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
@@ -252,11 +321,15 @@ input[type='range'] {
 }
 
 /* Narrow windows are not a design target; the song panel just stacks above
-   the lane so nothing overflows. */
-@media (max-width: 720px) {
+   the stage so nothing overflows. The switch comes while the stage beside the
+   song column still has room for the player's frame: the stage is the window
+   less 256 px there (the 220 px column, the page padding and the gap), and the
+   frame is up to 502 px (a 480 px player, its padding and the widest skin
+   border) with 15 px more for a page scrollbar. */
+@media (max-width: 780px) {
   #app {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(240px, 1fr) auto auto;
+    grid-template-rows: auto auto minmax(var(--stage-min, 240px), 1fr) auto auto;
     grid-template-areas:
       'topbar'
       'song'
@@ -265,6 +338,22 @@ input[type='range'] {
       'status';
     height: auto;
     min-height: 100%;
+  }
+}
+
+/* The player cannot shrink below 480 px, so in a window narrower than its
+   frame plus the page padding (24 px) and a page scrollbar (15 px) the stage
+   scrolls sideways, with the frame whole inside it, rather than the frame
+   spilling out of the stage and the page. Only while a video is on the page:
+   a scrolling stage would clip the lane's shadow for nothing. The extra height
+   leaves room for the stage's own scrollbar. */
+@media (max-width: 559px) {
+  #app[data-embed='on'] #stage {
+    overflow-x: auto;
+  }
+
+  #app[data-embed='on'] {
+    --stage-min: calc(var(--embed-w) * 9 / 16 + 32px + 12px + 160px + 16px);
   }
 }
 
@@ -355,7 +444,8 @@ input[type='range'] {
   color: var(--color-bg);
 }
 
-.latency-row input {
+.latency-row input,
+.link-row input {
   flex: 1;
   width: 0;
   min-width: 0;
@@ -368,9 +458,29 @@ input[type='range'] {
   font-family: var(--font-mono);
 }
 
-.latency-row button {
+.latency-row button,
+.link-row button {
   min-width: 0;
   padding-inline: 12px;
+}
+
+/* The link box under the dropzone. */
+.link-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.link-row input {
+  padding-block: 6px;
+  font-size: 0.85rem;
+}
+
+/* The embed offset field, shown only while a YouTube video is the song. */
+.embed-offset {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .unit {
@@ -415,6 +525,7 @@ input[type='range'] {
 
 .take-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
@@ -441,6 +552,14 @@ input[type='range'] {
   min-width: 0;
   padding: 3px 8px;
   font-size: 0.8rem;
+}
+
+/* Under its row: a take timed against a YouTube video says so. */
+.take-note {
+  flex: 1 0 100%;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
 }
 
 /* ---- Pitch lane overlay -------------------------------------------------- */

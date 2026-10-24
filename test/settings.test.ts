@@ -6,8 +6,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  clampEmbedOffsetS,
   DEFAULT_SETTINGS,
   loadSettings,
+  MAX_EMBED_OFFSET_S,
   MAX_LATENCY_S,
   sanitizeSettings,
   saveSettings,
@@ -33,6 +35,7 @@ describe('DEFAULT_SETTINGS', () => {
       clarityThreshold: 0.9,
       octaveInvariant: false,
       latencyByDevicePair: {},
+      embedOffsetS: 0,
     });
   });
 
@@ -76,6 +79,7 @@ describe('loadSettings', () => {
           clarityThreshold: 0.75,
           octaveInvariant: 'yes',
           latencyByDevicePair: { 'latency.a|b': 0.12 },
+          embedOffsetS: 'later',
         }),
       ),
     );
@@ -87,6 +91,7 @@ describe('loadSettings', () => {
       clarityThreshold: 0.75,
       octaveInvariant: false,
       latencyByDevicePair: { 'latency.a|b': 0.12 },
+      embedOffsetS: 0,
     });
   });
 
@@ -151,6 +156,32 @@ describe('loadSettings', () => {
     }
   });
 
+  it('keeps an embed offset within plus or minus half a second', () => {
+    expect(MAX_EMBED_OFFSET_S).toBe(0.5);
+    expect(sanitizeSettings({ embedOffsetS: 0.12 }).embedOffsetS).toBe(0.12);
+    expect(sanitizeSettings({ embedOffsetS: -0.3 }).embedOffsetS).toBe(-0.3);
+    expect(sanitizeSettings({ embedOffsetS: 0.5 }).embedOffsetS).toBe(0.5);
+    expect(sanitizeSettings({ embedOffsetS: -0.5 }).embedOffsetS).toBe(-0.5);
+    expect(sanitizeSettings({ embedOffsetS: 0 }).embedOffsetS).toBe(0);
+  });
+
+  it('clamps an embed offset that is out of range instead of dropping it', () => {
+    expect(sanitizeSettings({ embedOffsetS: 0.9 }).embedOffsetS).toBe(0.5);
+    expect(sanitizeSettings({ embedOffsetS: -7 }).embedOffsetS).toBe(-0.5);
+    expect(sanitizeSettings({ embedOffsetS: 0.5000001 }).embedOffsetS).toBe(0.5);
+  });
+
+  it('falls back to no offset for an embed offset that is not a finite number', () => {
+    for (const bad of ['0.2', null, undefined, NaN, Infinity, -Infinity, {}, [0.1], true]) {
+      expect(sanitizeSettings({ embedOffsetS: bad }).embedOffsetS, String(bad)).toBe(0);
+    }
+  });
+
+  it('reads settings saved before the embed existed as no offset', () => {
+    const old = JSON.stringify({ inputDeviceId: 'mic-1', monitor: 'speakers' });
+    expect(loadSettings(storeWith(old)).embedOffsetS).toBe(0);
+  });
+
   it('keeps a "__proto__" key from touching the prototype', () => {
     const s = loadSettings(
       storeWith('{"latencyByDevicePair":{"__proto__":1,"a":0.1}}'),
@@ -158,6 +189,21 @@ describe('loadSettings', () => {
     expect(Object.getPrototypeOf(s.latencyByDevicePair)).toBe(Object.prototype);
     expect(s.latencyByDevicePair.a).toBe(0.1);
     expect(({} as Record<string, unknown>).constructor).toBe(Object);
+  });
+});
+
+describe('clampEmbedOffsetS', () => {
+  it('keeps values in range and limits the rest', () => {
+    expect(clampEmbedOffsetS(0.2)).toBe(0.2);
+    expect(clampEmbedOffsetS(-0.2)).toBe(-0.2);
+    expect(clampEmbedOffsetS(0.75)).toBe(0.5);
+    expect(clampEmbedOffsetS(-0.75)).toBe(-0.5);
+    expect(clampEmbedOffsetS(Infinity)).toBe(0.5);
+    expect(clampEmbedOffsetS(-Infinity)).toBe(-0.5);
+  });
+
+  it('reads NaN as no offset', () => {
+    expect(clampEmbedOffsetS(NaN)).toBe(0);
   });
 });
 
@@ -170,6 +216,7 @@ describe('saveSettings', () => {
     clarityThreshold: 0.8,
     octaveInvariant: true,
     latencyByDevicePair: { 'latency.out-1|in-1': 0.143 },
+    embedOffsetS: -0.06,
   };
 
   it('round-trips through a store', () => {
@@ -198,6 +245,12 @@ describe('saveSettings', () => {
       serviceUrl: DEFAULT_SETTINGS.serviceUrl,
       latencyByDevicePair: { good: 0.1 },
     });
+  });
+
+  it('writes a clamped embed offset, never a wild one', () => {
+    const store = memoryStore();
+    saveSettings(store, { ...custom, embedOffsetS: 3 });
+    expect(JSON.parse(store.get('settings') ?? 'null').embedOffsetS).toBe(0.5);
   });
 
   it('works through the localStorage adapter under the encore. prefix', () => {

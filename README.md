@@ -1,6 +1,6 @@
 # encore
 
-Karaoke practice and vocal coaching. Drop in an mp3, pick a mic, sing along, and get feedback on pitch, timing, dynamics, and style, both in absolute terms and relative to the original vocal. Solo or duet. Three visual skins from utilitarian to Barbie Dreamhouse. Runs locally: a browser app plus a Python service that uses the local GPU for the heavy models.
+Karaoke practice and vocal coaching. Drop in an mp3 or paste a YouTube link (it plays in YouTube's own player inside the app), pick a mic, sing along, and get feedback on pitch, timing, dynamics, and style, both in absolute terms and relative to the original vocal. Solo or duet. Three visual skins from utilitarian to Barbie Dreamhouse. Runs locally: a browser app plus a Python service that uses the local GPU for the heavy models.
 
 ## Status
 

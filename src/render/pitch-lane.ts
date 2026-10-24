@@ -5,6 +5,9 @@
  * reference contour as a soft band, one live f0 ribbon per singer, and the
  * playhead. The lane scrolls with song time, so what the singer sees at the
  * playhead is what they are singing now and what is coming sits to its right.
+ * A one-line notice can be set across the middle (an ad is playing in the
+ * embedded video, so nothing is drawn); it takes the place of the empty-lane
+ * invitation.
  *
  * Everything with arithmetic in it (time to pixel, range fitting, ribbon
  * segmentation, the frame ring, the redraw scheduler, the pixel-ratio
@@ -101,6 +104,19 @@ export interface LaneOptions {
   midiLow?: number;
   /** Highest MIDI row shown, default 84. */
   midiHigh?: number;
+}
+
+/** What an empty lane invites the singer to do. */
+const EMPTY_CAPTION = 'sing to see your pitch';
+
+/**
+ * The line drawn across the middle of the lane, or null for none. A notice
+ * (an ad is playing, so nothing is drawn) outranks the invitation, which only
+ * shows while there is nothing else to look at.
+ */
+export function laneCaption(notice: string | null, empty: boolean): string | null {
+  if (notice !== null && notice !== '') return notice;
+  return empty ? EMPTY_CAPTION : null;
 }
 
 /** Pitch class (0 = C) of a MIDI note, correct for negative numbers. */
@@ -556,6 +572,7 @@ export class PitchLane {
   private midiHigh = DEFAULT_HIGH_MIDI;
   private style: LaneStyle;
   private reference: LaneReference | null = null;
+  private notice: string | null = null;
   private now = 0;
   private width = 0;
   private height = 0;
@@ -629,6 +646,14 @@ export class PitchLane {
     this.loop.invalidate();
   }
 
+  /** Shows a line across the lane (such as an ad notice); null clears it. */
+  setNotice(text: string | null): void {
+    const next = text === '' ? null : text;
+    if (next === this.notice) return;
+    this.notice = next;
+    this.loop.invalidate();
+  }
+
   /** Sets the reference contour to overlay, or null to remove it. */
   setReference(ref: LaneReference | null): void {
     this.reference = ref;
@@ -699,12 +724,14 @@ export class PitchLane {
     this.drawRibbon(traces[1], 1, gutter);
     ctx.restore();
 
-    if (empty && height >= 120 && width >= 240) {
-      ctx.fillStyle = this.style.caption;
+    const caption = laneCaption(this.notice, empty);
+    if (caption !== null && height >= 120 && width >= 240) {
+      // A notice is something to act on or wait for, so it takes the accent.
+      ctx.fillStyle = this.notice === null ? this.style.caption : this.style.accent;
       ctx.font = `700 18px ${this.style.captionFont}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('sing to see your pitch', gutter + (width - gutter) / 2, height / 2);
+      ctx.fillText(caption, gutter + (width - gutter) / 2, height / 2, width - gutter - 24);
     }
 
     const x = this.mapX(this.now, gutter);
