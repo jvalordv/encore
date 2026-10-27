@@ -28,13 +28,16 @@ webcam or USB mic.
   both in `docs/HISTORY.md`.
 - **In progress:** none.
 - **Next:** the owner's test results (list below) if they have any: fix
-  what they show first, as `W0: <summary>`. Then **W1**.
+  what they show first, as `W0: <summary>`. Then **W1**. The owner is
+  creating a YouTube Data API key for W2's search (2026-10-27).
 - **Blockers:** none.
 - **Policy flag:** the terms for YouTube's embedded player forbid
   downloading or caching its content, separating its audio, and fetching
   its data by other means (developer policies III.E.1.a, III.I.7,
-  III.I.14). Prepare (yt-dlp, separation) and W5's search do exactly that.
-  Both stay opt-in and labelled; the README never claims compliance.
+  III.I.14). Prepare (yt-dlp, separation) does exactly that, and so does
+  W2's "Find the original", which prepares a recording. Both stay opt-in
+  and labelled; the README never claims compliance. Search uses the
+  official Data API and is not affected.
   **Owner decision (2026-10-23): keep the prepare path, opt-in and off by
   default.** Do not re-ask.
 - **Machine facts (checked 2026-10-24):** Windows 10, RTX 4070 Ti 12 GB,
@@ -144,28 +147,55 @@ Tracks inside a wave share no files and may run in parallel.
       `src/app/session/` is over about 500 lines, and
       `docs/ARCHITECTURE.md` (Browser) names the controllers and the
       frame bus.
-- [ ] **W2: Karaoke core** (was P2-T5 without lyrics). Owns
-  `src/service/`, the song panel, the lane's reference layer.
-  - Client: keep polling status through separation and reference
-    (P2-T1d stops at fetch). Fetch stems from
-    `GET /songs/{id}/stems/{vocals|no_vocals}` (24-bit FLAC, 44.1 kHz);
-    the `X-Stem-Gain` header is the factor the original must be
-    multiplied by to sit at the stems' level. Fetch
-    `GET /songs/{id}/reference`. Mirror only `Reference`, `Contour` and
-    `Note` in `types.ts`. Hide the `lyrics` step in the progress line.
-  - A dropped file uploads to the service when it is reachable
-    (`POST /songs`) with progress in the song panel. With the service
-    down everything works as today, plus one line saying what is missing.
-  - Mix control in the song panel: Original, Karaoke (instrumental), and
-    Karaoke with a vocal guide at a slider level. Karaoke is the default
-    once stems arrive. Linked songs get it once prepared.
-  - The lane's reference layer draws the target notes and marks
-    unpitched regions. A skipped reference shows its reason and the lane
-    runs without targets. Karaoke mode shows no scores, colours or
-    misses.
-  - Done when the checks and e2e are green (the fake service serves stems
-    and a reference). Owner test: drop an mp3, wait for preparation, sing
-    to the instrumental with the melody shown.
+- [ ] **W2: Search and karaoke core.** Two tracks, one commit.
+  - **W2a, browser: YouTube search as the first screen.** Owns
+    `src/search/` and the search panel. Owner decision (2026-10-27): the
+    official API with the owner's own key; no keyless backend for now.
+    - Search from the browser through the YouTube Data API v3, no
+      service: `search.list` (`type=video`, `videoEmbeddable=true`, 12
+      results, 100 quota units), then `videos.list` for durations (1
+      unit). The key is a field in the search panel, kept through the
+      storage adapter. The free quota (10,000 units a day) is about 100
+      searches; a quota or key error says so in plain words.
+    - Without a key, or once the quota is spent, the box opens YouTube's
+      own search in a new tab, and a pasted link works as today.
+    - Results in a grid: thumbnail, title, channel, duration, and a
+      Karaoke or Original badge from a pure, tested classifier (title and
+      channel words such as karaoke, instrumental, backing track, sing
+      along; known karaoke channels such as Sing King and KaraFun).
+    - A chip chooses Karaoke versions or Originals, starting from the
+      mode in settings: karaoke mode adds "karaoke" to the query, learning
+      mode asks for originals. A pick loads like a pasted link.
+    - The search is what the app shows when no song is loaded.
+    - "Find the original": from a karaoke pick, search the title with the
+      karaoke words removed, as Originals, and let the user pick one. W3
+      calls it from learning mode.
+    - README: how to create the key and restrict it (YouTube Data API v3
+      only; websites `http://localhost:5173/*`).
+    - Done when the checks and e2e are green, with the API answered by a
+      Playwright route from fixture JSON.
+  - **W2b, browser: karaoke core** (was P2-T5 without lyrics). Owns
+    `src/service/`, the song panel, the lane's reference layer.
+    - Client: keep polling status through separation and reference
+      (P2-T1d stops at fetch). Fetch stems from
+      `GET /songs/{id}/stems/{vocals|no_vocals}` (24-bit FLAC, 44.1 kHz);
+      the `X-Stem-Gain` header is the factor the original must be
+      multiplied by to sit at the stems' level. Fetch
+      `GET /songs/{id}/reference`. Mirror only `Reference`, `Contour` and
+      `Note` in `types.ts`. Hide the `lyrics` step in the progress line.
+    - A dropped file uploads to the service when it is reachable
+      (`POST /songs`) with progress in the song panel. With the service
+      down everything works as today, plus one line saying what is missing.
+    - Mix control in the song panel: Original, Karaoke (instrumental), and
+      Karaoke with a vocal guide at a slider level. Karaoke is the default
+      once stems arrive. Linked songs get it once prepared.
+    - The lane's reference layer draws the target notes and marks
+      unpitched regions. A skipped reference shows its reason and the lane
+      runs without targets. Karaoke mode shows no scores, colours or
+      misses.
+    - Done when the checks and e2e are green (the fake service serves stems
+      and a reference). Owner test: drop an mp3, wait for preparation, sing
+      to the instrumental with the melody shown.
 - [ ] **W3: Learning mode** (was P2-T6, P2-T7, P3-T2, P3-T3; browser
   only). Owns `src/analysis/score.ts`, `src/coach/`, the mode and report
   panels, the lane's overlay layer.
@@ -189,6 +219,14 @@ Tracks inside a wave share no files and may run in parallel.
     `late_onsets`, `early_onsets`, `out_of_range` (advice only),
     `held_shorter` (`docs/COACHING.md`). At most three tips, each with its
     evidence and a jump-to. Plain, direct wording; per-skin copy is Later.
+  - Karaoke tracks in learning mode: when the song is a karaoke track
+    (W2a's badge, or a reference skipped for having no vocal), say plainly
+    that the singer is on their own and why, before they sing: "Learning
+    mode compares your singing with the original singer's. This is a
+    karaoke track, so there is no singer in it to compare against: you're
+    on your own for this one." Offer "Find the original" (W2a). An
+    original, once prepared, is sung over its own separated instrumental;
+    nothing is aligned to the karaoke video.
   - Done when the checks are green and tests pin the scoring math and
     every rule. Owner test: one take in each mode.
 - [ ] **W4: Two singers** (`docs/DUET.md`). Owns `src/duet/`, the
@@ -209,19 +247,13 @@ Tracks inside a wave share no files and may run in parallel.
     call quality (its label says "Hands-Free" on Windows).
   - Done when the checks and e2e are green (two fake mics). Owner test
     with a second person: one mic with turns, then two mics if available.
-- [ ] **W5: Finding songs and lyrics** (small, both optional).
-  - Search YouTube in the app: a search box beside the link box. Service
-    `GET /search?q=` uses yt-dlp's flat search (titles, ids, durations;
-    nothing downloaded). That reads YouTube by other means than its API
-    (policy flag above), so it is opt-in and labelled like Prepare.
-    Without the service, a button opens YouTube's own search in a new tab
-    for copy and paste. A result loads like a pasted link.
+- [ ] **W5: Synced lyrics** (small, optional).
   - Synced lyrics on request: look the song up on LRCLIB (lrclib.net,
     free, no key) by title and artist (from the file's tags, the video
     title, or typed), or paste an `.lrc` file or plain text. Show the
     current and next line, cached per song in IndexedDB. When lines
     exist, W4's turns follow them instead of note gaps. No Whisper.
-  - Done when the checks are green. Owner test: search, pick, sing with
+  - Done when the checks are green. Owner test: sing an original with its
     lyrics.
 - [ ] **W6: Owner test and one bug sweep.** The owner runs the full list:
   solo with a file, a link, a prepared link; learning mode; duet on one
@@ -243,6 +275,14 @@ Not scheduled. Pull one in only when the owner asks.
   DTW alignment, vibrato, dynamics, timbre and breath features, the
   match-mode rules that need them (`docs/COACHING.md`), and speaker bleed
   in take analysis.
+- **Scoring a karaoke video against its original.** Prepare both, align
+  the original's melody to the karaoke audio (chroma DTW plus a key
+  offset), then score while the singer follows the video. Re-recorded
+  karaoke versions with another arrangement defeat it, so it needs its
+  own confidence check. Until then the original's own instrumental
+  stands in (W3).
+- **Keyless search** through the service (yt-dlp), if the API quota or a
+  shared desktop app ever needs it.
 - **Range and key.** Estimate the singer's range and transpose the
   backing (a WSOLA AudioWorklet, or rubberband in the service).
 - **Duet extras.** Enrollment, voice recognition for overlapping singers
@@ -264,12 +304,12 @@ Rough until W1 is measured; correct them after each wave.
 | Wave | Agent hours | Subagent tokens | Owner |
 |---|---|---|---|
 | W1 Seams and reference | 3.5 (2.5-6) | about 1.8 M | 5 min |
-| W2 Karaoke core | 2.5 (1.5-4) | about 1 M | 15 min |
+| W2 Search and karaoke core | 4.5 (3-7) | about 1.8 M | 20 min, an API key |
 | W3 Learning mode | 3 (2-5) | about 1.2 M | 20 min |
 | W4 Two singers | 3 (2-5) | about 1.2 M | 30 min, a second person |
-| W5 Search and lyrics | 1.5 (1-2.5) | about 0.6 M | 10 min |
+| W5 Synced lyrics | 1 (0.5-2) | about 0.4 M | 5 min |
 | W6 Test and sweep | 1.5 (1-3) | about 0.8 M | 45 min |
-| **Total** | **about 15 (10-25)** | **about 6.5 M** | **about 2 h** |
+| **Total** | **about 16.5 (11-28)** | **about 7.2 M** | **about 2 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The
 orchestrator's own reading adds about 100 to 200 thousand tokens per wave

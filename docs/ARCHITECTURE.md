@@ -13,8 +13,9 @@ so learning mode when it is up. Scoring and tips run in the browser.
  │ mic(s) ─► worklet pitch ─► bus│  upload mp3 │ POST /songs/url  yt-dlp fetch│
  │ bus ─► lane, recorder, score  │ ──────────► │  demucs ─► vocals/no_vocals  │
  │ learning: report card, tips   │ ◄────────── │  torchcrepe ─► reference.json│
- │ lyrics lookup (LRCLIB, W5)    │  status,    │ GET /search  yt-dlp (W5)     │
- │ skins                         │  json, flac │                              │
+ │ search (YouTube Data API, W2) │  status,    │                              │
+ │ lyrics lookup (LRCLIB, W5)    │  json, flac │                              │
+ │ skins                         │             │                              │
  └──────────────────────────────┘             └──────────────────────────────┘
           localStorage, IndexedDB                    service/cache/<hash>/
 ```
@@ -345,8 +346,20 @@ always skips.
   natural-language layer later only rephrases rule output.
 - **No cloud.** Everything runs on the owner's machine. Stems and takes
   never leave it. Two lookups send only what the user typed or the song's
-  title and artist, and only when asked: lyrics (LRCLIB) and YouTube
-  search (W5).
+  title and artist, and only when asked: YouTube search (W2) and lyrics
+  (LRCLIB, W5).
+- **Search through YouTube's official API (owner, 2026-10-27).** The
+  browser calls the YouTube Data API v3 with the owner's own key from
+  settings; the free quota is about 100 searches a day. Without a key a
+  button opens YouTube's search in a tab and a pasted link still works.
+  No keyless backend for now (Later: yt-dlp search through the service).
+- **Karaoke videos sing, originals teach.** A karaoke track has no vocal,
+  so there is nothing to take a reference melody from. Karaoke mode plays
+  any video, karaoke versions best. Learning mode needs the original
+  recording: picking a karaoke track there says the singer is on their own
+  and offers to find the original, which is then sung over its own
+  separated instrumental. Scoring against an original while following the
+  karaoke video needs alignment and is Later.
 - **Vanilla TS.** Same stack as `4th-dimension`; cheapest for workers, no
   framework churn.
 - **Built to become an app.** The target shell is Tauri (Windows, macOS,

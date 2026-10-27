@@ -7,6 +7,12 @@ says where the singing misses. Tips come only when the singer asks for
 them. Every finding carries its evidence (which notes, how far off) so
 the singer can jump to the moment and hear it.
 
+Learning mode needs the original singer to compare against. On a karaoke
+track (no vocal) it says so before the take, in plain words: "Learning
+mode compares your singing with the original singer's. This is a karaoke
+track, so there is no singer in it to compare against: you're on your own
+for this one." It offers to find the original recording instead.
+
 Scoring runs in the browser on the live tracker's frames (W3), aligned by
 the calibrated latency. Re-tracking the take in the service, DTW
 alignment and the timbre features are Later (`ROADMAP.md`).

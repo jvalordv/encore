@@ -68,6 +68,8 @@ app needs their mics:
 - First run of the service with each extra as its wave lands
   (`service/README.md`, "GPU setup"); `separation` is installed, `pitch`
   comes with W1.
+- A YouTube Data API key for W2's search, pasted into the app's search
+  panel (never into chat).
 - The owner test named at the end of each wave, with a real song and a
   real mic; a second person for W4.
 
