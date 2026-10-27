@@ -1,22 +1,27 @@
 # encore
 
-Karaoke practice and vocal coaching. Drop in an mp3, pick a mic, sing along,
-and get feedback on pitch, timing, dynamics, vibrato and style, both in
-absolute terms and relative to the original vocal. Solo or duet. Three visual
-skins from utilitarian to Barbie Dreamhouse. Runs locally: a browser app plus
-a Python service that uses the local GPU for the heavy models.
+Karaoke for one or two singers. Drop in an mp3 or a YouTube link, pick a
+mic, and sing to the instrumental with the melody on screen. Karaoke mode
+never judges; an opt-in learning mode says plainly where the singing
+misses (pitch, timing) and gives tips on request. Three visual skins from
+utilitarian to Barbie Dreamhouse. Runs locally: a browser app plus a Python
+service that uses the local GPU to prepare songs.
 
 ## Purpose, in priority order
 
-1. **Get better at singing.** Measured, specific, honest feedback is the
-   product. When a choice trades coaching quality against anything else,
-   coaching wins.
-2. **Make it fun.** Skins, streaks, duets, and personality exist to keep
-   people practising. They never change what is measured.
-3. **Become an app.** Build so the browser front end can ship inside a
-   desktop shell later (see Decisions in `docs/ARCHITECTURE.md`): web
-   platform APIs only, feature-detected; the service optional and reached
-   by a configurable URL; one state store the UI reads from.
+1. **Karaoke that is fun and never shames.** Karaoke mode shows no scores,
+   misses or tips. Nothing from learning mode leaks into it.
+2. **Learning mode that is honest.** When the singer turns it on, feedback
+   is measured, specific and direct. Rules over measured features, never
+   guesses.
+3. **Ordinary equipment.** A laptop's own mic and speakers, headphones, a
+   webcam or USB mic; two singers on one mic or two.
+4. **Token efficiency.** The owner's budget is the constraint: waves, light
+   review, small files (`docs/SESSIONS.md`).
+5. **Become an app, later.** Keep the front end shippable in a desktop
+   shell (see Decisions in `docs/ARCHITECTURE.md`): web platform APIs
+   only, feature-detected; the service optional and reached by a
+   configurable URL; one state store the UI reads from.
 
 Read `ROADMAP.md` for what to do next and `docs/ARCHITECTURE.md` for how the
 pieces fit. `docs/` holds the design decisions; do not re-derive them, extend
@@ -28,21 +33,26 @@ Sessions are short and get cut off by usage limits. The repo is the only
 memory. Work is local first (`docs/SESSIONS.md`); pull before you start. Follow this exactly so any model can pick up where the last one left:
 
 1. Read the **Current state** block at the top of `ROADMAP.md`.
-2. If it names a task **in progress**, finish that task first. Its notes say
-   where work stopped. Otherwise take the first unchecked `[ ]` task in the
-   active phase. Do not skip ahead; tasks are ordered by dependency.
+2. If it names a wave **in progress**, finish that wave first. Its notes say
+   where work stopped. Otherwise take the first unchecked `[ ]` wave. Do
+   not skip ahead; waves are ordered by dependency.
 3. Run the checks before touching anything (`npm run check`, `npm run e2e`
-   when the task touches audio or UI, and the service checks). If they are red on
-   a clean checkout, fixing that is the task.
-4. Do exactly that one task. Resist widening it. Write follow-ups as new
-   bullet lines under the task in `ROADMAP.md`, not as extra code.
+   when the wave touches audio or UI, and the service checks). If they are
+   red on a clean checkout, fixing that comes first.
+4. Do exactly that one wave, with the light pipeline in `docs/SESSIONS.md`.
+   Resist widening it. Write follow-ups as new bullet lines under the wave
+   in `ROADMAP.md`, not as extra code.
 5. Run the checks again. Green is required to tick the box.
-6. Update `ROADMAP.md`: tick the task, refresh **Current state** (last done,
-   in progress, blockers, next), add any follow-ups.
-7. Commit as `P<phase>-T<n>: <imperative summary>` and push to `main`.
-   One task, one commit. If you must stop mid-task, commit as
-   `WIP P<phase>-T<n>: <where it stopped>` and write the stopping point in
+6. Update `ROADMAP.md`: tick the wave, refresh **Current state** (last
+   done, in progress, blockers, next), add any follow-ups, and correct the
+   estimates with what the wave really cost.
+7. Commit as `W<n>: <imperative summary>` and push to `main`. One wave,
+   one commit. If you must stop mid-wave, commit as
+   `WIP W<n>: <where it stopped>` and write the stopping point in
    **Current state** so the next session does not repeat work.
+8. Stop. Tell the owner in three lines what changed, what to test, and to
+   `/clear` before the next wave. Do not start the next wave in the same
+   session.
 
 ## Model routing
 
@@ -50,12 +60,13 @@ The owner is budget-constrained. Spend capability where it matters:
 
 | Work | Model |
 |---|---|
-| Planning, architecture changes, phase reviews, unblocking | Fable / Opus (orchestrator) |
-| Implementation tasks from `ROADMAP.md` | Sonnet |
+| Planning, architecture changes, unblocking | Fable / Opus (orchestrator) |
+| Implementation and the one review per wave | Sonnet |
 | Mechanical work: CSS skin variants, doc edits, lint fixes, test boilerplate | Haiku |
 
-The orchestrator does not write feature code. It picks the task, writes a
-precise brief, dispatches a worker, reviews the diff, and commits.
+The orchestrator does not write feature code. It picks the wave, writes a
+precise brief, dispatches a worker, reads the reviewer's findings, and
+commits.
 
 ## Conventions
 
@@ -101,13 +112,14 @@ cd service && uv run ruff check . && uv run ruff format --check . && uv run pyte
 ## Layout
 
 ```
-src/app/        state store, take/session model, UI shell
-src/audio/      AudioContext, mp3 player, mic capture, latency calibration, recorder
-src/analysis/   browser DSP: live pitch tracker (AudioWorklet), note segmentation, scoring
-src/duet/       singer assignment for two-mic and one-mic modes
-src/render/     pitch lane canvas, meters, FX (particles, confetti)
+src/app/        state store, session controllers, takes, UI shell, panels
+src/audio/      AudioContext, players and transports, mic capture, latency, recorder
+src/analysis/   browser DSP: live pitch tracker (AudioWorklet), scoring
+src/coach/      learning-mode tips: rules over scored notes
+src/duet/       two singers: second mic, turns on one mic
+src/render/     pitch lane canvas and its layers
 src/skins/      token contract, skin definitions, personality copy
 src/service/    typed client for the Python service
-service/        FastAPI app: separation, reference analysis, take analysis, lyrics, speaker ID
-docs/           ARCHITECTURE, COACHING, DUET, SKINS, SESSIONS
+service/        FastAPI app: intake, YouTube fetch, separation, reference melody
+docs/           ARCHITECTURE, COACHING, DUET, SKINS, SESSIONS, HISTORY
 ```

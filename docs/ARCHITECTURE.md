@@ -2,18 +2,19 @@
 
 Two processes on one machine. The browser owns everything real-time; the
 Python service owns everything that needs a GPU or a big model. The app is
-useful with the service down (live pitch, recording, playback) and gets
-reference melody, lyrics, scoring, and coaching when it is up.
+useful with the service down (live pitch, recording, playback, YouTube in
+the embedded player) and gets the instrumental, the reference melody and
+so learning mode when it is up. Scoring and tips run in the browser.
 
 ```
  browser (Vite app, :5173)                    service (FastAPI, :8765)
  ┌──────────────────────────────┐             ┌──────────────────────────────┐
  │ player  ── AudioContext ──► out│             │ POST /songs      intake+hash │
- │ mic(s) ─► worklet pitch ─► lane│  upload mp3 │  demucs ─► vocals/no_vocals  │
- │ recorder ─► WAV + f0 frames   │ ──────────► │  torchcrepe ─► reference.json│
- │ score (live, vs reference)    │ ◄────────── │  whisperx ─► lyrics.json     │
- │ report card / coaching UI     │  status,    │ POST /analyze   take features│
- │ skins, FX                     │  json, wavs │ POST /duet/*    enroll, split│
+ │ mic(s) ─► worklet pitch ─► bus│  upload mp3 │ POST /songs/url  yt-dlp fetch│
+ │ bus ─► lane, recorder, score  │ ──────────► │  demucs ─► vocals/no_vocals  │
+ │ learning: report card, tips   │ ◄────────── │  torchcrepe ─► reference.json│
+ │ lyrics lookup (LRCLIB, W5)    │  status,    │ GET /search  yt-dlp (W5)     │
+ │ skins                         │  json, flac │                              │
  └──────────────────────────────┘             └──────────────────────────────┘
           localStorage, IndexedDB                    service/cache/<hash>/
 ```
@@ -39,7 +40,7 @@ reference melody, lyrics, scoring, and coaching when it is up.
   (`describeMonitor` in `src/app/state.ts`). Switching reopens the mic and is
   refused while recording. Calibration always measures on a raw mic, since
   the canceller would remove the chirp too, and restores speaker mode
-  afterwards. In speaker mode Phase 2 (P2-T6) gates scored frames by mic
+  afterwards. In speaker mode learning-mode scoring (W3) gates frames by mic
   level above the noise floor measured at mic open, so residual bleed is not
   scored as singing, and Phase 3 may add our own cancellation in the
   worklet from the known song signal and latency.
@@ -175,18 +176,18 @@ reference melody, lyrics, scoring, and coaching when it is up.
   environment. CPU deps install everywhere (CI included). The heavy models
   come in one extra per feature, each declared and installed by the task
   that needs it, so nothing is downloaded before it is used: `separation`
-  (torch, torchaudio, demucs; P2-T2) now, then `pitch` (torchcrepe, P2-T3),
-  `lyrics` (P2-T4), `analysis` (praat-parselmouth, librosa, P3-T1) and
-  `speaker` (speechbrain, P4-T2). torch and torchaudio come from PyTorch's
+  (torch, torchaudio, demucs; P2-T2) now, then `pitch` (torchcrepe, W1).
+  Extras for Whisper lyrics, take analysis and speaker embeddings are
+  Later. torch and torchaudio come from PyTorch's
   CUDA 12.8 index (cu128) and are held to 2.11: torchaudio stopped at 2.11.0,
-  and CUDA 12 is what CTranslate2 (Whisper, P2-T4) supports. Install with
+  and CUDA 12 is what CTranslate2 (Whisper, if it comes) supports. Install with
   `uv sync --extra separation` (name every extra; a plain `uv sync` removes
   them, `uv sync --inexact` keeps them). torchaudio 2.11's own load and save
   need torchcodec, which is not installed: read and write audio with
   soundfile and hand tensors to the models. `ENCORE_DEVICE` selects `cuda`
   or `cpu`.
-- **Jobs.** One worker thread, FIFO. A 4070 Ti (12 GB) handles demucs,
-  crepe, and whisper comfortably one at a time, not concurrently. Status is
+- **Jobs.** One worker thread, FIFO. A 4070 Ti (12 GB) handles demucs and
+  crepe comfortably one at a time, not concurrently. Status is
   polled; no websockets needed. `jobs.py` is the queue (idempotent per song,
   survives a job that raises or exits), `pipeline.py` the steps (a runner
   registry; a step with no runner reads "skipped: Not built yet (ROADMAP
@@ -286,19 +287,19 @@ Note         { onset_s, offset_s, midi: number,              // fractional
 Vibrato      { rate_hz, extent_cents, regularity }
 Reference    { contour: Contour, notes: Note[], range: {low_midi, high_midi},
                unpitched_regions: [start_s, end_s][] }
-Lyrics       { words: {start_s, end_s, text, line: number}[], language }
+Lyrics       { lines: {start_s, text}[], source: lrclib|pasted }  // W5,
+               browser only
 SongStatus   { song_id, title?, duration_s?, source: file|youtube,
                steps: {fetch|separation|reference|lyrics:
                {state: queued|running|done|failed|skipped, progress, error?,
                 detail?}} }                       // detail: why it skipped
-TakeAnalysis { contour, notes, alignment: {offset_s, dtw_path?},
-               features: Features, recommendations: Recommendation[] }
-Features     see docs/COACHING.md
-Recommendation { rule_id, mode: general|match, severity, message_key,
-               evidence: {note_indices, value, reference_value?} }
-DuetSplit    { singers: {id, contour, confidence: number[]}[],
-               harmony: {start_s, end_s, interval_semitones}[] }
 ```
+
+`TakeAnalysis`, `Features`, `Recommendation` and `DuetSplit` were planned
+for service-side take analysis and voice-split duets; both are Later
+(`ROADMAP.md`). `schemas.py` still defines them; nothing in the browser
+mirrors them. The `lyrics` step stays in `SongStatus` as a stub that
+always skips.
 
 ## Decisions
 
@@ -321,13 +322,31 @@ DuetSplit    { singers: {id, contour, confidence: number[]}[],
     `service/README.md`, and the embedded path never depends on it.
     Shipping both in one distributed app is a decision for the owner; for
     personal use on their own machine they are the owner's to make.
-- **Two trackers.** A light live tracker in the browser for immediacy and a
-  heavy one in the service for truth. Scores shown live are provisional and
-  replaced by the post-take analysis.
+- **Two modes (owner, 2026-10-27).** Karaoke mode is the default and shows
+  no scores, misses or tips. Learning mode is opt-in, scores against the
+  reference and is direct about misses; tips appear on request. Scoring may
+  run in both modes, but nothing from it renders in karaoke mode.
+- **One tracker for scoring (2026-10-27, replaces "two trackers").** The
+  browser's live tracker scores the take, aligned by the calibrated
+  latency. Its scores are final. A heavier service re-analysis (crepe on
+  the take, DTW) is Later; the cost of building it outweighed what it
+  adds for this goal.
+- **A frame bus.** The tracker publishes `{ singer, frame }`; the lane, the
+  recorder, scoring and a second mic subscribe. New consumers never edit
+  the session controllers.
+- **Duets without voice recognition (2026-10-27).** Two mics when there
+  are two; on one mic the app assigns phrases to singers (`docs/DUET.md`).
+  Enrollment and voice splitting are Later.
+- **Lyrics by lookup, not transcription (2026-10-27).** Line-synced lyrics
+  from LRCLIB on request, or pasted. Whisper is Later: its stack conflicts
+  with our torch (`ROADMAP.md`, Later).
 - **Rules before language models.** Recommendations come from deterministic
   rules over measured features so they are explainable and testable. Any
   natural-language layer later only rephrases rule output.
-- **No cloud.** Everything runs on the owner's machine. Stems never leave it.
+- **No cloud.** Everything runs on the owner's machine. Stems and takes
+  never leave it. Two lookups send only what the user typed or the song's
+  title and artist, and only when asked: lyrics (LRCLIB) and YouTube
+  search (W5).
 - **Vanilla TS.** Same stack as `4th-dimension`; cheapest for workers, no
   framework churn.
 - **Built to become an app.** The target shell is Tauri (Windows, macOS,

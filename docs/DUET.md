@@ -1,55 +1,44 @@
 # Duet
 
-Two singers on one song. The question is which voice each pitch frame
-belongs to. Three tiers, best available wins.
+Up to two singers on one song, on the equipment people have (owner,
+2026-10-27). The question is which voice each pitch frame belongs to. Two
+ways in, built in W4; nothing needs voice recognition.
 
-## Tier 1: two mics
+## Two mics
 
-Two input devices, or a two-channel interface split into two streams. Each
-gets its own pitch tracker, lane ribbon, score, and report. Nothing to
-detect. This is the recommended setup and the first to ship (P4-T1).
+Two input devices: a laptop's mic and a headset, two USB mics, or a
+two-channel interface split into two streams. Each gets its own capture,
+tracker, calibrated latency (latency is stored per input/output pair),
+ribbon colour and, in learning mode, its own report card and tips. Nothing
+to detect.
 
-## Tier 2: one mic, singers alternate
+A Bluetooth headset's mic switches the headset to call quality; the device
+picker says so.
 
-Most duets alternate lines. Enrollment makes this reliable:
+## One mic, singers take turns
 
-1. Each singer records a 15 s glide (low to high and back) and one spoken
-   sentence. The browser derives a **range profile** (p05, p50, p95 of f0).
-   The service derives a **speaker embedding** (ECAPA-TDNN via speechbrain)
-   from the same audio.
-2. Live: each voiced frame is provisionally assigned to the nearer range
-   profile, with hysteresis so a singer is not flipped by one stray frame.
-   Lanes draw two ribbons in the singers' colours; uncertain frames are
-   drawn muted and not scored.
-3. Post-take: the service slices the take into 0.5 s windows, embeds each,
-   assigns by cosine similarity to the enrolled embeddings, smooths with a
-   median filter, and overrides the live assignment. Confidence is the
-   similarity margin.
+Most duets alternate lines. The app decides who sings when, not by
+listening:
 
-## Tier 3: one mic, singers overlap
+1. The reference is split into phrases at gaps between notes of about
+   0.6 s or more, or at lyric lines when synced lyrics are loaded (W5).
+2. Phrases are assigned A, B, A, ... A click on a phrase in the lane
+   cycles it through A, B and both. The lane shows whose turn it is.
+3. In learning mode each phrase is scored for its singer. A phrase marked
+   both is credited to both singers and marked shared.
 
-Best effort, clearly labelled as such.
-
-- Multi-pitch: on windows where the embedding margin is small or the NSDF
-  shows two clear peaks, run a two-source f0 estimate (harmonic summation
-  over a 60–1000 Hz grid, pick the two best non-harmonically-related peaks).
-- Assignment: Viterbi over frames with emission = closeness to each range
-  profile and transition = pitch continuity; voices crossing is allowed but
-  penalised.
-- Unison or octave doubling cannot be attributed; both singers are credited
-  with the frame, marked as shared.
-- Harmony detection: both contours voiced and their interval stable within
-  ±30 c at a 3rd, 5th, 6th, or octave for ≥ 300 ms. Harmony moments get a
-  bonus and skin FX; this is the fun payoff of duet mode.
-
-## Reference side
-
-The original may be a duet too. Demucs returns one vocal stem. Line-level
-assignment of the reference is done by the users from the lyrics view ("you
-take these lines") or both sing the lead. Automatic lead/harmony separation
-of the reference is a stretch goal (same multi-pitch machinery).
+In karaoke mode nothing is attributed: two people sing into one mic and
+the ribbon follows whoever is loudest.
 
 ## Honest limits
 
-Same mic, same register, singing at the same time, is not reliably
-separable. The UI says so when confidence is low instead of guessing.
+Two people on one mic singing at the same time cannot be told apart; the
+app scores those phrases as shared instead of guessing. If someone sings
+out of turn, their notes count for the singer whose turn it is.
+
+## Later
+
+Enrollment (a range glide and a speaker embedding per singer), voice
+recognition and two-pitch tracking for overlapping singers on one mic,
+harmony detection with a bonus, and duet card highlights. See Later in
+`ROADMAP.md`.

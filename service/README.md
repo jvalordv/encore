@@ -1,20 +1,21 @@
 # encore service
 
 The local half of encore. A FastAPI app that does the work the browser cannot:
-vocal separation (demucs), reference pitch tracking (torchcrepe), word-level
-lyrics (whisperx), take analysis, and speaker embeddings for duets. It runs on
-your machine and your audio never leaves it. The browser app works without it
-(live pitch, recording, playback); with it you also get the reference melody,
-lyrics, scoring and coaching. See `../docs/ARCHITECTURE.md`.
+fetching linked audio, vocal separation (demucs) and reference pitch tracking
+(torchcrepe). It runs on your machine and your audio never leaves it. The
+browser app works without it (live pitch, recording, playback); with it you
+also get the instrumental, the reference melody and so learning mode. See
+`../docs/ARCHITECTURE.md`.
 
 Status: songs can be added (`POST /songs`, `POST /songs/url`,
 `GET /songs/{id}`, `GET /songs/{id}/audio`): uploads are hashed, cached and
 queued for preparation, a link to a YouTube video is looked up, cached and its
 audio fetched (see "YouTube links"), the vocal is separated from the rest
 (`GET /songs/{id}/stems/{stem}`, see "Separation"), and `/health` and `/gpu`
-work. The other preparation steps (reference pitch, lyrics) arrive in ROADMAP
-Phase 2, so for now each reports `skipped` with a "Not built yet" note.
-`/analyze` and `/duet/*` are stubs that answer 501 until Phases 3 and 4.
+work. The reference pitch step arrives in ROADMAP W1; until then it reports
+`skipped` with a "Not built yet" note. The lyrics step always skips (lyrics
+come from a lookup in the app). `/analyze` and `/duet/*` are stubs that
+answer 501; they belong to work the roadmap lists as Later.
 
 ## Setup
 
@@ -54,16 +55,16 @@ current driver.
 | Extra | Holds | Needed by |
 |---|---|---|
 | `separation` | torch, torchaudio, demucs | P2-T2, vocal separation. The only one declared so far. |
-| `pitch` | torch, torchcrepe | P2-T3, the reference melody. P3-T1 uses it on takes too. |
-| `lyrics` | torch, torchaudio, whisperx | P2-T4, word-level lyrics. |
-| `analysis` | praat-parselmouth, librosa | P3-T1, take analysis. |
-| `speaker` | torch, torchaudio, speechbrain | P4-T2, speaker embeddings for duets. |
+| `pitch` | torch, torchcrepe | W1, the reference melody. |
+
+Extras for Whisper lyrics, take analysis and speaker embeddings are Later
+in the roadmap and are not planned.
 
 The task that needs an extra adds it to `pyproject.toml`, where a comment
 lists what each will hold. Declaring them all now would make `uv lock` resolve
 and pin every package today.
 
-1. **ffmpeg.** demucs and whisperx call it to read audio, and so does the
+1. **ffmpeg.** demucs calls it to read audio, and so does the
    YouTube fetch step, to write the downloaded audio as FLAC. It must be on
    PATH. Windows: `winget install ffmpeg` (or download a build and add it to
    PATH). Linux: `sudo apt install ffmpeg` or your distro's equivalent. Check
@@ -78,8 +79,8 @@ and pin every package today.
    2.11. They have to match: torchaudio's last release is 2.11.0 and its wheel
    does not say which torch it was built for, so uv would otherwise pair it
    with a newer torch unchecked. CUDA 12 rather than the newer cu130 because
-   the lyrics step (P2-T4) will run Whisper through CTranslate2, which
-   supports CUDA 12 only. On a driver that reports CUDA 12.8 or newer there is
+   Whisper, if it is ever added, runs through CTranslate2, which supports
+   CUDA 12 only. On a driver that reports CUDA 12.8 or newer there is
    nothing to edit. On an older one, change `cu128` in the `[[tool.uv.index]]`
    URL to `cu126`, which carries the same 2.11 pair (the current list is at
    https://pytorch.org/get-started/locally/), then run `uv lock`. The same

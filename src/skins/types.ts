@@ -32,6 +32,7 @@ export const COPY_KEYS = [
   'scoop',
   'unstable_sustain',
   'late_onsets',
+  'early_onsets',
   'phrase_fade',
   'out_of_range',
   'vibrato_wider',
