@@ -353,6 +353,8 @@ always skips.
   settings; the free quota is about 100 searches a day. Without a key a
   button opens YouTube's search in a tab and a pasted link still works.
   No keyless backend for now (Later: yt-dlp search through the service).
+  Search sits behind a provider interface, so a public app can send it to
+  a server that holds the key instead (`ROADMAP.md`, Later, Public app).
 - **Karaoke videos sing, originals teach.** A karaoke track has no vocal,
   so there is nothing to take a reference melody from. Karaoke mode plays
   any video, karaoke versions best. Learning mode needs the original

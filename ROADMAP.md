@@ -157,6 +157,11 @@ Tracks inside a wave share no files and may run in parallel.
       unit). The key is a field in the search panel, kept through the
       storage adapter. The free quota (10,000 units a day) is about 100
       searches; a quota or key error says so in plain words.
+    - Search goes through a provider interface (query in, results and
+      errors out). The only provider now calls Google directly with the
+      key from settings; a public app would add one that calls a server
+      holding the key (Later, Public app). Which provider runs is one
+      setting; nothing else in the app knows which is in use.
     - Without a key, or once the quota is spent, the box opens YouTube's
       own search in a new tab, and a pasted link works as today.
     - Results in a grid: thumbnail, title, channel, duration, and a
@@ -291,8 +296,29 @@ Not scheduled. Pull one in only when the owner asks.
   copy, a new-record flourish, PNG export of a report card.
 - **Housekeeping.** A settings panel that gathers everything, self-hosted
   display fonts, e2e in CI.
-- **Desktop app.** Tauri shell, service sidecar, installers, a GPU-less
-  tier with in-process models.
+- **Public app** (owner asked, 2026-10-27). What has to change before
+  encore ships to other people. Not legal advice: get a review of the
+  terms and rights items before a public or paid release.
+  - Desktop shell: Tauri, the service as a sidecar, installers. Check
+    early that YouTube's embedded player plays inside the shell; it has
+    lately refused pages without a normal web address.
+  - Search through a small server that holds the API key (a second
+    provider behind W2a's interface), and Google's quota review, which
+    audits the whole app against YouTube's policies.
+  - Leave preparing YouTube songs out of the public build: it breaks
+    YouTube's terms and would fail that review. Learning mode then works
+    on the user's own copy of a song, and "Find the original" asks for
+    that file instead of fetching it. Karaoke mode is unchanged.
+  - Run without an NVIDIA card: lighter separation and pitch models on
+    an ordinary processor or Apple silicon, in-process where possible
+    (preparing takes minutes instead of seconds), and an install far
+    smaller than today's 3 GB of GPU packages.
+  - Lyrics: a licence from the publishers (sold by services such as
+    LyricFind and Musixmatch) or no lyrics lookup, especially in a paid
+    app. LRCLIB is fine for personal use.
+  - Code signing: an Apple developer account and a Windows certificate.
+  - Third-party licence notices, and an LGPL build of ffmpeg if it is
+    bundled.
 - **Follow-ups under finished tasks** in `docs/HISTORY.md`: an upload
   length cap, notes while a step runs, clearing crash leftovers, releasing
   GPU memory, and more. None block the goal.
