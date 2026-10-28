@@ -49,7 +49,7 @@ verification, separate live-check agents. The owner's own test after a
 wave replaces the live check. This holds even when a session has
 multi-agent orchestration switched on: the owner's instruction wins. The
 full pipeline (three lenses, adversarial votes, fixer and critic, about
-2 M tokens per task) is for a wave the owner names, or W6's sweep if the
+2 M tokens per task) is for a wave the owner names, or W7's sweep if the
 owner asks for more than one reviewer.
 
 ## Starting a session
@@ -71,7 +71,7 @@ app needs their mics:
 - A YouTube Data API key for W2's search, pasted into the app's search
   panel (never into chat).
 - The owner test named at the end of each wave, with a real song and a
-  real mic; a second person for W4.
+  real mic; a second person for W5.
 
 Workers leave a line under the wave in `ROADMAP.md` when they need one of
 these.

@@ -2,7 +2,7 @@
 
 Up to two singers on one song, on the equipment people have (owner,
 2026-10-27). The question is which voice each pitch frame belongs to. Two
-ways in, built in W4; nothing needs voice recognition.
+ways in, built in W5; nothing needs voice recognition.
 
 ## Two mics
 
@@ -21,7 +21,7 @@ Most duets alternate lines. The app decides who sings when, not by
 listening:
 
 1. The reference is split into phrases at gaps between notes of about
-   0.6 s or more, or at lyric lines when synced lyrics are loaded (W5).
+   0.6 s or more, or at lyric lines when synced lyrics are loaded (W6).
 2. Phrases are assigned A, B, A, ... A click on a phrase in the lane
    cycles it through A, B and both. The lane shows whose turn it is.
 3. In learning mode each phrase is scored for its singer. A phrase marked

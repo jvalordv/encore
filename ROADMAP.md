@@ -16,9 +16,11 @@ webcam or USB mic.
   no tips. Sing, see your pitch line against the melody, have fun.
 - **Learning mode** is opt-in and direct about where the singing misses:
   which notes, how far off, early or late. Tips appear only on request.
+  Two styles (owner, 2026-10-28): Strict against the original's melody,
+  or Open, where any octave counts and freestyle is judged on the key.
 - **Token efficiency comes first.** Batch work into waves, review lightly,
   and stop after each wave so the owner can `/clear`. One thorough bug
-  sweep comes after the owner has tested (W6), not inside every wave.
+  sweep comes after the owner has tested (W7), not inside every wave.
 
 ## Current state
 
@@ -142,7 +144,7 @@ Tracks inside a wave share no files and may run in parallel.
       rewrite.
     - Frame bus: the tracker publishes `{ singer, frame }` (singer 0 for
       now) to subscribers: the lane and the recorder today, scoring in
-      W3, a second mic in W4.
+      W3, a second mic in W5.
     - State: `mode: 'karaoke' | 'learning'` in settings (default
       karaoke, no UI yet) and `singers` in the state (one entry, built
       from today's input).
@@ -184,7 +186,7 @@ Tracks inside a wave share no files and may run in parallel.
   - Follow-up: `loadLink` has no unit test beyond its guards (it needs a
     fake YouTube API); e2e covers it.
   - Follow-up: the frame bus's unsubscribe functions are never called;
-    harmless while `tracker.disconnect()` stops frames, but W4's second
+    harmless while `tracker.disconnect()` stops frames, but W5's second
     mic should unsubscribe on close.
   - For W3: `settings.mode` is read by nothing yet, and the lane's overlay
     layer has the hook for hit colours.
@@ -275,15 +277,75 @@ Tracks inside a wave share no files and may run in parallel.
     nothing is aligned to the karaoke video.
   - Done when the checks are green and tests pin the scoring math and
     every rule. Owner test: one take in each mode.
-- [ ] **W4: Two singers** (`docs/DUET.md`). Owns `src/duet/`, the
+- [ ] **W4: Strict and Open scoring** (owner asked, 2026-10-28). Learning
+  mode gets two styles. **Strict** scores against the original's melody,
+  as W3 builds it. **Open** is lenient the way rhythm games' vocals are
+  (any octave counts, wider windows) and adds freestyle: a note off the
+  melody that fits the song's key counts as freestyle, not as a miss.
+  Both measure; neither guesses. Windows, the key-fit rule and the new tip
+  are in `docs/COACHING.md`, "Scoring styles". Karaoke mode is unchanged
+  and shows none of it. Two tracks, one commit.
+  - **W4a, service: the song's key.** Owns `encore_service/key.py`, its
+    step and its route.
+    - A new `key` step after separation, run on `no_vocals` for every
+      song, with or without singing. Chroma at a tuning offset estimated
+      from the instrumental, matched against the 24 major and minor key
+      profiles over windows of about 8 s, smoothed so a key change is
+      found but the key does not flicker. Each segment has a confidence
+      (the best match against the runner-up); under the gate it is "key
+      unclear". A relative major and minor share their notes, so mixing
+      them up does not change in-key scoring.
+    - Save `key.json` as `KeyMap { tuning_cents, segments: [{start_s,
+      end_s, tonic, mode, confidence}] }` (add it to Shared schemas in
+      `docs/ARCHITECTURE.md`), serve `GET /songs/{id}/key` like the
+      reference, and add `key` to the `SongStatus` steps. numpy only, no
+      new dependency.
+    - Tests on synthetic audio: a I-IV-V-I progression in D major gives
+      D major (or B minor), a change from C to D halfway is found within
+      one window, a +30 cent tuning offset is measured, noise gives "key
+      unclear".
+  - **W4b, browser: the two styles.** Owns `src/analysis/key-fit.ts`,
+    the style table in `score.ts`, the `off_key` rule in
+    `src/coach/tips.ts`, the style selector, and free phrases in the
+    lane's overlay layer. Mirror `KeyMap` in `src/service/types.ts`.
+    - `settings.scoring: 'strict' | 'open'`, Strict by default so W3's
+      behaviour does not change. The selector sits beside the mode toggle
+      and shows only in learning mode.
+    - Phrases: split the reference into phrases (a gap between notes of
+      about 0.6 s or more; a pure, tested function, moved here from W5,
+      which reuses it). A phrase can be marked free from the lane (not by
+      a plain click, which W5 takes for turns) or from the report card. A
+      free phrase in Strict is judged as in Open.
+    - `key-fit.ts`, pure and tested: a sung note against the key at its
+      time gives in key or off key, and the cents to the nearest scale
+      tone. Where the key is unclear, a note is judged only on
+      steadiness, and the card says why.
+    - Open: notes match the melody at any octave with the wider windows.
+      A note that matches no melody note, or comes where there is none
+      (gaps, a skipped reference, free phrases), is freestyle: in key or
+      off key. The card shows the share on the melody, the share of
+      freestyle in key, and each off-key note with how far off and a
+      jump-to.
+    - Karaoke tracks: in Open the whole song is freestyle against the
+      key, so learning mode gives real feedback on a karaoke track. W3's
+      "on your own" message adds "Switch to Open to be scored on the
+      song's key instead", beside "Find the original". Strict on the
+      karaoke video itself stays Later.
+    - Tips: `off_key` runs in Open and on free phrases; `held_shorter`
+      runs in Strict only; `flat_bias` and `sharp_bias` use melody notes
+      only.
+    - Done when the checks and e2e are green, with tests pinning the key
+      estimation, the key fit, both styles' windows and the new rule.
+      Owner test: one song in each style with an ad-lib in one phrase,
+      and a karaoke track in Open.
+- [ ] **W5: Two singers** (`docs/DUET.md`). Owns `src/duet/`, the
   singers panel, the lane's ribbon layer.
   - Settings: today's input becomes singer A; singer B is optional.
     Names and colours editable.
   - Two mics: pick a second input. It gets its own capture and tracker
     publishing `singer: 1` on the frame bus, its own calibrated latency
     (the input/output pair key already covers it), and its own ribbon.
-  - One mic, two singers: turns. Split the reference into phrases (a gap
-    between notes of about 0.6 s or more; a pure, tested function) and
+  - One mic, two singers: turns. Take the phrases from W4's splitter and
     assign them A, B, A, ...; a click on a phrase in the lane cycles A,
     B, both. The lane shows whose turn it is. In learning mode each
     phrase is scored for its singer, and "both" phrases count for both,
@@ -293,15 +355,15 @@ Tracks inside a wave share no files and may run in parallel.
     call quality (its label says "Hands-Free" on Windows).
   - Done when the checks and e2e are green (two fake mics). Owner test
     with a second person: one mic with turns, then two mics if available.
-- [ ] **W5: Synced lyrics** (small, optional).
+- [ ] **W6: Synced lyrics** (small, optional).
   - Synced lyrics on request: look the song up on LRCLIB (lrclib.net,
     free, no key) by title and artist (from the file's tags, the video
     title, or typed), or paste an `.lrc` file or plain text. Show the
     current and next line, cached per song in IndexedDB. When lines
-    exist, W4's turns follow them instead of note gaps. No Whisper.
+    exist, W5's turns follow them instead of note gaps. No Whisper.
   - Done when the checks are green. Owner test: sing an original with its
     lyrics.
-- [ ] **W6: Owner test and one bug sweep.** The owner runs the full list:
+- [ ] **W7: Owner test and one bug sweep.** The owner runs the full list:
   solo with a file, a link, a prepared link; learning mode; duet on one
   mic and on two; speakers and headphones. Then one reviewer reads
   everything changed since the trim plus the owner's findings, one fixer
@@ -331,6 +393,10 @@ Not scheduled. Pull one in only when the owner asks.
   shared desktop app ever needs it.
 - **Range and key.** Estimate the singer's range and transpose the
   backing (a WSOLA AudioWorklet, or rubberband in the service).
+  Transposing shifts W4's `KeyMap` by the same interval.
+- **Chord-aware freestyle.** Judge Open's free notes against the chord
+  under them, not only the key (chord estimation in the service), so an
+  in-key note that clashes with its chord is caught.
 - **Duet extras.** Enrollment, voice recognition for overlapping singers
   on one mic, harmony detection and bonus, duet card highlights.
 - **Fun extras.** Streaks, stars, skin FX, more skins, per-skin coaching
@@ -377,10 +443,11 @@ since W1 was mostly a move.
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core | 2 (1.5-3) | about 1.1 M | 20 min, an API key |
 | W3 Learning mode | 1.2 (1-2) | about 0.8 M | 20 min |
-| W4 Two singers | 1.5 (1-2.5) | about 0.8 M | 30 min, a second person |
-| W5 Synced lyrics | 0.5 (0.3-1) | about 0.3 M | 5 min |
-| W6 Test and sweep | 1 (0.7-2) | about 0.6 M | 45 min |
-| **Total** | **about 7.2 (5.5-11.5)** | **about 4.6 M** | **about 2 h** |
+| W4 Strict and Open scoring | 1.5 (1-2.5) | about 0.8 M | 20 min |
+| W5 Two singers | 1.5 (1-2.5) | about 0.8 M | 30 min, a second person |
+| W6 Synced lyrics | 0.5 (0.3-1) | about 0.3 M | 5 min |
+| W7 Test and sweep | 1 (0.7-2) | about 0.6 M | 45 min |
+| **Total** | **about 8.7 (6.5-14)** | **about 5.4 M** | **about 2.5 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The
 orchestrator's own reading adds about 100 to 200 thousand tokens per wave

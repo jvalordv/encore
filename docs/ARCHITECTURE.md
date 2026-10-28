@@ -14,7 +14,7 @@ so learning mode when it is up. Scoring and tips run in the browser.
  │ bus ─► lane, recorder, score  │ ──────────► │  demucs ─► vocals/no_vocals  │
  │ learning: report card, tips   │ ◄────────── │  torchcrepe ─► reference.json│
  │ search (YouTube Data API, W2) │  status,    │                              │
- │ lyrics lookup (LRCLIB, W5)    │  json, flac │                              │
+ │ lyrics lookup (LRCLIB, W6)    │  json, flac │                              │
  │ skins                         │             │                              │
  └──────────────────────────────┘             └──────────────────────────────┘
           localStorage, IndexedDB                    service/cache/<hash>/
@@ -203,7 +203,7 @@ so learning mode when it is up. Scoring and tips run in the browser.
   second mic exists). The input controller publishes; subscribers are called
   in subscription order. Today the take recorder (collecting the frames saved
   with a take) and the pitch lane (unless a take is replaying and owns the
-  lane) subscribe; scoring (W3) and a second mic (W4) subscribe here and add
+  lane) subscribe; scoring (W3) and a second mic (W5) subscribe here and add
   nothing to the input controller. `AppState.singers` holds one entry per
   singer (its mic state, mirrored from `input` for singer 0) and settings
   carry `mode` (`'karaoke'` by default, or `'learning'`; no UI yet).
@@ -356,7 +356,7 @@ Note         { onset_s, offset_s, midi: number,              // fractional
 Vibrato      { rate_hz, extent_cents, regularity }
 Reference    { contour: Contour, notes: Note[], range: {low_midi, high_midi},
                unpitched_regions: [start_s, end_s][] }
-Lyrics       { lines: {start_s, text}[], source: lrclib|pasted }  // W5,
+Lyrics       { lines: {start_s, text}[], source: lrclib|pasted }  // W6,
                browser only
 SongStatus   { song_id, title?, duration_s?, source: file|youtube,
                steps: {fetch|separation|reference|lyrics:
@@ -415,7 +415,7 @@ always skips.
 - **No cloud.** Everything runs on the owner's machine. Stems and takes
   never leave it. Two lookups send only what the user typed or the song's
   title and artist, and only when asked: YouTube search (W2) and lyrics
-  (LRCLIB, W5).
+  (LRCLIB, W6).
 - **Search through YouTube's official API (owner, 2026-10-27).** The
   browser calls the YouTube Data API v3 with the owner's own key from
   settings; the free quota is about 100 searches a day. Without a key a
