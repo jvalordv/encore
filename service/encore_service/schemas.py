@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, model_validator
 # Lifecycle of one song preparation step.
 StepState = Literal["queued", "running", "done", "failed", "skipped"]
 # The preparation steps, in the order they run.
-StepName = Literal["fetch", "separation", "reference", "lyrics"]
+StepName = Literal["fetch", "separation", "key", "reference", "lyrics"]
 # How a song entered the service; only linked songs have a fetch step to run.
 SongSource = Literal["file", "youtube"]
 # General judges a take alone; match judges it against the original vocal.
@@ -76,6 +76,39 @@ class Reference(BaseModel):
     unpitched_regions: list[tuple[float, float]] = Field(default_factory=list)
 
 
+class KeySegment(BaseModel):
+    """One stretch of a song in one key, or with no clear key.
+
+    `tonic` is a pitch class (C = 0, C# = 1, ... B = 11). Both `tonic` and
+    `mode` are None exactly when the key is unclear; `confidence` is there
+    either way.
+    """
+
+    start_s: float = Field(ge=0)
+    end_s: float = Field(ge=0)
+    tonic: int | None = Field(default=None, ge=0, le=11)
+    mode: Literal["major", "minor"] | None = None
+    confidence: float = Field(ge=0, le=1)
+
+    @model_validator(mode="after")
+    def _tonic_and_mode_go_together(self) -> Self:
+        if (self.tonic is None) != (self.mode is None):
+            raise ValueError("tonic and mode must both be set or both be null")
+        return self
+
+
+class KeyMap(BaseModel):
+    """The key of a song from its instrumental, and how it is tuned.
+
+    `tuning_cents` is the instrumental's offset from A = 440 Hz equal
+    temperament, in [-50, 50). `segments` run in time order without gaps,
+    from 0 to the stem's duration; neighbours differ.
+    """
+
+    tuning_cents: float = Field(ge=-50, lt=50)
+    segments: list[KeySegment]
+
+
 class LyricWord(BaseModel):
     """One word with its timing and the lyric line it belongs to."""
 
@@ -102,10 +135,14 @@ class StepStatus(BaseModel):
 
 
 class SongSteps(BaseModel):
-    """The four preparation steps in run order; fetch is skipped for uploads."""
+    """The five preparation steps in run order; fetch is skipped for uploads.
+
+    A status.json written before a step existed loads with that step queued.
+    """
 
     fetch: StepStatus = Field(default_factory=StepStatus)
     separation: StepStatus = Field(default_factory=StepStatus)
+    key: StepStatus = Field(default_factory=StepStatus)
     reference: StepStatus = Field(default_factory=StepStatus)
     lyrics: StepStatus = Field(default_factory=StepStatus)
 

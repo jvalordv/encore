@@ -29,6 +29,7 @@ function steps(others: Partial<SongSteps> = {}): SongSteps {
   return {
     fetch: step('skipped'),
     separation: step(),
+    key: step('skipped'),
     reference: step(),
     lyrics: step('running', 0.5),
     ...others,

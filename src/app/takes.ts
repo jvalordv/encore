@@ -73,6 +73,8 @@ export interface TakeStore {
   get(id: string): Promise<TakeRecord | null>;
   /** Deletes a take; an unknown id is not an error. */
   remove(id: string): Promise<void>;
+  /** Replaces a take's report (a re-score); an unknown id is not an error. */
+  setReport(id: string, report: TakeReport): Promise<void>;
 }
 
 /** Database name, version, store and index, fixed by the storage design. */
@@ -153,6 +155,10 @@ export function memoryTakeStore(): TakeStore {
     },
     async remove(id) {
       records.delete(id);
+    },
+    async setReport(id, report) {
+      const record = records.get(id);
+      if (record) records.set(id, { ...record, report });
     },
   };
 }
@@ -244,6 +250,17 @@ export async function idbTakeStore(factory: IDBFactory, name: string = DB_NAME):
       const tx = db.transaction(STORE, 'readwrite');
       const done = committed(tx);
       tx.objectStore(STORE).delete(id);
+      await done;
+    },
+    async setReport(id, report) {
+      const tx = db.transaction(STORE, 'readwrite');
+      const done = committed(tx);
+      const store = tx.objectStore(STORE);
+      const request = store.get(id);
+      request.onsuccess = () => {
+        const record = request.result as TakeRecord | undefined;
+        if (record) store.put({ ...record, report });
+      };
       await done;
     },
   };

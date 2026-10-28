@@ -14,8 +14,9 @@
  * (prepare.ts), the karaoke track from the service (stems.ts) and the mix of
  * its stems (mix.ts), the song search (search.ts), the mic (input.ts), devices
  * and output (devices.ts), latency and calibration (latency.ts), takes
- * (takes.ts) and learning mode (scoring.ts: the practice mode, the live grade
- * of each frame and the report a take gets). Tracker frames reach the take
+ * (takes.ts) and learning mode (scoring.ts: the practice mode and scoring
+ * style, the phrases marked free, the live grade of each frame and the report
+ * a take gets). Tracker frames reach the take
  * recorder and, graded in learning mode, the lane through a frame bus
  * (frame-bus.ts).
  *
@@ -46,6 +47,7 @@
  * session/helpers.ts (frameToSongTime and friends), tested without any audio
  * and re-exported here. Importing this file touches no browser API.
  */
+import type { Span } from '../analysis/free-phrases';
 import type { MonitorMode } from '../audio/mic';
 import type { Transport } from '../audio/transport';
 import type { EmbedHost } from '../audio/youtube-transport';
@@ -55,7 +57,7 @@ import { SessionCore } from './session/core';
 import { buildParts } from './session/parts';
 import type { DeviceLists, LaneSink, SessionOptions, SessionParts } from './session/types';
 import { loadSettings } from './settings';
-import type { PracticeMode, Settings } from './settings';
+import type { PracticeMode, ScoringStyle, Settings } from './settings';
 import { StateStore } from './state';
 import { localStorageStore } from './storage';
 import { memoryTakeStore, openTakeStore } from './takes';
@@ -126,6 +128,7 @@ export class Session {
     this.core.lane = lane;
     lane.setTime(this.core.songs.currentPosition());
     this.core.stems.syncLane();
+    this.core.scoring.syncLane();
   }
 
   /**
@@ -216,6 +219,19 @@ export class Session {
    */
   setMode(mode: PracticeMode): void {
     this.core.scoring.setMode(mode);
+  }
+
+  /** Chooses learning mode's style: Strict (the melody) or Open (lenient, with freestyle). */
+  setScoring(style: ScoringStyle): void {
+    this.core.scoring.setScoring(style);
+  }
+
+  /**
+   * Marks a phrase free (or not) from the report card and re-scores that take
+   * in the style it was scored in; the marking is kept for the song.
+   */
+  setPhraseFree(takeId: string, span: Span, free: boolean): Promise<void> {
+    return this.core.scoring.setPhraseFree(takeId, span, free);
   }
 
   /** Opens a take's report card (learning mode only shows it); null closes it. */

@@ -41,7 +41,7 @@ function song(fetchStep: StepStatus, others: Partial<SongSteps> = {}): SongStatu
     title: 'Some Video',
     duration_s: 213,
     source: 'youtube',
-    steps: { fetch: fetchStep, separation: step(), reference: step(), lyrics: step(), ...others },
+    steps: { fetch: fetchStep, separation: step(), key: step('skipped'), reference: step(), lyrics: step(), ...others },
   };
 }
 
@@ -196,6 +196,8 @@ describe('isSongStatus', () => {
       { ...good, source: 'dropbox' },
       { ...good, steps: null },
       { ...good, steps: { ...good.steps, fetch: undefined } },
+      { ...good, steps: { ...good.steps, key: undefined } },
+      { ...good, steps: { ...good.steps, key: { state: 'sleeping', progress: 0 } } },
       { ...good, steps: { ...good.steps, lyrics: { state: 'sleeping', progress: 0 } } },
       { ...good, steps: { ...good.steps, reference: { state: 'done', progress: 'all' } } },
       { ...good, steps: { ...good.steps, reference: { state: 'done', progress: Number.NaN } } },

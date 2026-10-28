@@ -4,9 +4,11 @@
  * back to front: the grid (background, semitone and octave rows, piano-key
  * gutter; lane-grid.ts), the reference melody (a tint where it has sound but
  * no note, the contour as a soft band, the target notes as bars;
- * lane-reference.ts), one live f0 ribbon per singer (lane-ribbon.ts), the hit
+ * lane-reference.ts), a band behind each phrase marked free (learning mode only;
+ * lane-free.ts), one live f0 ribbon per singer (lane-ribbon.ts), the hit
  * colours over the ribbons (learning mode only; lane-overlay.ts), and the
- * overlay with the notice and the playhead. The lane scrolls
+ * overlay with the notice and the playhead. A Shift+click on a phrase reports
+ * its span so the session can mark it free (a plain click is left alone). The lane scrolls
  * with song time, so what the singer sees at the playhead is what they are
  * singing now and what is coming sits to its right. A one-line notice can be
  * set across the middle (an ad is playing in the embedded video, so nothing is
@@ -19,6 +21,9 @@
  * canvas glue around them. All colours come from the active skin's tokens
  * (lane-style.ts) and are re-read on the `encore:skin` event.
  */
+import { phrasesOf } from '../analysis/free-phrases';
+import type { Span } from '../analysis/free-phrases';
+import type { Phrase } from '../analysis/phrases';
 import { SKIN_EVENT } from '../skins';
 import { RedrawLoop, watchPixelRatio } from './lane-clock';
 import {
@@ -29,6 +34,7 @@ import {
   gutterWidth,
 } from './lane-geometry';
 import type { LaneFrame, LaneOptions, LaneReference, LaneView } from './lane-geometry';
+import { drawFreeBands, phraseAtX } from './lane-free';
 import { drawGrid } from './lane-grid';
 import { drawCaption, drawGrades, drawPlayhead } from './lane-overlay';
 import { drawReference } from './lane-reference';
@@ -99,6 +105,9 @@ export class PitchLane {
   private fitted = false;
   private style: LaneStyle;
   private reference: LaneReference | null = null;
+  private phrases: Phrase[] = [];
+  private freeSpans: Span[] = [];
+  private onPhraseClick: ((span: Span) => void) | null = null;
   private notice: string | null = null;
   private now = 0;
   private width = 0;
@@ -143,6 +152,7 @@ export class PitchLane {
       window.addEventListener('resize', this.onWindowResize);
     }
     window.addEventListener(SKIN_EVENT, this.onSkin);
+    canvas.addEventListener('click', this.onClick);
     // Display fonts load lazily, after the first draw; repaint once they land.
     document.fonts?.addEventListener('loadingdone', this.onFonts);
     this.stopPixelRatio = watchPixelRatio(() => this.resize());
@@ -190,11 +200,26 @@ export class PitchLane {
    */
   setReference(ref: LaneReference | null): void {
     this.reference = ref;
+    this.phrases = ref?.notes ? phrasesOf(ref.notes) : [];
     if (ref === null && this.fitted) {
       this.fitted = false;
       this.setRange(this.baseLow, this.baseHigh);
     }
     this.loop.invalidate();
+  }
+
+  /** Sets the phrases drawn as free (a band behind them); empty draws none. */
+  setFreePhrases(spans: readonly Span[]): void {
+    this.freeSpans = spans.map((s): Span => [s[0], s[1]]);
+    this.loop.invalidate();
+  }
+
+  /**
+   * Hears a Shift+click on a phrase of the reference: the callback gets the
+   * phrase's [start, end] span. Null stops listening.
+   */
+  setPhraseClick(handler: ((span: Span) => void) | null): void {
+    this.onPhraseClick = handler;
   }
 
   /** Sets the visible MIDI rows, inclusive; whole notes, at least two rows. */
@@ -259,6 +284,7 @@ export class PitchLane {
     ctx.rect(gutter, 0, width - gutter, height);
     ctx.clip();
     drawReference(ctx, view, this.style, this.reference, gutter);
+    drawFreeBands(ctx, view, this.style, this.freeSpans, gutter);
     drawRibbon(ctx, view, this.style, traces[0], 0, gutter);
     drawRibbon(ctx, view, this.style, traces[1], 1, gutter);
     drawGrades(ctx, view, this.style, traces[0], gutter);
@@ -276,6 +302,7 @@ export class PitchLane {
     this.observer?.disconnect();
     window.removeEventListener('resize', this.onWindowResize);
     window.removeEventListener(SKIN_EVENT, this.onSkin);
+    this.canvas.removeEventListener('click', this.onClick);
     document.fonts?.removeEventListener('loadingdone', this.onFonts);
     this.stopPixelRatio();
   }
@@ -331,6 +358,16 @@ export class PitchLane {
     this.style = readLaneStyle();
     this.layerStale = true;
     this.redrawNow();
+  };
+
+  private readonly onClick = (event: MouseEvent): void => {
+    if (!event.shiftKey || this.onPhraseClick === null) return;
+    const rect = this.canvas.getBoundingClientRect();
+    if (!(rect.width > 0)) return;
+    // The canvas may be scaled by CSS; the lane's geometry is in its own pixels.
+    const x = ((event.clientX - rect.left) / rect.width) * this.width;
+    const phrase = phraseAtX(this.view(), x, gutterWidth(this.width), this.phrases);
+    if (phrase !== null) this.onPhraseClick([phrase.startS, phrase.endS]);
   };
 
   private readonly onFonts = (): void => {

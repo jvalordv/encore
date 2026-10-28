@@ -5,7 +5,8 @@
  * running), `createSongFromUrl` (add a YouTube link), `uploadSong` (add a
  * file, with progress), `getSong` (one status), `fetchSongAudio` (the stored
  * audio), `fetchStem` (the vocal or the backing, with the gain they were
- * scaled by), `fetchReference` (the melody) and `pollSong` (a status loop that
+ * scaled by), `fetchReference` (the melody), `fetchKey` (the song's key) and
+ * `pollSong` (a status loop that
  * ends when the audio is fetched, when a chosen step has settled, or when a
  * step has failed). Nothing here decides to talk to the service: the caller
  * does, and a client is built from the `serviceUrl` setting each time, so a
@@ -22,9 +23,9 @@
  * network.
  */
 import { STEP_NAMES } from './types';
-import type { Reference, SongLinkRequest, SongStatus, StemName, StepName, StepState } from './types';
+import type { KeyMap, Reference, SongLinkRequest, SongStatus, StemName, StepName, StepState } from './types';
 import { postFile } from './upload';
-import { isReference, parseStemGain, STEM_GAIN_HEADER } from './wire';
+import { isKeyMap, isReference, parseStemGain, STEM_GAIN_HEADER } from './wire';
 import type { StemDownload } from './wire';
 
 /** Longest GET /health may take before the service counts as not running. */
@@ -166,12 +167,15 @@ export function failedStep(status: SongStatus): StepName | null {
  * True once every step up to and including `upTo` has run its course: done,
  * skipped or failed. A step that failed ends the wait early, since the ones
  * after it stay queued (a restart interrupts a song that way) and the caller
- * reads the failure from the step itself.
+ * reads the failure from the step itself. The exception is the key, which is
+ * optional: the service goes on to the melody without it.
  */
 export function settledThrough(status: SongStatus, upTo: StepName): boolean {
   for (const name of STEP_NAMES) {
     const { state } = status.steps[name];
-    if (state === 'failed') return true;
+    // The key is optional and the service goes on to the melody without it, so
+    // its failure says nothing about the steps after it.
+    if (state === 'failed' && name !== 'key') return true;
     if (state === 'queued' || state === 'running') return false;
     if (name === upTo) return true;
   }
@@ -414,6 +418,19 @@ export class ServiceClient {
     const limits = { timeoutMs: this.requestTimeoutMs, signal };
     const body = await this.call(path, { method: 'GET' }, limits, readJson);
     if (!isReference(body)) throw new ServiceError('unexpected', BAD_BODY_MESSAGE);
+    return body;
+  }
+
+  /**
+   * The song's key over time. A 409 ('not-fetched') means there is none: the
+   * step has not finished, or it was skipped or failed (the status says which).
+   * A body that is not a key map is an 'unexpected' failure, so it reads as no key.
+   */
+  async fetchKey(id: string, signal?: AbortSignal): Promise<KeyMap> {
+    const path = `/songs/${encodeURIComponent(id)}/key`;
+    const limits = { timeoutMs: this.requestTimeoutMs, signal };
+    const body = await this.call(path, { method: 'GET' }, limits, readJson);
+    if (!isKeyMap(body)) throw new ServiceError('unexpected', BAD_BODY_MESSAGE);
     return body;
   }
 

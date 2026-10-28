@@ -24,17 +24,18 @@ webcam or USB mic.
 
 ## Current state
 
-- **Last done:** **W3** (2026-10-28): learning mode (the header toggle,
-  live hit / okay / miss colours, a report card stored with each take, tips
-  on request, the karaoke-track notice). Before it W2 (search and the
-  karaoke core) and W1 (the reference step and the browser seams); older
-  work in `docs/HISTORY.md`.
+- **Last done:** **W4** (2026-10-28): Strict and Open scoring (the
+  service's `key` step and `GET /songs/{id}/key`, the Strict / Open
+  selector, key fit, freestyle, free phrases, the `off_key` tip, Open on
+  karaoke tracks). Before it W3 (learning mode), W2 (search and the karaoke
+  core) and W1 (the reference step and the browser seams); older work in
+  `docs/HISTORY.md`.
 - **In progress:** none.
 - **Next:** the owner's test results (list below) if they have any: fix
-  what they show first, as `W0: <summary>`. Then **W4**. Search needs the
-  owner's YouTube Data API key (README, "Run it"; pasted into the app,
-  never into chat).
-- **Blockers:** none for W4. YouTube now answers yt-dlp with "Sign in to
+  what they show first, as `W0: <summary>`. Then **W5** (needs a second
+  person for its owner test). Search needs the owner's YouTube Data API key
+  (README, "Run it"; pasted into the app, never into chat).
+- **Blockers:** none for W5. YouTube now answers yt-dlp with "Sign in to
   confirm you're not a bot" (2026-10-28, seven tries on Big Buck Bunny), so
   Prepare for links and W2's "Find the original" fail until a newer
   yt-dlp gets through (`uv lock --upgrade-package yt-dlp`, then sync as
@@ -118,6 +119,16 @@ webcam or USB mic.
     sang. Pick a Karaoke-badged search result in Learning mode: the "on
     your own" notice and Find the original should show. Check the header in
     all three skins at a narrow width (it now wraps).
+  - Strict and Open (W4): restart the service first (songs prepared
+    before W4 get their key when it starts). Drop a sung mp3, switch to
+    Learning, and sing a Strict take with an ad-lib in one phrase; mark that
+    phrase free (Shift+click it on the lane, or Mark free on the card) and
+    check the card changes. Switch the selector to Open and sing one take
+    with a line an octave off, an ad-lib in key and a plainly wrong note:
+    report the melody share, the freestyle-in-key share, and any note
+    called off key that was in key (or the reverse). Say whether the red
+    flicker on scoops in Open is distracting. Drop a karaoke mp3 in Learning:
+    the notice offers Switch to Open, and an Open take gets a card.
 
 ## Waves
 
@@ -363,7 +374,7 @@ Tracks inside a wave share no files and may run in parallel.
     0.6 s gap); reuse it, do not build another. Thresholds live in the
     tables in `score.ts` and `src/coach/tips.ts`; the karaoke-track notice
     is in `src/app/learning.ts`.
-- [ ] **W4: Strict and Open scoring** (owner asked, 2026-10-28). Learning
+- [x] **W4: Strict and Open scoring** (owner asked, 2026-10-28). Learning
   mode gets two styles. **Strict** scores against the original's melody,
   as W3 builds it. **Open** is lenient the way rhythm games' vocals are
   (any octave counts, wider windows) and adds freestyle: a note off the
@@ -424,6 +435,42 @@ Tracks inside a wave share no files and may run in parallel.
       estimation, the key fit, both styles' windows and the new rule.
       Owner test: one song in each style with an ad-lib in one phrase,
       and a karaoke track in Open.
+  - Done 2026-10-28. Checks: 1,590 unit tests, 77 e2e, 866 service
+    tests. Two workers in parallel (service and browser, one checkout, no
+    shared files), one reviewer, three fixes. W4a: `key.py` (466): STFT
+    chroma 60 Hz to 5 kHz after a tuning offset from interpolated peaks,
+    8 s windows every 2 s against the Krumhansl-Kessler profiles, Viterbi
+    with a 0.75 switch penalty, confidence = margin over the best key that
+    is neither the path key nor its relative, / 0.1, gated at 0.3. A
+    5-minute stem takes about 0.6 s. W4b: `src/analysis/` `key-fit.ts`,
+    `open-score.ts` (both styles' take scoring and live grades) and
+    `free-phrases.ts`; `src/render/lane-free.ts`; `src/app/` `free-store.ts`
+    and `key-state.ts`; `SCORING_STYLES` in `score.ts`; a `free` grade
+    colour in all three skins. Defined here: the melody share is over
+    on-melody plus judged plus unclear freestyle notes (passing tones
+    left out); free phrases are `[start, end]` spans per song hash in the
+    settings store; marking one from the card re-scores that take with its
+    own style. A failed key step does not end the browser's wait for the
+    melody. Review fixes: a restart during the key step left the later
+    steps queued for good (the service now fails them too, "Add the song
+    again"), a tuning of 49.996 c rounded to 50 and failed the schema, and
+    a regex typo in the Open notice.
+  - Follow-up: the key gate (0.3) and margin scale (0.1) are calibrated on
+    synthetic chord loops only; no prepared song was cached on this machine
+    to check real instrumentals.
+  - Follow-up: the card never names the key (for example "D major"); the
+    owner cannot see a wrong key estimate except through odd off-key calls.
+  - Follow-up: Open's live grade marks frames more than 50 c from the
+    scale red, so a scoop through an outside pitch flickers red.
+  - Follow-up: a karaoke YouTube video gets a key only once prepared
+    (blocked by the bot check); unprepared, Open judges its freestyle on
+    steadiness only.
+  - Follow-up: `src/analysis/score.ts` (521) joins `ui.ts` (558) and
+    `player.ts` (561) over the 500-line guide; the lane's Shift+click glue
+    is covered only by e2e.
+  - For W5: phrases come from `splitPhrases` over the reference notes; a
+    plain click on the lane is still free (`PitchLane.setPhraseClick` takes
+    Shift+click only), and free spans are per song, not per singer.
 - [ ] **W5: Two singers** (`docs/DUET.md`). Owns `src/duet/`, the
   singers panel, the lane's ribbon layer.
   - Settings: today's input becomes singer A; singer B is optional.
@@ -516,7 +563,7 @@ Not scheduled. Pull one in only when the owner asks.
   length cap, notes while a step runs, clearing crash leftovers, releasing
   GPU memory, and more. None block the goal.
 
-## Estimates (corrected 2026-10-28 after W3, light pipeline)
+## Estimates (corrected 2026-10-28 after W4, light pipeline)
 
 W1 measured about 1 hour of wall time (two workers in parallel, then
 one reviewer) and about 1.0 M subagent tokens. W2 measured 1 hour and
@@ -524,14 +571,17 @@ one reviewer) and about 1.0 M subagent tokens. W2 measured 1 hour and
 against an estimate of 2 hours and 1.1 M. W3 measured about 0.7 hours
 and 0.53 M (one worker at 0.36 M, one reviewer at 0.17 M, a small fix)
 against 0.8 and 0.7 M: one track with a detailed brief costs about half
-of a two-track wave. The rest are left as they were.
+of a two-track wave. W4 measured about 1 hour and 0.83 M (service
+worker 0.20 M with its fix, browser worker 0.45 M, reviewer 0.18 M)
+against 1 hour and 0.8 M; the browser track alone cost nearly all of W3. The
+rest are left as they were.
 
 | Wave | Agent hours | Subagent tokens | Owner |
 |---|---|---|---|
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |
-| W4 Strict and Open scoring | 1 (0.7-1.8) | about 0.8 M | 20 min |
+| W4 Strict and Open scoring (measured) | 1 | 0.83 M | 20 min |
 | W5 Two singers | 1 (0.7-1.8) | about 0.7 M | 30 min, a second person |
 | W6 Synced lyrics | 0.4 (0.3-0.8) | about 0.3 M | 5 min |
 | W7 Test and sweep | 0.8 (0.6-1.5) | about 0.6 M | 45 min |

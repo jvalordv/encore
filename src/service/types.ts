@@ -4,23 +4,23 @@
  * worth a dependency; change both together). Field names are the wire's own,
  * snake_case, so a parsed JSON body is one of these without a translation
  * layer. Only what the browser reads today is mirrored: the song status the
- * app polls, the request that adds a link and the reference melody (`Reference`
+ * app polls, the request that adds a link, the reference melody (`Reference`
  * with its `Contour` and `Note`s; a note's `vibrato` is not measured yet and is
- * left out). The rest (lyrics, take analysis) joins it as the tasks that use
- * it land.
+ * left out) and the song's key (`KeyMap`). The rest (lyrics, take analysis)
+ * joins it as the tasks that use it land.
  */
 
 /** Lifecycle of one preparation step. */
 export type StepState = 'queued' | 'running' | 'done' | 'failed' | 'skipped';
 
 /** The preparation steps, in the order the service runs them. */
-export type StepName = 'fetch' | 'separation' | 'reference' | 'lyrics';
+export type StepName = 'fetch' | 'separation' | 'key' | 'reference' | 'lyrics';
 
 /** How a song entered the service; only a linked one has a fetch to run. */
 export type SongSource = 'file' | 'youtube';
 
 /** The step names in run order, for code that walks them. */
-export const STEP_NAMES: readonly StepName[] = ['fetch', 'separation', 'reference', 'lyrics'];
+export const STEP_NAMES: readonly StepName[] = ['fetch', 'separation', 'key', 'reference', 'lyrics'];
 
 /** State and progress of one step. The service sends null for what is unset. */
 export interface StepStatus {
@@ -33,10 +33,11 @@ export interface StepStatus {
   detail?: string | null;
 }
 
-/** The four steps of a song. */
+/** The five steps of a song. */
 export interface SongSteps {
   fetch: StepStatus;
   separation: StepStatus;
+  key: StepStatus;
   reference: StepStatus;
   lyrics: StepStatus;
 }
@@ -86,3 +87,23 @@ export interface Reference {
 
 /** Which stem `GET /songs/{id}/stems/{stem}` serves. */
 export type StemName = 'vocals' | 'no_vocals';
+
+/** One stretch of a song in one key (or in none the service could name). */
+export interface KeySegment {
+  start_s: number;
+  end_s: number;
+  /** Pitch class 0..11, C = 0; null when the key is unclear. */
+  tonic: number | null;
+  /** Null exactly when `tonic` is null. */
+  mode: 'major' | 'minor' | null;
+  /** 0..1: how far the best key beat the runner-up. */
+  confidence: number;
+}
+
+/** The song's key over time, as `GET /songs/{id}/key` sends it. */
+export interface KeyMap {
+  /** [-50, 50): the song's offset from A = 440 equal temperament, in cents. */
+  tuning_cents: number;
+  /** In time order, contiguous from 0 to the song's end. */
+  segments: KeySegment[];
+}

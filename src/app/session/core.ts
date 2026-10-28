@@ -104,6 +104,7 @@ export class SessionCore {
       tracker: this.trackerSupported ? 'idle' : 'unsupported',
       embedOffsetS: this.current.embedOffsetS,
       mode: this.current.mode,
+      scoring: this.current.scoring,
     });
     this.store.patchSection('input', {
       deviceId: this.current.inputDeviceId,

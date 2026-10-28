@@ -1,6 +1,6 @@
 """The preparation steps of a song, run in order inside one queued job.
 
-`prepare` walks fetch, separation, reference and lyrics, recording each
+`prepare` walks fetch, separation, key, reference and lyrics, recording each
 step's state in the song's status.json as it goes so the browser can poll
 progress. The work of a step is a runner registered in `RUNNERS`. A step with
 no runner yet is reported as skipped, with a note naming the ROADMAP task that
@@ -21,6 +21,7 @@ from functools import partial
 from encore_service.errors import StepSkipped
 from encore_service.fetch import fetch_source
 from encore_service.jobs import JobQueue
+from encore_service.key import extract_key
 from encore_service.reference import extract_reference
 from encore_service.schemas import (
     SongSource,
@@ -35,7 +36,15 @@ from encore_service.store import STEM_FILES, SongMeta, SongStore
 logger = logging.getLogger(__name__)
 
 # Steps in run order; a step may depend on what an earlier one produced.
-STEP_ORDER: tuple[StepName, ...] = ("fetch", "separation", "reference", "lyrics")
+# The key is quick CPU work on the instrumental, so it runs before the
+# reference, which waits on the GPU.
+STEP_ORDER: tuple[StepName, ...] = (
+    "fetch",
+    "separation",
+    "key",
+    "reference",
+    "lyrics",
+)
 
 # Called by a runner with how far it has got, from 0 to 1.
 Report = Callable[[float], None]
@@ -57,6 +66,7 @@ def skip_lyrics(store: SongStore, song_id: str, report: Report) -> None:
 RUNNERS: dict[StepName, Runner | None] = {
     "fetch": fetch_source,
     "separation": separate_vocals,
+    "key": extract_key,
     "reference": extract_reference,
     "lyrics": skip_lyrics,
 }
@@ -65,6 +75,7 @@ RUNNERS: dict[StepName, Runner | None] = {
 _BUILT_BY: dict[StepName, str] = {
     "fetch": "P2-T1b",
     "separation": "P2-T2",
+    "key": "W4a",
     "reference": "P2-T3",
     "lyrics": "P2-T4",
 }
@@ -186,14 +197,15 @@ def _is_done(
 ) -> bool:
     """Whether a step is done and what it made is still there.
 
-    The fetch and the separation leave files to look for: the song's audio,
-    and its two stems. A link whose fetch finished but whose audio has since
-    gone missing from the cache is not done, whatever its status says, or
-    adding the link again could never fetch the audio back. An upload gets its
-    audio back by being added again instead. Likewise a separation whose stems
-    have gone: with one missing the stems route would answer "not separated
-    yet" for good, since adding the song again would find the step done and
-    leave it be.
+    The fetch, the separation and the key leave files to look for: the song's
+    audio, its two stems, and its key map. A link whose fetch finished but
+    whose audio has since gone missing from the cache is not done, whatever its
+    status says, or adding the link again could never fetch the audio back. An
+    upload gets its audio back by being added again instead. Likewise a
+    separation whose stems have gone: with one missing the stems route would
+    answer "not separated yet" for good, since adding the song again would find
+    the step done and leave it be. The same goes for a key step whose key.json
+    has gone.
     """
     if getattr(status.steps, step).state != "done":
         return False
@@ -201,6 +213,8 @@ def _is_done(
         return store.source_path(song_id) is not None
     if step == "separation":
         return all(store.stem_path(song_id, stem) is not None for stem in STEM_FILES)
+    if step == "key":
+        return store.key_path(song_id) is not None
     return True
 
 
@@ -297,7 +311,8 @@ def _blocker(
         if status.source == "file":
             return "Source audio is missing. Add the file again."
         return "Needs fetch"
-    if step in ("reference", "lyrics"):
-        # Both read the vocal that separation writes.
+    if step in ("key", "reference", "lyrics"):
+        # The key reads the instrumental and the reference the vocal, both
+        # of which separation writes; neither waits for the other.
         return None if status.steps.separation.state == "done" else "Needs separation"
     return None

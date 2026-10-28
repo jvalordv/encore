@@ -396,7 +396,8 @@ so learning mode when it is up. Scoring and tips run in the browser.
   so a file that crashes a step cannot crash-loop the service.
 - **Cache.** `service/cache/<song_id>/` holds `source.<ext>`, `meta.json`
   (title, source, url, duration, `stem_gain`), `vocals.flac`,
-  `no_vocals.flac`, `reference.json`, `lyrics.json`, `status.json`.
+  `no_vocals.flac`, `key.json`, `reference.json`, `lyrics.json`,
+  `status.json`.
   Deleting the folder re-prepares the song. Never committed. Uploads stream
   into `service/cache/.incoming/` and are moved into place once hashed; JSON
   is written atomically and `status.json` last, so a half-made folder is not
@@ -434,6 +435,11 @@ so learning mode when it is up. Scoring and tips run in the browser.
   tests never load it. Without the `pitch` extra a sung song is skipped with
   the install hint. The `lyrics` step is a runner that always skips: "Lyrics
   come from a lookup in the app".
+  The `key` step (`key.py`, numpy, before the reference) estimates the
+  song's key from `no_vocals` for every song: a tuning offset, chroma over
+  8 s windows against the 24 Krumhansl-Kessler profiles, Viterbi smoothing,
+  and a confidence gate under which a segment is "key unclear". Written as
+  `key.json` (`KeyMap`), served by `GET /songs/{id}/key`.
 - **Song sources.** A song enters as an uploaded file or a YouTube link;
   everything after intake is identical.
   - *File:* `POST /songs`, id is the sha256 of the bytes.
@@ -460,7 +466,7 @@ so learning mode when it is up. Scoring and tips run in the browser.
     (`aformat=channel_layouts=mono|stereo`): YouTube's best stream can be
     5.1, with the vocal in the centre channel that keeping two channels
     would drop. A 10.6 min video fetched in about 6 s. The browser polls one
-    status for fetch, separation, reference and lyrics; progress is 0 to
+    status for fetch, separation, key, reference and lyrics; progress is 0 to
     0.85 downloading, 0.95 converted, 1.0 saved.
   - *Safety:* yt-dlp is driven through its Python API with a fixed option
     set, never options from the request; `noplaylist` is always on; titles
@@ -503,10 +509,19 @@ Note         { onset_s, offset_s, midi: number,              // fractional
 Vibrato      { rate_hz, extent_cents, regularity }
 Reference    { contour: Contour, notes: Note[], range: {low_midi, high_midi},
                unpitched_regions: [start_s, end_s][] }
+KeyMap       { tuning_cents: number,         // [-50, 50): the instrumental's
+                                               // offset from A=440 equal temperament
+               segments: KeySegment[] }       // time order, contiguous, 0 to the
+                                              // stem's duration; neighbours differ
+KeySegment   { start_s, end_s, tonic: 0..11 | null,  // C = 0, C# = 1 ... B = 11;
+               mode: major|minor | null,             // null = key unclear (both)
+               confidence: 0..1 }            // always present; the service has
+                                             // applied its gate, so null tonic
+                                             // means under it
 Lyrics       { lines: {start_s, text}[], source: lrclib|pasted }  // W6,
                browser only
 SongStatus   { song_id, title?, duration_s?, source: file|youtube,
-               steps: {fetch|separation|reference|lyrics:
+               steps: {fetch|separation|key|reference|lyrics:
                {state: queued|running|done|failed|skipped, progress, error?,
                 detail?}} }                       // detail: why it skipped
 ```

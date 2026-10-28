@@ -80,7 +80,7 @@ class FakeClock:
 
 
 def test_step_order_matches_the_schema() -> None:
-    assert STEP_ORDER == ("fetch", "separation", "reference", "lyrics")
+    assert STEP_ORDER == ("fetch", "separation", "key", "reference", "lyrics")
     assert list(SongSteps.model_fields) == list(STEP_ORDER)
     assert set(RUNNERS) == set(STEP_ORDER)
 
@@ -99,6 +99,10 @@ def test_with_no_runners_every_step_is_skipped_with_a_reason(
     assert (steps.separation.state, steps.separation.detail) == (
         "skipped",
         "Not built yet (ROADMAP P2-T2)",
+    )
+    assert (steps.key.state, steps.key.detail) == (
+        "skipped",
+        "Not built yet (ROADMAP W4a)",
     )
     assert (steps.reference.state, steps.reference.detail) == (
         "skipped",
@@ -767,6 +771,23 @@ def test_queue_preparation_puts_unfinished_steps_back_to_queued(
     assert (returned.song_id, returned.source) == (song_id, "youtube")
     assert returned.title == "Linked"
     assert returned.duration_s == 200.0
+
+
+def test_adding_a_song_again_resets_the_steps_recovery_failed_as_not_run(
+    store: SongStore, jobs: JobQueue, new_song: Callable
+) -> None:
+    song_id = new_song()
+    store.update_step(song_id, "separation", state="done", progress=1.0)
+    _put_stems(store, song_id)
+    store.update_step(song_id, "key", state="running", progress=0.3)
+    store.recover_interrupted()
+    assert _status(store, song_id).steps.reference.state == "failed"
+
+    returned = queue_preparation(store, jobs, song_id)
+
+    assert returned.steps.separation.state == "done"
+    for name in ("key", "reference", "lyrics"):
+        assert getattr(returned.steps, name) == QUEUED
 
 
 def test_queue_preparation_leaves_done_steps_alone(

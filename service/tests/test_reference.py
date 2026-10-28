@@ -21,6 +21,7 @@ from encore_service import registry
 from encore_service.app import create_app
 from encore_service.config import Settings
 from encore_service.errors import StepSkipped
+from encore_service.key import extract_key
 from encore_service.pipeline import LYRICS_SKIPPED, RUNNERS, prepare, skip_lyrics
 from encore_service.reference import (
     CHUNK_FRAMES,
@@ -359,6 +360,7 @@ def _separates_to(
 
 def test_every_step_has_a_runner_and_lyrics_skips_with_its_reason() -> None:
     assert all(runner is not None for runner in REAL_RUNNERS.values())
+    assert REAL_RUNNERS["key"] is extract_key
     assert REAL_RUNNERS["reference"] is extract_reference
     assert REAL_RUNNERS["lyrics"] is skip_lyrics
     with pytest.raises(StepSkipped) as skipped:

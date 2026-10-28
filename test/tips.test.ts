@@ -5,7 +5,7 @@
  * jump to. Reports are built by hand so each number is the one under test.
  */
 import { describe, expect, it } from 'vitest';
-import type { NoteResult, TakeReport } from '../src/analysis/score';
+import type { FreestyleReport, NoteResult, TakeReport } from '../src/analysis/score';
 import { MAX_TIPS, TIP_MESSAGES, TIP_THRESHOLDS, tipsFor } from '../src/coach/tips';
 import { studio } from '../src/skins/studio';
 
@@ -250,8 +250,9 @@ describe('the tips of a take', () => {
         'heldRatio',
         'heldShare',
         'minLongNotes',
+        'minFreestyle',
         'minNotes',
-        'onsetS',
+        'offKeyShare',
         'rangeSemitones',
         'scoopCents',
         'sharpCents',
@@ -265,5 +266,84 @@ describe('the tips of a take', () => {
     for (const [id, message] of Object.entries(TIP_MESSAGES)) {
       expect(message).toBe(studio.copy[id as keyof typeof studio.copy]);
     }
+  });
+});
+
+/** A freestyle block with `inKey` notes in key and the given off-key notes. */
+function freestyle(inKey: number, off: Array<{ onsetS: number; centsOff: number }>, extra: Partial<FreestyleReport> = {}) {
+  const block: FreestyleReport = {
+    inKey,
+    offKey: off.length,
+    unclear: 0,
+    passing: 0,
+    offNotes: off.map((o) => ({ onsetS: o.onsetS, offsetS: o.onsetS + 0.5, midi: 61, centsOff: o.centsOff })),
+    keyStatus: 'clear',
+    ...extra,
+  };
+  return block;
+}
+const offAt = (count: number) => Array.from({ length: count }, (_, i) => ({ onsetS: 10 + i, centsOff: 80 }));
+
+describe('off_key', () => {
+  const open = (block: FreestyleReport) => report(mixed(6, 0, {}), { style: 'open', freestyle: block });
+
+  it('fires at 2 of 7 free notes off key, and says how many and where', () => {
+    const tips = tipsFor(open(freestyle(5, [{ onsetS: 12, centsOff: 70 }, { onsetS: 33, centsOff: -90 }])));
+    expect(tips.map((t) => t.id)).toEqual(['off_key']);
+    expect(tips[0].message).toBe(TIP_MESSAGES.off_key);
+    expect(tips[0].evidence).toContain('2 of 7');
+    expect(tips[0].evidence).toContain('29%');
+    // The worst note is the one furthest from the key, at 0:33.
+    expect(tips[0].jumpToS).toBe(33);
+    expect(tips[0].evidence).toContain('0:33');
+    expect(tips[0].evidence).toContain('90 c');
+  });
+
+  it('is quiet at exactly 25 percent (1 of 4) and with fewer than 4 judged notes', () => {
+    expect(ids(open(freestyle(3, offAt(1))))).toEqual([]);
+    expect(ids(open(freestyle(1, offAt(2))))).toEqual([]);
+    expect(ids(open(freestyle(0, offAt(3))))).toEqual([]);
+    expect(ids(open(freestyle(2, offAt(2))))).toEqual(['off_key']);
+  });
+
+  it('counts only notes judged in or off key: unclear and passing notes are not in the share', () => {
+    expect(ids(open(freestyle(3, offAt(1), { unclear: 20, passing: 20 })))).toEqual([]);
+    expect(ids(open(freestyle(1, offAt(3), { unclear: 20, passing: 20 })))).toEqual(['off_key']);
+  });
+
+  it('runs on free phrases in Strict too, and says nothing without a freestyle block', () => {
+    const strict = report(mixed(6, 0, {}), { style: 'strict', freestyle: freestyle(1, offAt(3)) });
+    expect(ids(strict)).toEqual(['off_key']);
+    expect(ids(report(mixed(6, 0, {})))).toEqual([]);
+  });
+});
+
+describe('the tips in Open', () => {
+  it('leaves held_shorter to Strict', () => {
+    const short = (style: 'strict' | 'open') =>
+      report(mixed(10, 10, { heldRatio: 0.5 }), { style });
+    expect(ids(short('strict'))).toEqual(['held_shorter']);
+    expect(ids(short('open'))).toEqual([]);
+    expect(ids(report(mixed(10, 10, { heldRatio: 0.5 })))).toEqual(['held_shorter']);
+  });
+
+  it('judges flat and sharp bias on melody notes only, never on freestyle', () => {
+    // A great deal of off-key freestyle does not make the singer sharp or flat.
+    const noisy = report(mixed(10, 0, {}), { style: 'open', freestyle: freestyle(0, offAt(30)) });
+    expect(ids(noisy)).toEqual(['off_key']);
+    // The melody notes themselves still count.
+    const sharp = report(mixed(10, 6, { meanCents: 40 }), { style: 'open', freestyle: freestyle(10, []) });
+    expect(ids(sharp)).toEqual(['sharp_bias']);
+  });
+
+  it('uses each style\'s timing threshold: 60 ms in Strict, 120 ms in Open', () => {
+    const timed = (bias: number, style: 'strict' | 'open') =>
+      report(mixed(6, 6, { onsetDeltaS: bias }), { timingBiasS: bias, style });
+    expect(ids(timed(0.09, 'strict'))).toEqual(['late_onsets']);
+    expect(ids(timed(0.09, 'open'))).toEqual([]);
+    expect(ids(timed(0.12, 'open'))).toEqual([]);
+    expect(ids(timed(0.121, 'open'))).toEqual(['late_onsets']);
+    expect(ids(timed(-0.121, 'open'))).toEqual(['early_onsets']);
+    expect(ids(timed(-0.09, 'open'))).toEqual([]);
   });
 });

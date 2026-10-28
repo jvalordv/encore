@@ -18,6 +18,8 @@
   --color-hit: #39ff88;
   --color-okay: #ffe500;
   --color-miss: #ff3b5c;
+  --color-free: #b86bff;
+  --color-free-band: rgba(184, 107, 255, 0.16);
   --color-reference: #a07bff;
 
   --font-display: 'Press Start 2P', ui-monospace, 'SF Mono', Menlo, Consolas,

@@ -50,6 +50,12 @@ def test_song_status_round_trips() -> None:
                 "error": None,
                 "detail": None,
             },
+            "key": {
+                "state": "done",
+                "progress": 1.0,
+                "error": None,
+                "detail": None,
+            },
             "reference": {
                 "state": "running",
                 "progress": 0.4,
@@ -68,6 +74,21 @@ def test_song_status_round_trips() -> None:
     assert status.steps.reference.progress == 0.4
     assert status.steps.lyrics.detail == "Not built yet (ROADMAP P2-T4)"
     assert status.model_dump() == raw
+
+
+def test_a_status_written_before_the_key_step_loads_with_it_queued() -> None:
+    raw = {
+        "song_id": "ab12",
+        "steps": {
+            "fetch": {"state": "skipped"},
+            "separation": {"state": "done", "progress": 1.0},
+            "reference": {"state": "done", "progress": 1.0},
+            "lyrics": {"state": "skipped"},
+        },
+    }
+    status = SongStatus.model_validate(raw)
+    assert status.steps.key.state == "queued"
+    assert status.steps.separation.state == "done"
 
 
 def test_song_status_keeps_a_failure_message_in_error() -> None:
@@ -94,6 +115,7 @@ def test_song_steps_run_in_order_with_fetch_first() -> None:
     assert list(SongSteps.model_fields) == [
         "fetch",
         "separation",
+        "key",
         "reference",
         "lyrics",
     ]

@@ -10,8 +10,14 @@
  * karaoke hides the card; on a karaoke track (the service found no singer) the
  * notice appears before the singer starts, word for word, with a Find the
  * original button that searches for the original, a take there gets no card,
- * and karaoke mode does not show the notice. The tests share one page and run
- * in order, each starting from a reload.
+ * and karaoke mode does not show the notice. Then the two scoring styles: the
+ * Strict / Open selector shows only in learning mode and survives a reload; an
+ * Open take over the melody opens a card with the share on the melody and a
+ * freestyle line (the key comes from the stand-in's /key route), and a
+ * Shift+click on a phrase marks and unmarks it free; and on a
+ * karaoke track Strict offers Switch to Open, which switches the style, changes
+ * the notice to a line about the song's key and lets a take there be scored.
+ * The tests share one page and run in order, each starting from a reload.
  */
 import { expect, test } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
@@ -219,4 +225,128 @@ test('3. a karaoke track says so before the take, offers the original, and gets 
   // The earlier take, from test 2, still has its Report button; the new one has none.
   await expect(page.getByTestId('take-item').first().getByTestId('take-report')).toHaveCount(0);
   expect((await appState()).takes[0].report).toBeUndefined();
+});
+
+/** A finished song with its key and melody, as the service reports it. */
+const KEYED_SONG = (): ReturnType<typeof fileStatus> =>
+  fileStatus(SONG_ID, {
+    separation: stepStatus('done', 1),
+    key: stepStatus('done', 1),
+    reference: stepStatus('done', 1),
+  });
+
+test('4. the Strict / Open selector shows only in learning mode, and survives a reload', async () => {
+  await freshPage();
+  const choices = page.getByTestId('scoring-choices');
+  const hint = page.getByTestId('free-hint');
+
+  await page.getByTestId('mode-karaoke').click();
+  await expect(choices).toBeHidden();
+  await expect(hint).toBeHidden();
+
+  await page.getByTestId('mode-learning').click();
+  await expect(choices).toBeVisible();
+  await expect(hint).toContainText('Shift+click');
+  await expect(page.getByTestId('scoring-strict')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('scoring-open')).toHaveAttribute('aria-pressed', 'false');
+
+  await page.getByTestId('scoring-open').click();
+  await expect(page.getByTestId('scoring-open')).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('encore.settings') ?? '{}').scoring)).toBe('open');
+
+  await freshPage();
+  await expect(page.getByTestId('mode-learning')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('scoring-open')).toHaveAttribute('aria-pressed', 'true');
+  expect((await appState()).scoring).toBe('open');
+
+  await page.getByTestId('scoring-strict').click();
+  await expect(page.getByTestId('scoring-strict')).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('5. an Open take over the fixture opens a card with the share on the melody and a freestyle line', async () => {
+  await freshPage();
+  service.upload = KEYED_SONG();
+  await page.getByTestId('mode-learning').click();
+  await page.getByTestId('scoring-open').click();
+  await dropAndWait();
+  // The key came from the stand-in's /key route, independently of the melody.
+  await page.waitForFunction(() => window.encore!.store.state.key.phase === 'ready');
+  expect(service.count('GET', `/songs/${SONG_ID}/key`)).toBe(1);
+
+  // A Shift+click on the phrase marks it free and a second one unmarks it; a
+  // plain click is left for turns. The playhead is at 0, so the lane shows the
+  // song from 4.5 s before it to 1.5 s after, and 1 s is inside the phrase.
+  const lane = page.locator('#lane-canvas');
+  const box = await lane.boundingBox();
+  if (!box) throw new Error('the lane has no box');
+  const gutter = Math.min(56, box.width / 3);
+  const onPhrase = { x: gutter + ((1 + 4.5) / 6) * (box.width - gutter), y: box.height / 2 };
+  await lane.click({ position: onPhrase });
+  expect((await appState()).freePhrases).toEqual([]);
+  await lane.click({ position: onPhrase, modifiers: ['Shift'] });
+  await page.waitForFunction(() => window.encore!.store.state.freePhrases.length === 1);
+  expect((await appState()).freePhrases).toEqual([[0.5, 3.5]]);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('encore.free.')).length)).toBe(1);
+  await lane.click({ position: onPhrase, modifiers: ['Shift'] });
+  await page.waitForFunction(() => window.encore!.store.state.freePhrases.length === 0);
+
+  await openFakeMic();
+  await recordUntil(3.7);
+
+  await expect(page.getByTestId('report-card')).toBeVisible();
+  await expect(page.getByTestId('report-card')).toHaveAttribute('data-style', 'open');
+  // The fake microphone's steady A4 is the first melody note an octave up, which Open accepts.
+  await expect(page.getByTestId('report-melody-share')).toContainText('On the melody:');
+  await expect(page.getByTestId('report-freestyle')).toBeVisible();
+  const report = (await appState()).takes[0].report;
+  expect(report?.style).toBe('open');
+  expect(report?.melodyShare).toBe(1);
+  expect(report?.freestyle?.keyStatus).toBe('clear');
+
+  // Karaoke mode hides it all again, the style included.
+  await page.getByTestId('mode-karaoke').click();
+  await expect(page.getByTestId('report-card')).toHaveCount(0);
+  await expect(page.getByTestId('scoring-choices')).toBeHidden();
+  await page.getByTestId('mode-learning').click();
+  await page.getByTestId('scoring-strict').click();
+});
+
+test('6. a karaoke track offers Switch to Open, which switches the style and changes the notice', async () => {
+  await freshPage();
+  service.upload = fileStatus(SONG_ID, {
+    separation: stepStatus('done', 1),
+    key: stepStatus('done', 1),
+    reference: skippedStep('No singing found: the vocal is audible in only 3% of this track.'),
+  });
+  service.reference = 409;
+  await page.getByTestId('mode-learning').click();
+  await page.getByTestId('scoring-strict').click();
+  await dropAndWait();
+  await page.waitForFunction(() => window.encore!.store.state.key.phase === 'ready');
+
+  // Strict: W3's sentence, word for word, and the offer beside it.
+  await expect(page.getByTestId('learning-notice-text')).toHaveText(NOTICE);
+  await expect(page.getByTestId('learning-notice-offer')).toHaveText(
+    "Switch to Open to be scored on the song's key instead.",
+  );
+  await expect(page.getByTestId('find-original')).toBeVisible();
+
+  await page.getByTestId('switch-to-open').click();
+  expect((await appState()).scoring).toBe('open');
+  await expect(page.getByTestId('scoring-open')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('learning-notice-text')).toContainText("scored on the song's key");
+  await expect(page.getByTestId('learning-notice-text')).not.toHaveText(NOTICE);
+  await expect(page.getByTestId('learning-notice-offer')).toHaveCount(0);
+  await expect(page.getByTestId('switch-to-open')).toHaveCount(0);
+  await expect(page.getByTestId('find-original')).toBeVisible();
+
+  // Open scores the track on its key, so a take there gets a card.
+  await openFakeMic();
+  await recordUntil(1.5);
+  await expect(page.getByTestId('report-card')).toBeVisible();
+  await expect(page.getByTestId('report-headline')).toContainText('no melody to follow');
+  await expect(page.getByTestId('report-freestyle')).toContainText("in the song's key");
+
+  await page.getByTestId('scoring-strict').click();
+  await expect(page.getByTestId('learning-notice-text')).toHaveText(NOTICE);
 });

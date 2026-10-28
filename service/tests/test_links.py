@@ -139,6 +139,7 @@ def test_a_link_makes_a_song_named_after_the_video(
     assert body["steps"] == {
         "fetch": QUEUED,
         "separation": QUEUED,
+        "key": QUEUED,
         "reference": QUEUED,
         "lyrics": QUEUED,
     }

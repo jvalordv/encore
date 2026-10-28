@@ -1,8 +1,11 @@
 /**
  * The karaoke track of the song in use: sending a dropped file to the service,
  * following the service while it separates the vocal and reads the melody, and
- * bringing the results back, the stems into the mix (session/mix.ts) and the
- * melody onto the lane. A linked song joins at the same place once it has been
+ * bringing the results back, the stems into the mix (session/mix.ts), the
+ * melody onto the lane and the song's key to learning mode's Open scoring. The
+ * key is fetched as soon as its step is done, on its own: a karaoke track has
+ * a key though its melody is skipped, and a key that is not there (a 409, a
+ * failed step, the service gone) is simply no key. A linked song joins at the same place once it has been
  * prepared (session/prepare.ts hands over its status). The song itself never
  * waits for any of this: a file plays the moment it is decoded, and with the
  * service away or failing the only difference is one line in the song panel.
@@ -17,9 +20,10 @@
 import type { ScoreReference } from '../../analysis/score';
 import type { LaneReference } from '../../render/lane-geometry';
 import { isAbortError, ServiceClient, ServiceError, settledThrough } from '../../service/client';
-import type { Reference, SongStatus } from '../../service/types';
+import type { KeyMap, Reference, SongStatus, SongSteps } from '../../service/types';
 import { initialKaraoke } from '../karaoke';
 import type { KaraokeState } from '../karaoke';
+import { initialKey, keyStateOf, missingKey } from '../key-state';
 import { describeFailure, describeServiceError } from '../prepare';
 import { initialReference, laneReferenceOf, scoreReferenceOf } from '../reference';
 import type { ReferenceState } from '../reference';
@@ -31,6 +35,14 @@ const NO_STEMS = 'The service has no karaoke track for this song. Add it again.'
 const NO_MELODY = 'The service has no melody for this song.';
 /** Said when the reference step was skipped without saying why. */
 const MELODY_SKIPPED = 'The service found no melody in this song.';
+/** Said when the key step finished but the service has no key. */
+const NO_KEY = 'The service has no key for this song.';
+/** Said when the key step was skipped without saying why. */
+const KEY_SKIPPED = "The service did not read this song's key.";
+/** Said when the key step failed without saying why. */
+const KEY_FAILED = "The service could not read this song's key.";
+/** Said when the key step has not settled. */
+const KEY_PENDING = 'The service has not found the key yet.';
 /** Said when the separation step was skipped without saying why. */
 const SEPARATION_SKIPPED = 'The service did not separate this song.';
 
@@ -83,6 +95,7 @@ export class StemsController {
     this.job = null;
     this.heldFile = null;
     this.core.mix.clear();
+    this.core.scoring.setKey(null, initialKey());
     this.showReference(null, initialReference());
     this.core.store.patch({ karaoke: initialKaraoke() });
   }
@@ -189,7 +202,13 @@ export class StemsController {
     if (!(await this.loadStems(job, client, separated.song_id))) return;
     this.setKaraoke({ phase: 'ready', steps: separated.steps });
 
-    const mapped = await this.settle(job, client, separated, 'reference', 'ready');
+    // The key comes before the melody in the service's order, and does not
+    // wait for it.
+    const keyed = await this.settle(job, client, separated, 'key', 'ready');
+    if (!keyed) return;
+    await this.loadKey(job, client, keyed);
+
+    const mapped = await this.settle(job, client, keyed, 'reference', 'ready');
     if (!mapped) return;
     await this.loadReference(job, client, mapped);
     if (this.isCurrent(job)) this.setKaraoke({ phase: 'ready', steps: mapped.steps });
@@ -203,7 +222,7 @@ export class StemsController {
     job: Job,
     client: ServiceClient,
     status: SongStatus,
-    through: 'separation' | 'reference',
+    through: 'separation' | 'key' | 'reference',
     phase: KaraokeState['phase'],
   ): Promise<SongStatus | null> {
     if (settledThrough(status, through)) return status;
@@ -254,6 +273,32 @@ export class StemsController {
     this.core.mix.install({ vocals, noVocals, gain: Math.min(downloads[0].gain, downloads[1].gain) });
     this.core.store.setStatus('Karaoke track ready: the original singer is out of the mix.');
     return true;
+  }
+
+  /** Fetches the song's key for Open scoring, or records why there is none. */
+  private async loadKey(job: Job, client: ServiceClient, status: SongStatus): Promise<void> {
+    const step = status.steps.key;
+    if (step.state !== 'done') {
+      this.core.scoring.setKey(null, missingKey(this.whyNoKey(step)));
+      return;
+    }
+    let key: KeyMap;
+    try {
+      key = await client.fetchKey(status.song_id, job.controller.signal);
+    } catch (failure) {
+      if (!this.isCurrent(job) || isAbortError(failure)) return;
+      const none = failure instanceof ServiceError && failure.kind === 'not-fetched';
+      this.core.scoring.setKey(null, missingKey(none ? NO_KEY : describeServiceError(failure)));
+      return;
+    }
+    if (this.isCurrent(job)) this.core.scoring.setKey(key, keyStateOf(key));
+  }
+
+  /** Why the key step left no key, in the service's words when it gave any. */
+  private whyNoKey(step: SongSteps['key']): string {
+    if (step.state === 'skipped') return step.detail?.trim() || KEY_SKIPPED;
+    if (step.state === 'failed') return step.error?.trim() || KEY_FAILED;
+    return KEY_PENDING;
   }
 
   /** Fetches the melody and draws it, or records why there is none. */

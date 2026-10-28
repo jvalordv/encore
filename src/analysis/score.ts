@@ -14,6 +14,12 @@
  *   error, the scoop, the onset delta against the note the singer actually
  *   began, and the held length; per take the in-tune rate, the timing bias,
  *   the worst phrases and the ranges (`reportTake`).
+ * - The two scoring styles (docs/COACHING.md): `SCORING_STYLES` holds the
+ *   windows and thresholds of Strict (the original's melody, as above) and
+ *   Open (any octave, wider windows, freestyle judged against the key). The
+ *   functions below take a style whose default is Strict, so a call that does
+ *   not name one measures exactly what it always did. Freestyle and the live
+ *   grades of Open live in open-score.ts.
  * - Nothing about wording. Tips and the card are built from the report
  *   elsewhere (src/coach/tips.ts, src/app/report.ts).
  *
@@ -21,18 +27,52 @@
  * test/score.test.ts.
  */
 import { splitPhrases } from './phrases';
+import type { FreestyleReport } from './key-fit';
 import { hzToMidi } from './pitch';
 import type { PitchFrame } from './pitch';
 import { MERGE_GAP_S, median, segmentTake } from './take-notes';
 import type { NoteFrame, SungNote } from './take-notes';
 
+export type { FreestyleReport, OffKeyNote } from './key-fit';
+
 /** How a frame did against the note under it. */
 export type Grade = 'hit' | 'okay' | 'miss';
 
-/** A frame within this many cents of the note is a hit. */
+/** What the lane paints a frame as: a grade, or 'free' for a freestyle frame. */
+export type LiveGrade = Grade | 'free';
+
+/** How learning mode judges: against the melody, or leniently with freestyle. */
+export type ScoringStyle = 'strict' | 'open';
+
+/** A frame within this many cents of the note is a hit (Strict). */
 export const HIT_CENTS = 25;
-/** ...within this many, okay; beyond it, a miss. */
+/** ...within this many, okay; beyond it, a miss (Strict). */
 export const OKAY_CENTS = 50;
+
+/** What one scoring style measures with. */
+export interface StyleRules {
+  /** A frame within this many cents of its note is a hit. */
+  hitCents: number;
+  /** ...within this many, okay; beyond it, a miss. */
+  okayCents: number;
+  /** 'setting' follows the octave-invariant setting; 'always' ignores the octave. */
+  octave: 'setting' | 'always';
+  /** A note entered this far from the reference's onset is named early or late. */
+  onsetToleranceS: number;
+  /** The early and late tips fire when the median onset delta passes this. */
+  timingTipS: number;
+}
+
+/** The two styles' numbers, in one table so they can be tuned in one place. */
+export const SCORING_STYLES: Record<ScoringStyle, StyleRules> = {
+  strict: { hitCents: HIT_CENTS, okayCents: OKAY_CENTS, octave: 'setting', onsetToleranceS: 0.15, timingTipS: 0.06 },
+  open: { hitCents: 50, okayCents: 100, octave: 'always', onsetToleranceS: 0.15, timingTipS: 0.12 },
+};
+
+/** Whether a style folds the octave, given the octave-invariant setting. */
+export function foldsOctave(style: ScoringStyle, octaveInvariant: boolean): boolean {
+  return SCORING_STYLES[style].octave === 'always' || octaveInvariant;
+}
 /** A reference note counts as sung once this many frames were scored in it. */
 export const MIN_SUNG_FRAMES = 5;
 /** A reference note longer than this is "long": stability and held length apply. */
@@ -80,11 +120,12 @@ export function centsOff(sungMidi: number, noteMidi: number, octaveInvariant = f
   return ((((cents + 600) % 1200) + 1200) % 1200) - 600;
 }
 
-/** hit within 25 cents, okay within 50, else miss. */
-export function gradeCents(cents: number): Grade {
+/** hit within the style's first window (25 cents in Strict), okay within the second, else miss. */
+export function gradeCents(cents: number, style: ScoringStyle = 'strict'): Grade {
   const off = Math.abs(cents);
-  if (off <= HIT_CENTS + EPSILON) return 'hit';
-  return off <= OKAY_CENTS + EPSILON ? 'okay' : 'miss';
+  const rules = SCORING_STYLES[style];
+  if (off <= rules.hitCents + EPSILON) return 'hit';
+  return off <= rules.okayCents + EPSILON ? 'okay' : 'miss';
 }
 
 /** Index of the last item starting at or before `t`, or -1. */
@@ -129,12 +170,17 @@ export function isVoiced(frame: NoteFrame): boolean {
 }
 
 /** One frame against the melody; null when it is unvoiced or in no note. */
-export function scoreFrame(frame: NoteFrame, ref: ScoreReference, octaveInvariant = false): FrameScore | null {
+export function scoreFrame(
+  frame: NoteFrame,
+  ref: ScoreReference,
+  octaveInvariant = false,
+  style: ScoringStyle = 'strict',
+): FrameScore | null {
   if (!isVoiced(frame)) return null;
   const note = noteAt(ref, frame.t);
   if (note < 0) return null;
-  const cents = centsOff(hzToMidi(frame.f0), ref.notes[note].midi, octaveInvariant);
-  return { note, cents, grade: gradeCents(cents) };
+  const cents = centsOff(hzToMidi(frame.f0), ref.notes[note].midi, foldsOctave(style, octaveInvariant));
+  return { note, cents, grade: gradeCents(cents, style) };
 }
 
 /** What the live scorer reads from the session each frame. */
@@ -227,6 +273,20 @@ export interface TakeReport {
   songRange: MidiRange & { highAtS: number };
   /** The singer's p10 to p90 range over the whole take; null if nothing voiced. */
   sungRange: MidiRange | null;
+  /*
+   * The fields below are absent on a take scored before the styles existed
+   * (read as Strict, with no freestyle), so stored takes still load.
+   */
+  /** The style the take was scored in. */
+  style?: ScoringStyle;
+  /** Open: the share of sung notes that were on the melody, 0..1; null if none were judged. */
+  melodyShare?: number | null;
+  /** True when the song had no melody, so everything sung was freestyle. */
+  noMelody?: boolean;
+  /** The freestyle notes: all of them in Open, those in free phrases in Strict. */
+  freestyle?: FreestyleReport;
+  /** Strict: the free phrases left out of the melody's measures, as [start, end]. */
+  freeSpans?: Array<[number, number]>;
 }
 
 /** The p-th percentile (0..1) of numbers, interpolating between ranks. */
@@ -289,7 +349,7 @@ function matchSung(notes: readonly ScoreNote[], sung: readonly SungNote[], wante
  * piece not near any reference onset is left alone. The segmentation rule
  * itself is unchanged.
  */
-function mergeScoops(sung: readonly SungNote[], notes: readonly ScoreNote[]): SungNote[] {
+export function mergeScoops(sung: readonly SungNote[], notes: readonly ScoreNote[]): SungNote[] {
   const merged: SungNote[] = [];
   for (let i = 0; i < sung.length; i++) {
     let piece = sung[i];
@@ -357,7 +417,9 @@ export function reportTake(
   frames: readonly PitchFrame[],
   ref: ScoreReference,
   octaveInvariant = false,
+  style: ScoringStyle = 'strict',
 ): TakeReport {
+  const rules = SCORING_STYLES[style];
   const songRange = { lowMidi: ref.lowMidi, highMidi: ref.highMidi, highAtS: ref.highAtS };
   const voicedMidi = frames.filter(isVoiced).map((f) => hzToMidi(f.f0));
   const sungRange = voicedMidi.length
@@ -386,7 +448,7 @@ export function reportTake(
   const scored = new Map<number, Array<{ t: number; cents: number }>>();
   const grades: Record<Grade, number> = { hit: 0, okay: 0, miss: 0 };
   for (const f of frames) {
-    const s = scoreFrame(f, ref, octaveInvariant);
+    const s = scoreFrame(f, ref, octaveInvariant, style);
     if (!s || !covered.has(s.note)) continue;
     grades[s.grade]++;
     const list = scored.get(s.note) ?? [];
@@ -419,7 +481,7 @@ export function reportTake(
   }
 
   const sungNotes = notes.filter((n) => n.meanCents !== null);
-  const inTune = sungNotes.filter((n) => Math.abs(n.meanCents ?? Infinity) <= OKAY_CENTS + EPSILON);
+  const inTune = sungNotes.filter((n) => Math.abs(n.meanCents ?? Infinity) <= rules.okayCents + EPSILON);
   const deltas = notes.flatMap((n) => (n.onsetDeltaS === null ? [] : [n.onsetDeltaS]));
   return {
     notesCovered: notes.length,
@@ -428,7 +490,7 @@ export function reportTake(
     frames: grades,
     timingBiasS: deltas.length ? median(deltas) : null,
     notes,
-    worstPhrases: worstPhrases(ref, scored),
+    worstPhrases: worstPhrases(ref, scored, style),
     songRange,
     sungRange,
   };
@@ -438,7 +500,9 @@ export function reportTake(
 function worstPhrases(
   ref: ScoreReference,
   scored: ReadonlyMap<number, ReadonlyArray<{ cents: number }>>,
+  style: ScoringStyle,
 ): PhraseResult[] {
+  const rules = SCORING_STYLES[style];
   const results: PhraseResult[] = [];
   for (const p of splitPhrases(ref.notes)) {
     const errors: number[] = [];
@@ -448,8 +512,8 @@ function worstPhrases(
     if (errors.length < MIN_PHRASE_FRAMES) continue;
     const meanAbsCents = mean(errors.map(Math.abs));
     // A phrase sung inside a hit's width is not a problem to point at.
-    if (meanAbsCents <= HIT_CENTS) continue;
-    const misses = errors.filter((c) => gradeCents(c) === 'miss').length;
+    if (meanAbsCents <= rules.hitCents) continue;
+    const misses = errors.filter((c) => gradeCents(c, style) === 'miss').length;
     results.push({ ...p, meanAbsCents, missShare: misses / errors.length });
   }
   // Array sort is stable, so equally bad phrases keep their song order.

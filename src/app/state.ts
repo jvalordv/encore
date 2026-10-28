@@ -8,12 +8,15 @@
  * docs/ARCHITECTURE.md). The selectors at the bottom turn state into the
  * strings the status bar and readouts show, so those can be tested too.
  */
+import type { Span } from '../analysis/free-phrases';
 import { hzToMidi } from '../analysis/pitch';
 import type { PitchFrame } from '../analysis/pitch';
 import type { MonitorMode } from '../audio/mic';
 import type { ClockKind, LoopRegion, TrackInfo, TransportState } from '../audio/transport';
 import { noteName } from '../render/lane-geometry';
 import { initialKaraoke } from './karaoke';
+import { initialKey } from './key-state';
+import type { KeyState } from './key-state';
 import type { KaraokeState } from './karaoke';
 import { initialMix } from './mix';
 import type { MixState } from './mix';
@@ -24,7 +27,7 @@ import type { ReferenceState } from './reference';
 import { initialSearch } from './search';
 import type { PickedResult, SearchState } from './search';
 import { DEFAULT_GUIDE_LEVEL } from './settings';
-import type { PracticeMode } from './settings';
+import type { PracticeMode, ScoringStyle } from './settings';
 import type { TakeSummary } from './takes';
 
 /** How loudly the status line should speak. */
@@ -92,6 +95,12 @@ export interface AppState {
    * `settings.mode`; the Session is the one that changes both.
    */
   mode: PracticeMode;
+  /** Learning mode's style (Strict or Open). Mirrors `settings.scoring`. */
+  scoring: ScoringStyle;
+  /** What the song panel knows about the song's key, which Open scores against. */
+  key: KeyState;
+  /** The phrases of the loaded song marked free, as [start, end] spans. */
+  freePhrases: Span[];
   /** The search result that became the song, or null for a file or a link. */
   pickedResult: PickedResult | null;
   /**
@@ -148,6 +157,9 @@ export function initialState(): AppState {
     reference: initialReference(),
     search: initialSearch('karaoke', false),
     mode: 'karaoke',
+    scoring: 'strict',
+    key: initialKey(),
+    freePhrases: [],
     pickedResult: null,
     reportTakeId: null,
     positionS: 0,

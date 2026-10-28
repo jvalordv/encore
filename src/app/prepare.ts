@@ -98,6 +98,7 @@ export const AUDIO_MISSING = 'The service has no audio for this song, even after
 export const STEP_LABELS: Readonly<Record<StepName, string>> = {
   fetch: 'Fetching audio',
   separation: 'Separating the vocal',
+  key: 'Finding the key',
   reference: 'Reading the melody',
   lyrics: 'Finding the lyrics',
 };

@@ -766,6 +766,23 @@ button[aria-pressed='true'] {
   padding: 4px 14px;
 }
 
+/* Learning mode only: the hint beside the Strict / Open selector. */
+.mode-hint {
+  font-size: 0.75rem;
+}
+
+/* The notice's buttons side by side: Find the original, Switch to Open. */
+.learning-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* A free phrase's row on the card reads as a mark, not a problem. */
+.report-list li[data-free='true'] > span:first-child {
+  color: var(--color-free);
+}
+
 /* The karaoke-track notice and the report card; neither exists in karaoke mode. */
 .learning-notice,
 .report-card {

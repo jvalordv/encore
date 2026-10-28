@@ -17,6 +17,8 @@
   --color-hit: #4fd68a;
   --color-okay: #e6c24a;
   --color-miss: #f06b6b;
+  --color-free: #b794f6;
+  --color-free-band: rgba(183, 148, 246, 0.14);
   --color-reference: #9aa7b8;
 
   --font-display: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,

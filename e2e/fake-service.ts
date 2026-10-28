@@ -5,7 +5,7 @@
  * reaches a port nothing listens on (which the browser would log as an error).
  * The stand-in answers the routes the app uses: `GET /health`, `POST /songs`
  * (a dropped file) and `POST /songs/url` (a link), `GET /songs/{id}`, and
- * `GET /songs/{id}/audio`, `/stems/{vocals|no_vocals}` and `/reference`. What
+ * `GET /songs/{id}/audio`, `/stems/{vocals|no_vocals}`, `/reference` and `/key`. What
  * each answers is a field of the returned object, which a test changes at its
  * own pace, so a test can hold a song at "running 45%" for as long as it likes
  * and move it on when it has looked; the health checks and the upload can be
@@ -20,7 +20,7 @@
  */
 import { readFileSync } from 'node:fs';
 import type { BrowserContext, Request } from '@playwright/test';
-import type { Reference, SongStatus, StepState, StepStatus } from '../src/service/types';
+import type { KeyMap, Reference, SongStatus, StepState, StepStatus } from '../src/service/types';
 import { NO_VOCALS_FILE, SONG_FILE, VOCALS_FILE } from './fixtures';
 
 /** The default `serviceUrl` setting. */
@@ -70,6 +70,15 @@ export const REFERENCE_FIXTURE: Reference = (() => {
   };
 })();
 
+/**
+ * The key the stand-in serves: A minor, a few cents sharp, all through the
+ * song. Chromium's fake microphone sings A4, which is in it.
+ */
+export const KEY_FIXTURE: KeyMap = {
+  tuning_cents: 8,
+  segments: [{ start_s: 0, end_s: 4, tonic: 9, mode: 'minor', confidence: 0.8 }],
+};
+
 /** The stand-in's behaviour, all of it open to change by the test. */
 export interface FakeService {
   /** Every request received, in order, health checks included. */
@@ -90,6 +99,8 @@ export interface FakeService {
   stemGain: number | null;
   /** The answer to `GET /songs/{id}/reference`: the melody, or an error status. */
   reference: Reference | 409 | 404;
+  /** The answer to `GET /songs/{id}/key`: the key map, or an error status. */
+  key: KeyMap | 409 | 404;
   /** The requests that are not health checks. */
   songRequests(): ServiceRequest[];
   /** How many requests had this method and exactly this path. */
@@ -137,6 +148,7 @@ export function linkStatus(
     steps: {
       fetch: fetchStep,
       separation: nothing,
+      key: nothing,
       reference: nothing,
       lyrics: nothing,
       ...later,
@@ -155,6 +167,7 @@ export function fileStatus(songId: string, steps: Partial<SongStatus['steps']> =
     steps: {
       fetch: skippedStep('Not a link'),
       separation: nothing,
+      key: nothing,
       reference: nothing,
       lyrics: nothing,
       ...steps,
@@ -216,6 +229,7 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
     stems: 'ok',
     stemGain: STEM_GAIN,
     reference: REFERENCE_FIXTURE,
+    key: KEY_FIXTURE,
     songRequests: () => service.requests.filter((r) => !(r.method === 'GET' && r.path === '/health')),
     count: (method, path) => service.requests.filter((r) => r.method === method && r.path === path).length,
     reset(id) {
@@ -229,6 +243,7 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
       service.stems = 'ok';
       service.stemGain = STEM_GAIN;
       service.reference = REFERENCE_FIXTURE;
+      service.key = KEY_FIXTURE;
       service.requests.length = 0;
     },
     holdHealth() {
@@ -301,6 +316,12 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
         await json(service.reference, { detail: 'Song has no reference melody.' });
       } else {
         await json(200, service.reference);
+      }
+    } else if (method === 'GET' && /^\/songs\/[^/]+\/key$/.test(path)) {
+      if (typeof service.key === 'number') {
+        await json(service.key, { detail: 'Song has no key.' });
+      } else {
+        await json(200, service.key);
       }
     } else if (method === 'GET' && /^\/songs\/[^/]+\/audio$/.test(path)) {
       const next = service.audio.length > 1 ? service.audio.shift() : service.audio[0];

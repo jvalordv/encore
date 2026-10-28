@@ -47,7 +47,7 @@ function step(state: StepState = 'queued', progress = 0, extra: Partial<StepStat
 }
 
 function steps(fetchStep: StepStatus, others: Partial<SongSteps> = {}): SongSteps {
-  return { fetch: fetchStep, separation: step(), reference: step(), lyrics: step(), ...others };
+  return { fetch: fetchStep, separation: step(), key: step('skipped'), reference: step(), lyrics: step(), ...others };
 }
 
 function song(fetchStep: StepStatus, others: Partial<SongSteps> = {}): SongStatus {

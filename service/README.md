@@ -12,9 +12,10 @@ Status: songs can be added (`POST /songs`, `POST /songs/url`,
 queued for preparation, a link to a YouTube video is looked up, cached and its
 audio fetched (see "YouTube links"), the vocal is separated from the rest
 (`GET /songs/{id}/stems/{stem}`, see "Separation"), and `/health` and `/gpu`
-work. The reference step takes the melody from the vocal
-(`GET /songs/{id}/reference`, see "Reference melody"), and is `skipped` with a
-reason for a track with no singing in it. The lyrics step always skips (lyrics
+work. The key step finds the song's key and tuning from the instrumental
+(`GET /songs/{id}/key`, see "Key"). The reference step takes the melody from
+the vocal (`GET /songs/{id}/reference`, see "Reference melody"), and is
+`skipped` with a reason for a track with no singing in it. The lyrics step always skips (lyrics
 come from a lookup in the app). `/analyze` and `/duet/*` are stubs that
 answer 501; they belong to work the roadmap lists as Later.
 
@@ -146,10 +147,11 @@ The browser adds a song, then polls it while the service prepares it.
 |---|---|
 | `POST /songs` | Upload an audio file as the multipart field `file` (mp3, wav, flac, m4a, ogg or opus, up to 200 MiB). The song's id is the sha256 of its bytes, so adding the same file again is a cache hit that queues whatever has not finished. Answers with the song's status. |
 | `POST /songs/url` | Add a YouTube video by link: a JSON body `{"url": "..."}`. The song's id is `yt-` and the video's id, so adding the same video again is a cache hit that asks YouTube nothing and queues whatever has not finished. Answers with the song's status. See "YouTube links". |
-| `GET /songs/{id}` | The song's status: `title`, `duration_s`, and for each step (`fetch`, `separation`, `reference`, `lyrics`) a `state` (`queued`, `running`, `done`, `failed` or `skipped`), a `progress` from 0 to 1, an `error` when it failed and a `detail` saying why it was skipped. 404 for an unknown id. |
+| `GET /songs/{id}` | The song's status: `title`, `duration_s`, and for each step (`fetch`, `separation`, `key`, `reference`, `lyrics`) a `state` (`queued`, `running`, `done`, `failed` or `skipped`), a `progress` from 0 to 1, an `error` when it failed and a `detail` saying why it was skipped. 404 for an unknown id. |
 | `GET /songs/{id}/audio` | The stored source file, so the browser can reload a song without the original. 404 for an unknown id, 409 while the song has no source audio. |
 | `GET /songs/{id}/stems/{stem}` | One stem the separation step made, `vocals` or `no_vocals`, as 24-bit FLAC (`audio/flac`, with range requests) and the song's stem gain in the `X-Stem-Gain` header. 404 for an unknown id or any other stem name, 409 while the song has not been separated. See "Separation". |
 | `GET /songs/{id}/reference` | The song's reference melody, the `Reference` of `docs/ARCHITECTURE.md` (contour, notes, range, unpitched regions), as JSON. 404 for an unknown id, 409 while the song has none: not made yet, or the step was skipped (see its `detail`). See "Reference melody". |
+| `GET /songs/{id}/key` | The song's key map, the `KeyMap` of `docs/ARCHITECTURE.md` (a tuning offset in cents and time-ordered segments with a tonic, a mode and a confidence, or nulls where the key is unclear), as JSON. 404 for an unknown id, 409 ("Song has no key yet.") until the key step is done. See "Key". |
 
 Songs are prepared one at a time in a background queue, so two songs never
 compete for GPU memory. `fetch` is `skipped` for uploads, which arrive with
@@ -168,6 +170,7 @@ The cache is under `service/cache` (or `ENCORE_CACHE_DIR`), one folder per song:
 <song_id>/status.json       the state of each step
 <song_id>/vocals.flac       the sung part, from the separation step
 <song_id>/no_vocals.flac    everything else, from the separation step
+<song_id>/key.json          the key and tuning of the backing, from the key step
 <song_id>/reference.json    the melody of the vocal, from the reference step
 <song_id>/.fetch/           a link's download while it is under way
 <song_id>/.separate/        the separation's working files while it runs
@@ -348,6 +351,31 @@ half-written, and the folder is removed whatever happens. If the move itself
 fails, neither stem is left, so the two are never a mismatched pair. Add the
 song again to retry. That also runs a finished separation again when its stems
 have gone from the song's folder.
+
+## Key
+
+The `key` step finds the song's key from the instrumental (`no_vocals.flac`),
+for Open scoring to tell a freestyle note that fits the song from one that does
+not. It runs after separation, before the reference, for every song: a karaoke
+upload whose reference is skipped still gets a key. It needs numpy only. It is
+stored as `<song_id>/key.json` and served by `GET /songs/{id}/key`: the
+`KeyMap` of `docs/ARCHITECTURE.md`.
+
+- **Tuning.** The offset of the instrumental from A = 440 Hz, in cents in
+  [-50, 50), from the spectral peaks (0 when they agree on none, as in noise).
+  It is taken off before the notes are folded to pitch classes.
+- **Key.** Windows of 8 s every 2 s are correlated with the 24 Krumhansl and
+  Kessler profiles; a Viterbi pass with a fixed cost per change of key finds a
+  real change but smooths over a single odd stretch.
+- **Confidence and the gate.** A window's confidence is how far its key's
+  score is above the best key that is neither it nor its relative major or
+  minor (those share their notes and always score close), scaled so 0.1 is 1.
+  A segment under 0.3 is "key unclear": `tonic` and `mode` are null and the
+  browser never sees the gate. Silence and noise come out unclear.
+- A 5-minute stem takes under a second.
+
+Add the song again to run the step afresh, which it also does when a finished
+step's `key.json` has gone.
 
 ## Reference melody
 

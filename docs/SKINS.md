@@ -18,11 +18,16 @@ Tokens (all required, the registry test checks each CSS file defines them):
 --color-bg --color-surface --color-surface-2 --color-text --color-text-muted
 --color-accent --color-accent-2 --color-singer-a --color-singer-b
 --color-hit --color-okay --color-miss --color-reference
+--color-free --color-free-band
 --font-display --font-body --font-mono
 --radius --border-width --shadow
 --motion-fast --motion-slow --easing
 --lane-bg --lane-grid --lane-ribbon-width
 ```
+
+`--color-free` paints a freestyle frame on the lane (learning mode, Open style or
+a free phrase) and `--color-free-band` the band behind a free phrase; both are
+translucent-friendly colours that read as neither a hit nor a miss.
 
 `Skin` type:
 

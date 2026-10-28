@@ -38,6 +38,7 @@ describe('DEFAULT_SETTINGS', () => {
       latencyByDevicePair: {},
       embedOffsetS: 0,
       mode: 'karaoke',
+      scoring: 'strict',
       guideLevel: 0.5,
       searchProvider: 'youtube',
       youtubeApiKey: '',
@@ -100,6 +101,7 @@ describe('loadSettings', () => {
       latencyByDevicePair: { 'latency.a|b': 0.12 },
       embedOffsetS: 0,
       mode: 'karaoke',
+      scoring: 'strict',
       guideLevel: 0.5,
       searchProvider: 'youtube',
       youtubeApiKey: '',
@@ -244,6 +246,7 @@ describe('saveSettings', () => {
     latencyByDevicePair: { 'latency.out-1|in-1': 0.143 },
     embedOffsetS: -0.06,
     mode: 'learning',
+    scoring: 'open',
     guideLevel: 0.25,
     searchProvider: 'youtube',
     youtubeApiKey: 'AIzaSyExample_key-123',
@@ -351,6 +354,33 @@ describe('practice mode', () => {
     const store = memoryStore();
     saveSettings(store, { ...DEFAULT_SETTINGS, mode: 'loud' as unknown as 'karaoke' });
     expect(JSON.parse(store.get('settings') ?? 'null').mode).toBe('karaoke');
+  });
+});
+
+describe('scoring style', () => {
+  it('defaults to Strict, so learning mode behaves as it did', () => {
+    expect(DEFAULT_SETTINGS.scoring).toBe('strict');
+    expect(loadSettings(memoryStore()).scoring).toBe('strict');
+  });
+
+  it('keeps a stored Open, through load and save', () => {
+    expect(sanitizeSettings({ scoring: 'open' }).scoring).toBe('open');
+    expect(loadSettings(storeWith(JSON.stringify({ scoring: 'open' }))).scoring).toBe('open');
+    const store = memoryStore();
+    saveSettings(store, { ...DEFAULT_SETTINGS, scoring: 'open' });
+    expect(loadSettings(store).scoring).toBe('open');
+  });
+
+  it('falls back to Strict for anything else', () => {
+    for (const scoring of ['Open', 'loose', '', 7, null, true, {}, ['open']]) {
+      expect(sanitizeSettings({ scoring }).scoring, String(scoring)).toBe('strict');
+    }
+  });
+
+  it('never saves a style that load would reject', () => {
+    const store = memoryStore();
+    saveSettings(store, { ...DEFAULT_SETTINGS, scoring: 'loud' as unknown as 'open' });
+    expect(JSON.parse(store.get('settings') ?? 'null').scoring).toBe('strict');
   });
 });
 

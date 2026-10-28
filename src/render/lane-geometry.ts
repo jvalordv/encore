@@ -6,7 +6,7 @@
  * (test/pitch-lane.test.ts); src/render/pitch-lane.ts re-exports it.
  */
 import { hzToMidi } from '../analysis/pitch';
-import type { Grade } from '../analysis/score';
+import type { LiveGrade } from '../analysis/score';
 
 /** Lowest MIDI note shown by default (C2). */
 export const DEFAULT_LOW_MIDI = 36;
@@ -69,7 +69,7 @@ export interface LaneFrame {
    * How the frame did against the melody. Present only in learning mode; its
    * absence is what keeps karaoke mode free of hit colours.
    */
-  grade?: Grade;
+  grade?: LiveGrade;
 }
 
 /** Lane geometry and range; every field is optional. */
@@ -308,7 +308,7 @@ export function alphaRuns(segment: LaneFrame[], chunk = ALPHA_CHUNK): AlphaRun[]
 export interface GradeRun {
   from: number;
   to: number;
-  grade: Grade;
+  grade: LiveGrade;
 }
 
 /**

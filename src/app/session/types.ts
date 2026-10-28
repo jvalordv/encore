@@ -19,7 +19,14 @@ import type { TakeStore } from '../takes';
 /** The lane methods the Session drives; PitchLane satisfies them. */
 export type LaneSink = Pick<
   PitchLane,
-  'setTime' | 'pushFrame' | 'clearFrames' | 'setNotice' | 'setReference' | 'fitRangeToReference'
+  | 'setTime'
+  | 'pushFrame'
+  | 'clearFrames'
+  | 'setNotice'
+  | 'setReference'
+  | 'fitRangeToReference'
+  | 'setFreePhrases'
+  | 'setPhraseClick'
 >;
 
 /** The audio objects behind the Session, exposed for tests and debugging. */

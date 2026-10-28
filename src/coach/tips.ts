@@ -5,11 +5,14 @@
  * and at most three tips come back, the strongest first, so the singer has
  * something to do rather than a wall of red. A tip carries its evidence (which
  * note, how far off) and a place to jump to, so the singer can hear it. Ids
- * and wording are the Strict-style `general` and `match` rows of the table in
- * docs/COACHING.md; per-skin phrasing and the Open-style `off_key` rule are
- * later. Comments in the table say what each number means.
+ * and wording are the rows of the table in docs/COACHING.md: `general` rules in
+ * both scoring styles (the bias rules on melody notes only, the early and late
+ * rules at the style's own threshold), the `match` rule `held_shorter` in Strict
+ * only, and the `open` rule `off_key` on freestyle notes, in Open and in free
+ * phrases. Per-skin phrasing is later. Comments in the table say what each
+ * number means.
  */
-import { LONG_NOTE_S } from '../analysis/score';
+import { LONG_NOTE_S, SCORING_STYLES } from '../analysis/score';
 import type { NoteResult, TakeReport } from '../analysis/score';
 import { median } from '../analysis/take-notes';
 import { noteName } from '../render/lane-geometry';
@@ -23,7 +26,8 @@ export type TipId =
   | 'late_onsets'
   | 'early_onsets'
   | 'out_of_range'
-  | 'held_shorter';
+  | 'held_shorter'
+  | 'off_key';
 
 /** Every threshold a rule uses. A rule fires only strictly past its number. */
 export const TIP_THRESHOLDS = {
@@ -39,8 +43,6 @@ export const TIP_THRESHOLDS = {
   wobbleCents: 35,
   /** ...and the tip needs more than this share of the long notes to wobble. */
   wobbleShare: 0.3,
-  /** Median onset delta in seconds, early or late. */
-  onsetS: 0.06,
   /** The song's top note over the singer's p90 by more than this many semitones. */
   rangeSemitones: 2,
   /** A long note is short when held under this share of the original's length... */
@@ -51,6 +53,10 @@ export const TIP_THRESHOLDS = {
   minNotes: 4,
   /** Long notes needed before a rule over long notes trusts its numbers. */
   minLongNotes: 3,
+  /** The off-key tip needs more than this share of the judged freestyle notes off key... */
+  offKeyShare: 0.25,
+  /** ...and at least this many judged (in key plus off key). */
+  minFreestyle: 4,
 } as const;
 
 /** The advice for each rule, in plain words (docs/COACHING.md). */
@@ -64,6 +70,9 @@ export const TIP_MESSAGES: Record<TipId, string> = {
   out_of_range:
     'This song sits above where your voice is comfortable today. Ease off the top notes rather than forcing them.',
   held_shorter: 'The original holds these notes longer. Keep the air going to the end.',
+  off_key:
+    "Some of your free notes land outside the song's key. Build ad-libs from notes of the melody or the " +
+    'bass line, and keep outside notes short, as passing notes.',
 };
 
 /** One tip: the advice, what it rests on, where to hear it, how strong it is. */
@@ -146,15 +155,16 @@ function wobbleRule(report: TakeReport): Tip | null {
 /** The late or early rule: `sign` is +1 for late, -1 for early. */
 function onsetRule(report: TakeReport, sign: -1 | 1): Tip | null {
   const t = TIP_THRESHOLDS;
+  const limit = SCORING_STYLES[report.style ?? 'strict'].timingTipS;
   const timed = report.notes.filter((n) => n.onsetDeltaS !== null);
   const bias = report.timingBiasS;
-  if (timed.length < t.minNotes || bias === null || !(bias * sign > t.onsetS)) return null;
+  if (timed.length < t.minNotes || bias === null || !(bias * sign > limit)) return null;
   const worst = maxBy(timed, (n) => (n.onsetDeltaS ?? 0) * sign);
   const way = sign > 0 ? 'late' : 'early';
   const evidence =
     `Your entries came a median of ${Math.round(Math.abs(bias) * 1000)} ms ${way} over ${timed.length} notes; ` +
     `the worst was ${nameAt(worst)}, ${Math.round(Math.abs(worst.onsetDeltaS ?? 0) * 1000)} ms ${way}.`;
-  return tip(sign > 0 ? 'late_onsets' : 'early_onsets', evidence, worst.onsetS, (bias * sign) / t.onsetS);
+  return tip(sign > 0 ? 'late_onsets' : 'early_onsets', evidence, worst.onsetS, (bias * sign) / limit);
 }
 
 function rangeRule(report: TakeReport): Tip | null {
@@ -184,6 +194,22 @@ function heldRule(report: TakeReport): Tip | null {
   return tip('held_shorter', evidence, worst.onsetS, share / t.heldShare);
 }
 
+function offKeyRule(report: TakeReport): Tip | null {
+  const t = TIP_THRESHOLDS;
+  const free = report.freestyle;
+  if (!free) return null;
+  const judged = free.inKey + free.offKey;
+  if (judged < t.minFreestyle) return null;
+  const share = free.offKey / judged;
+  if (!(share > t.offKeyShare)) return null;
+  const worst = maxBy(free.offNotes, (n) => Math.abs(n.centsOff));
+  const evidence =
+    `${free.offKey} of ${judged} free notes (${Math.round(share * 100)}%) were more than 50 c from the key; ` +
+    `the worst was ${noteName(worst.midi)} at ${clock(worst.onsetS)}, ${Math.round(Math.abs(worst.centsOff))} c ` +
+    `from the nearest note of the key.`;
+  return tip('off_key', evidence, worst.onsetS, share / t.offKeyShare);
+}
+
 /** The tips a take earns: the rules that fire, strongest first, at most three. */
 export function tipsFor(report: TakeReport): Tip[] {
   const fired = [
@@ -194,7 +220,9 @@ export function tipsFor(report: TakeReport): Tip[] {
     onsetRule(report, 1),
     onsetRule(report, -1),
     rangeRule(report),
-    heldRule(report),
+    // The original's lengths mean nothing to a singer who may ad-lib freely.
+    (report.style ?? 'strict') === 'strict' ? heldRule(report) : null,
+    offKeyRule(report),
   ].filter((t): t is Tip => t !== null);
   // Array sort is stable, so equal strengths keep the table's order.
   return fired.sort((a, b) => b.strength - a.strength).slice(0, MAX_TIPS);

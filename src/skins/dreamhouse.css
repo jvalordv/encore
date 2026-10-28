@@ -19,6 +19,8 @@
   --color-hit: #12a66a;
   --color-okay: #e3a600;
   --color-miss: #e8573a;
+  --color-free: #7b4bd1;
+  --color-free-band: rgba(123, 75, 209, 0.14);
   --color-reference: #9a8fb8;
 
   --font-display: 'Pacifico', 'Segoe Script', 'Brush Script MT', cursive;

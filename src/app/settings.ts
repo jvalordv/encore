@@ -4,7 +4,8 @@
  * service by itself, the voicing threshold, the round-trip latency measured for
  * each device pair, the extra offset applied while a YouTube video supplies
  * the song, the level of the vocal guide in the karaoke mix and the practice
- * mode (karaoke, or the opt-in learning mode).
+ * mode (karaoke, or the opt-in learning mode) and learning mode's scoring style
+ * (Strict, or Open).
  * One object under one storage key, behind the KeyValueStore interface, so a
  * native shell can own storage later (see "Built to become an app" in
  * docs/ARCHITECTURE.md). Loading never throws and never trusts what it reads:
@@ -13,6 +14,7 @@
  * here; it lives under `encore.skin` because index.html reads it before any
  * script runs.
  */
+import type { ScoringStyle } from '../analysis/score';
 import type { MonitorMode } from '../audio/mic';
 import { normalizeApiKey } from '../search/key';
 import { SEARCH_PROVIDER_IDS } from '../search/types';
@@ -25,6 +27,8 @@ import type { KeyValueStore } from './storage';
  * and nothing from learning leaks into it.
  */
 export type PracticeMode = 'karaoke' | 'learning';
+
+export type { ScoringStyle };
 
 /** Everything the user has chosen that should survive a reload. */
 export interface Settings {
@@ -56,6 +60,11 @@ export interface Settings {
   embedOffsetS: number;
   /** Karaoke (default) or the opt-in learning mode; the header toggle sets it. */
   mode: PracticeMode;
+  /**
+   * Learning mode's scoring style: Strict (the original's melody) or Open
+   * (lenient, with freestyle judged against the song's key). Strict by default.
+   */
+  scoring: ScoringStyle;
   /** Level of the original vocal in the "karaoke with a vocal guide" mix, 0..1. */
   guideLevel: number;
   /** Which search provider answers the song search; only 'youtube' exists. */
@@ -91,6 +100,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   latencyByDevicePair: Object.freeze({}) as Record<string, number>,
   embedOffsetS: 0,
   mode: 'karaoke',
+  scoring: 'strict',
   guideLevel: DEFAULT_GUIDE_LEVEL,
   searchProvider: 'youtube',
   youtubeApiKey: '',
@@ -119,6 +129,11 @@ function monitorMode(value: unknown): MonitorMode {
 /** The stored mode if it is one we know; karaoke for anything else. */
 function practiceMode(value: unknown): PracticeMode {
   return value === 'learning' ? 'learning' : DEFAULT_SETTINGS.mode;
+}
+
+/** The stored scoring style if it is one we know; Strict for anything else. */
+function scoringStyle(value: unknown): ScoringStyle {
+  return value === 'open' ? 'open' : DEFAULT_SETTINGS.scoring;
 }
 
 /** The stored provider if it is one we know; the direct YouTube one otherwise. */
@@ -199,6 +214,7 @@ export function sanitizeSettings(value: unknown): Settings {
     latencyByDevicePair: latencies(raw.latencyByDevicePair),
     embedOffsetS: embedOffset(raw.embedOffsetS),
     mode: practiceMode(raw.mode),
+    scoring: scoringStyle(raw.scoring),
     guideLevel: guide(raw.guideLevel),
     searchProvider: searchProviderId(raw.searchProvider),
     youtubeApiKey: apiKey(raw.youtubeApiKey),

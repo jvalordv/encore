@@ -23,6 +23,8 @@ export const SKIN_TOKENS = [
   '--color-hit',
   '--color-okay',
   '--color-miss',
+  '--color-free',
+  '--color-free-band',
   '--color-reference',
   '--font-display',
   '--font-body',

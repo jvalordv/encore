@@ -16,7 +16,7 @@ import type { LatencyResult } from '../src/audio/latency';
 import type { YouTubeTransport } from '../src/audio/youtube-transport';
 import { ServiceClient, ServiceError } from '../src/service/client';
 import type { PollOutcome } from '../src/service/client';
-import type { Reference, SongStatus, SongSteps, StepStatus } from '../src/service/types';
+import type { KeyMap, Reference, SongStatus, SongSteps, StepStatus } from '../src/service/types';
 import { fakeLane, FakeTransport, makeHarness, songInfo } from './session-harness';
 
 const hoisted = vi.hoisted(() => ({
@@ -96,6 +96,7 @@ function karaokeStatus(steps: Partial<SongSteps> = {}): SongStatus {
     steps: {
       fetch: stepOf('skipped'),
       separation: stepOf('done'),
+      key: stepOf('skipped'),
       reference: stepOf('done'),
       lyrics: stepOf('skipped'),
       ...steps,
@@ -925,6 +926,76 @@ describe('StemsController', () => {
     expect(h.store.state.reference.phase).toBe('none');
     expect(h.store.state.karaoke.phase).toBe('none');
     expect(lane.setReference).toHaveBeenLastCalledWith(null);
+  });
+
+  describe('the key of the song', () => {
+    const KEY: KeyMap = {
+      tuning_cents: 10,
+      segments: [{ start_s: 0, end_s: 100, tonic: 9, mode: 'minor', confidence: 0.7 }],
+    };
+    const doneKey = { key: stepOf('done') };
+
+    it('is fetched once its step is done and handed to scoring, and its progress is shown', async () => {
+      const answers = serviceAnswers(karaokeStatus(doneKey));
+      const fetchKey = vi.spyOn(ServiceClient.prototype, 'fetchKey').mockResolvedValue(KEY);
+      const { h } = await dropped();
+      await vi.waitFor(() => expect(h.store.state.key.phase).toBe('ready'));
+      expect(fetchKey).toHaveBeenCalledWith('abc', expect.anything());
+      expect(answers.reference).toHaveBeenCalled();
+      expect(h.store.state.key).toEqual({ phase: 'ready', message: '' });
+    });
+
+    it('is fetched for a karaoke upload whose melody is skipped', async () => {
+      serviceAnswers(
+        karaokeStatus({ ...doneKey, reference: stepOf('skipped', { detail: 'No singing found in this track.' }) }),
+      );
+      vi.spyOn(ServiceClient.prototype, 'fetchKey').mockResolvedValue(KEY);
+      const { h } = await dropped();
+      await vi.waitFor(() => expect(h.store.state.key.phase).toBe('ready'));
+      expect(h.store.state.reference.phase).toBe('skipped');
+    });
+
+    it('is no key, with the reason, when the service had none or the call failed', async () => {
+      serviceAnswers(karaokeStatus({ key: stepOf('skipped', { detail: 'The instrumental is too short.' }) }));
+      const fetchKey = vi.spyOn(ServiceClient.prototype, 'fetchKey').mockResolvedValue(KEY);
+      const skipped = await dropped();
+      await vi.waitFor(() => expect(skipped.h.store.state.key.phase).toBe('missing'));
+      expect(skipped.h.store.state.key.message).toBe('The instrumental is too short.');
+      expect(fetchKey).not.toHaveBeenCalled();
+
+      serviceAnswers(karaokeStatus({ key: stepOf('failed', { error: 'Reading the key failed: no chroma' }) }));
+      const failed = await dropped();
+      await vi.waitFor(() => expect(failed.h.store.state.key.phase).toBe('missing'));
+      expect(failed.h.store.state.key.message).toBe('Reading the key failed: no chroma');
+      // A failed key does not stop the melody.
+      await vi.waitFor(() => expect(failed.h.store.state.reference.phase).toBe('ready'));
+
+      serviceAnswers(karaokeStatus(doneKey));
+      vi.spyOn(ServiceClient.prototype, 'fetchKey').mockRejectedValue(new ServiceError('not-fetched', 'x', 409));
+      const gone = await dropped();
+      await vi.waitFor(() => expect(gone.h.store.state.key.phase).toBe('missing'));
+      expect(gone.h.store.state.key.message).toBe('The service has no key for this song.');
+    });
+
+    it('is no key when the body is bad or the service goes away, and the melody still comes', async () => {
+      serviceAnswers(karaokeStatus(doneKey));
+      vi.spyOn(ServiceClient.prototype, 'fetchKey').mockRejectedValue(
+        new ServiceError('unexpected', 'The service sent an answer this app cannot read.'),
+      );
+      const { h } = await dropped();
+      await vi.waitFor(() => expect(h.store.state.key.phase).toBe('missing'));
+      expect(h.store.state.key.message).toBe('The service sent an answer this app cannot read.');
+      await vi.waitFor(() => expect(h.store.state.reference.phase).toBe('ready'));
+    });
+
+    it('is forgotten when another song takes over', async () => {
+      serviceAnswers(karaokeStatus(doneKey));
+      vi.spyOn(ServiceClient.prototype, 'fetchKey').mockResolvedValue(KEY);
+      const { h } = await dropped();
+      await vi.waitFor(() => expect(h.store.state.key.phase).toBe('ready'));
+      h.core.stems.reset();
+      expect(h.store.state.key.phase).toBe('none');
+    });
   });
 });
 

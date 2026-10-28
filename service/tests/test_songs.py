@@ -25,6 +25,7 @@ from encore_service.routes import songs
 from encore_service.store import (
     AUDIO_MEDIA_TYPES,
     INTERRUPTED_MESSAGE,
+    NOT_RUN_MESSAGE,
     SongStore,
 )
 
@@ -116,6 +117,7 @@ def test_the_other_steps_are_skipped_as_not_built_once_the_queue_drains(
     assert steps["fetch"]["detail"] is None
     for name, task in (
         ("separation", "P2-T2"),
+        ("key", "W4a"),
         ("reference", "P2-T3"),
         ("lyrics", "P2-T4"),
     ):
@@ -416,7 +418,13 @@ def test_openapi_describes_the_song_routes(client: TestClient) -> None:
         spec["paths"]
     )
     step_properties = spec["components"]["schemas"]["SongSteps"]["properties"]
-    assert list(step_properties) == ["fetch", "separation", "reference", "lyrics"]
+    assert list(step_properties) == [
+        "fetch",
+        "separation",
+        "key",
+        "reference",
+        "lyrics",
+    ]
     assert "detail" in spec["components"]["schemas"]["StepStatus"]["properties"]
 
 
@@ -533,7 +541,8 @@ def test_a_song_with_an_interrupted_step_waits_to_be_added_again(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     song_id = new_song(WAV)
-    # What a stop mid-separation leaves; reference and lyrics stay queued.
+    # What a stop mid-separation leaves; the steps behind it are failed as
+    # not run, so a browser polling the song is not left waiting on them.
     store.update_step(song_id, "separation", state="running", progress=0.3)
     ran: list[str] = []
 
@@ -552,7 +561,8 @@ def test_a_song_with_an_interrupted_step_waits_to_be_added_again(
             steps = client.get(f"/songs/{song_id}").json()["steps"]
             assert steps["separation"]["state"] == "failed"
             assert steps["separation"]["error"] == INTERRUPTED_MESSAGE
-            assert steps["reference"]["state"] == "queued"
+            assert steps["reference"]["state"] == "failed"
+            assert steps["reference"]["error"] == NOT_RUN_MESSAGE
     assert ran == []
 
     # Adding the song again is the retry the error message asks for.

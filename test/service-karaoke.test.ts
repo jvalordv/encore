@@ -2,8 +2,8 @@
  * Tests for the service client's karaoke calls: the upload with its progress
  * and refusals (against a fake XMLHttpRequest, since fetch has no upload
  * progress), the stems with the gain they carry, the reference melody and the
- * check that turns away a body the lane could not draw, and polling through a
- * chosen step. The rules are pure and checked as tables; the network is stubbed
+ * check that turns away a body the lane could not draw, the song's key and its
+ * shape check, and polling through a chosen step. The rules are pure and checked as tables; the network is stubbed
  * and time moves only when a test says so.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,8 +14,8 @@ import {
   settledThrough,
 } from '../src/service/client';
 import type { PollOutcome } from '../src/service/client';
-import type { Reference, SongStatus, SongSteps, StepState, StepStatus } from '../src/service/types';
-import { isReference, parseStemGain } from '../src/service/wire';
+import type { KeyMap, Reference, SongStatus, SongSteps, StepState, StepStatus } from '../src/service/types';
+import { isKeyMap, isReference, parseStemGain } from '../src/service/wire';
 
 const BASE = 'http://localhost:8765';
 const ID = 'abc123';
@@ -34,6 +34,7 @@ function song(others: Partial<SongSteps> = {}): SongStatus {
     steps: {
       fetch: step('skipped'),
       separation: step(),
+      key: step('skipped'),
       reference: step(),
       lyrics: step(),
       ...others,
@@ -48,6 +49,14 @@ const REFERENCE: Reference = {
   ],
   range: { low_midi: 57, high_midi: 57 },
   unpitched_regions: [[1, 2]],
+};
+
+const KEY: KeyMap = {
+  tuning_cents: -12.5,
+  segments: [
+    { start_s: 0, end_s: 40, tonic: 2, mode: 'major', confidence: 0.8 },
+    { start_s: 40, end_s: 60, tonic: null, mode: null, confidence: 0.1 },
+  ],
 };
 
 function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -150,6 +159,24 @@ describe('settledThrough', () => {
     expect(settledThrough(song({ separation: failed }), 'separation')).toBe(true);
     expect(settledThrough(song({ separation: failed }), 'reference')).toBe(true);
     expect(settledThrough(song({ separation: step('done', 1), reference: failed }), 'reference')).toBe(true);
+  });
+
+  it('does not end the wait at a failed key: the service goes on to the melody without it', () => {
+    const failedKey = step('failed', 0.2, { error: 'No chroma' });
+    expect(settledThrough(song({ separation: step('done', 1), key: failedKey }), 'reference')).toBe(false);
+    expect(
+      settledThrough(song({ separation: step('done', 1), key: failedKey, reference: step('running', 0.3) }), 'reference'),
+    ).toBe(false);
+    expect(
+      settledThrough(song({ separation: step('done', 1), key: failedKey, reference: step('done', 1) }), 'reference'),
+    ).toBe(true);
+    expect(settledThrough(song({ separation: step('done', 1), key: failedKey }), 'key')).toBe(true);
+  });
+
+  it('can wait for the key alone: separation, then the key, whatever the melody does', () => {
+    expect(settledThrough(song({ separation: step('done', 1), key: step('running', 0.5) }), 'key')).toBe(false);
+    expect(settledThrough(song({ separation: step('done', 1), key: step('done', 1) }), 'key')).toBe(true);
+    expect(settledThrough(song({ separation: step('done', 1), key: step('skipped') }), 'key')).toBe(true);
   });
 
   it('does not wait for a step after the one asked for', () => {
@@ -327,6 +354,54 @@ describe('ServiceClient.fetchReference', () => {
   it('refuses a body that is not a melody', async () => {
     const { client } = clientFor(() => jsonResponse({ contour: {} }));
     expect(await failureOf(client.fetchReference(ID))).toMatchObject({ kind: 'unexpected' });
+  });
+});
+
+describe('isKeyMap', () => {
+  it('accepts a key map with clear and unclear stretches', () => {
+    expect(isKeyMap(KEY)).toBe(true);
+    expect(isKeyMap({ tuning_cents: 0, segments: [] })).toBe(true);
+  });
+
+  it('turns away a body the key fit could not use', () => {
+    const seg = KEY.segments[0];
+    const broken: unknown[] = [
+      null,
+      [],
+      {},
+      { segments: KEY.segments },
+      { tuning_cents: 'flat', segments: [] },
+      { tuning_cents: Number.NaN, segments: [] },
+      { tuning_cents: 0, segments: 'none' },
+      { tuning_cents: 0, segments: [{ ...seg, start_s: 'zero' }] },
+      { tuning_cents: 0, segments: [{ ...seg, tonic: 12 }] },
+      { tuning_cents: 0, segments: [{ ...seg, tonic: 2.5 }] },
+      { tuning_cents: 0, segments: [{ ...seg, mode: 'dorian' }] },
+      { tuning_cents: 0, segments: [{ ...seg, mode: null }] },
+      { tuning_cents: 0, segments: [{ ...seg, tonic: null, mode: 'major' }] },
+      { tuning_cents: 0, segments: [{ ...seg, confidence: undefined }] },
+    ];
+    for (const value of broken) expect(isKeyMap(value), JSON.stringify(value)).toBe(false);
+  });
+});
+
+describe('ServiceClient.fetchKey', () => {
+  it('returns the key the service sends', async () => {
+    const { client, urls } = clientFor(() => jsonResponse(KEY));
+    expect(await client.fetchKey(ID)).toEqual(KEY);
+    expect(urls).toEqual([`${BASE}/songs/${ID}/key`]);
+  });
+
+  it('answers a 409 as not fetched: there is no key, and a 404 as not found', async () => {
+    const none = clientFor(() => jsonResponse({ detail: 'Song has no key yet.' }, 409));
+    expect(await failureOf(none.client.fetchKey(ID))).toMatchObject({ kind: 'not-fetched' });
+    const gone = clientFor(() => jsonResponse({ detail: 'No such song.' }, 404));
+    expect(await failureOf(gone.client.fetchKey(ID))).toMatchObject({ kind: 'not-found' });
+  });
+
+  it('refuses a body that is not a key map', async () => {
+    const { client } = clientFor(() => jsonResponse({ tuning_cents: 0, segments: [{ tonic: 3 }] }));
+    expect(await failureOf(client.fetchKey(ID))).toMatchObject({ kind: 'unexpected' });
   });
 });
 

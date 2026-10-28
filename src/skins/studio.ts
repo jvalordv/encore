@@ -39,6 +39,9 @@ export const studio: CompleteSkin = {
     vibrato_wider: 'Their vibrato is narrower than yours here.',
     vibrato_slower: 'Their vibrato is faster; aim for a lighter, quicker shimmer.',
     held_shorter: 'The original holds these notes longer. Keep the air going to the end.',
+    off_key:
+      "Some of your free notes land outside the song's key. Build ad-libs from notes of the melody or the " +
+      'bass line, and keep outside notes short, as passing notes.',
     softer_here: 'They sing this phrase softer.',
     brighter: 'Their tone is darker; try a rounder vowel.',
   },

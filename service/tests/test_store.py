@@ -15,6 +15,7 @@ from encore_service.pipeline import initial_status
 from encore_service.schemas import SongStatus, SongSteps
 from encore_service.store import (
     INTERRUPTED_MESSAGE,
+    NOT_RUN_MESSAGE,
     SongMeta,
     SongStore,
     is_valid_id,
@@ -423,11 +424,63 @@ def test_recover_interrupted_fails_running_steps_and_leaves_the_rest(
     )
     assert step.error == INTERRUPTED_MESSAGE
     assert step.progress == 0.4  # where it stopped
-    assert status.steps.reference.state == "queued"
+    # The steps behind it will not run on their own, so they say so.
+    assert status.steps.reference.state == "failed"
+    assert status.steps.reference.error == NOT_RUN_MESSAGE
     assert status.steps.fetch.state == "skipped"
     assert store.read_status(finished) == before
     # Nothing is left running, so a second pass finds nothing.
     assert store.recover_interrupted() == []
+
+
+def test_an_interrupted_step_fails_the_queued_steps_behind_it_as_not_run(
+    store: SongStore, new_song: Callable
+) -> None:
+    keyed = new_song(b"keyed")
+    store.update_step(keyed, "separation", state="done", progress=1.0)
+    store.update_step(keyed, "key", state="running", progress=0.3)
+    referenced = new_song(b"referenced")
+    store.update_step(referenced, "separation", state="done", progress=1.0)
+    store.update_step(referenced, "key", state="done", progress=1.0)
+    store.update_step(referenced, "reference", state="running", progress=0.5)
+    store.update_step(referenced, "lyrics", state="skipped", detail="Lookup")
+
+    assert sorted(store.recover_interrupted()) == sorted([keyed, referenced])
+
+    status = store.read_status(keyed)
+    assert status is not None
+    assert status.steps.key.error == INTERRUPTED_MESSAGE
+    for step in (status.steps.reference, status.steps.lyrics):
+        assert (step.state, step.error) == ("failed", NOT_RUN_MESSAGE)
+    assert status.steps.separation.state == "done"
+    assert status.steps.fetch.state == "skipped"
+
+    status = store.read_status(referenced)
+    assert status is not None
+    assert status.steps.reference.error == INTERRUPTED_MESSAGE
+    # Done and skipped steps are left as they were.
+    assert status.steps.key.state == "done"
+    assert (status.steps.lyrics.state, status.steps.lyrics.detail) == (
+        "skipped",
+        "Lookup",
+    )
+    # Nothing is queued behind a failure now, so the song is not resumed.
+    assert keyed not in store.ids_waiting_to_run()
+
+
+def test_a_step_that_was_queued_before_the_interrupted_one_is_left_queued(
+    store: SongStore, new_song: Callable
+) -> None:
+    song_id = new_song()
+    store.update_step(song_id, "reference", state="running")
+
+    store.recover_interrupted()
+
+    status = store.read_status(song_id)
+    assert status is not None
+    assert status.steps.separation.state == "queued"
+    assert status.steps.key.state == "queued"
+    assert status.steps.lyrics.state == "failed"
 
 
 def test_recover_interrupted_ignores_what_is_not_a_song(
@@ -455,7 +508,7 @@ def test_ids_waiting_to_run_lists_songs_with_a_queued_step_and_no_failure(
     partly = new_song(b"partly")
     store.update_step(partly, "separation", state="done", progress=1.0)
     settled = new_song(b"settled")
-    for step in ("separation", "reference", "lyrics"):
+    for step in ("separation", "key", "reference", "lyrics"):
         store.update_step(settled, step, state="skipped")
     failed = new_song(b"failed")
     store.update_step(failed, "separation", state="failed", error="no")
@@ -475,9 +528,10 @@ def test_a_song_whose_step_was_interrupted_is_not_waiting_to_run(
 
     status = store.read_status(song_id)
     assert status is not None
-    # Its later steps are still queued, but resuming would run the step that
-    # was in flight when the service stopped. Adding the song again does that.
-    assert status.steps.reference.state == "queued"
+    # Its later steps are failed as not run, and resuming would run the step
+    # that was in flight when the service stopped. Adding the song again does
+    # that.
+    assert status.steps.reference.state == "failed"
     assert store.ids_waiting_to_run() == []
 
 

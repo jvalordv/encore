@@ -68,15 +68,15 @@ function percent(progress: number): number {
 }
 
 /**
- * The lines for the steps that are yet to finish: the vocal separation and the
- * melody, waiting or at their percentage. Steps that are done, skipped or
+ * The lines for the steps that are yet to finish: the vocal separation, the
+ * key and the melody, waiting or at their percentage. Steps that are done, skipped or
  * failed are spoken for by the notes; the fetch has the prepare group; the
  * lyrics step is not offered by the app, so it is never named here.
  */
 export function karaokeLines(steps: SongSteps | null): string[] {
   if (steps === null) return [];
   const lines: string[] = [];
-  for (const name of ['separation', 'reference'] as const) {
+  for (const name of ['separation', 'key', 'reference'] as const) {
     const { state, progress } = steps[name];
     if (state === 'queued') lines.push(`${STEP_LABELS[name]}: waiting`);
     else if (state === 'running') lines.push(`${STEP_LABELS[name]} ${percent(progress)}%`);

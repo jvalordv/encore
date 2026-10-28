@@ -209,6 +209,8 @@ export function fakeLane(): LaneSink & {
   setNotice: ReturnType<typeof vi.fn>;
   setReference: ReturnType<typeof vi.fn>;
   fitRangeToReference: ReturnType<typeof vi.fn>;
+  setFreePhrases: ReturnType<typeof vi.fn>;
+  setPhraseClick: ReturnType<typeof vi.fn>;
 } {
   return {
     setTime: vi.fn(),
@@ -217,6 +219,8 @@ export function fakeLane(): LaneSink & {
     setNotice: vi.fn(),
     setReference: vi.fn(),
     fitRangeToReference: vi.fn(),
+    setFreePhrases: vi.fn(),
+    setPhraseClick: vi.fn(),
   };
 }
 

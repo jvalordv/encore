@@ -11,9 +11,10 @@ video is, and creates the song as `yt-<video id>` for the fetch step to fill.
 the original file. `GET /songs/{id}/stems/{stem}` serves the vocal or the
 backing that the separation step made, with the level they were scaled by in
 the `X-Stem-Gain` header, and `GET /songs/{id}/reference` the melody the
-reference step took from the vocal. Storage lives in `store.py`, the queue in `jobs.py`,
-the steps in `pipeline.py` and the YouTube access in `youtube.py`; this module
-is the HTTP edge over them.
+reference step took from the vocal and `GET /songs/{id}/key` the key map the
+key step found in the backing. Storage lives in `store.py`, the queue in
+`jobs.py`, the steps in `pipeline.py` and the YouTube access in `youtube.py`;
+this module is the HTTP edge over them.
 """
 
 import hashlib
@@ -297,4 +298,27 @@ def get_song_reference(song_id: str, request: Request) -> FileResponse:
     path = store.reference_path(song_id)
     if path is None:
         raise HTTPException(status_code=409, detail="Song has no reference melody.")
+    return FileResponse(path, media_type="application/json")
+
+
+@router.get(
+    "/{song_id}/key",
+    response_class=FileResponse,
+    responses={
+        404: {"description": "No such song."},
+        409: {"description": "The song has no key yet."},
+    },
+)
+def get_song_key(song_id: str, request: Request) -> FileResponse:
+    """Serve the song's key map (the `KeyMap` schema) as JSON.
+
+    A song has none until its key step is done, which is after separation; a
+    song whose key is unclear still has one, with segments that say so.
+    """
+    store: SongStore = request.app.state.store
+    if not store.exists(song_id):
+        raise HTTPException(status_code=404, detail="No such song.")
+    path = store.key_path(song_id)
+    if path is None:
+        raise HTTPException(status_code=409, detail="Song has no key yet.")
     return FileResponse(path, media_type="application/json")

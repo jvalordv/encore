@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PitchFrame } from '../src/analysis/pitch';
 import { idbTakeStore, memoryTakeStore, newTakeId, openTakeStore, takeClockOf } from '../src/app/takes';
 import type { TakeRecord, TakeStore } from '../src/app/takes';
+import type { TakeReport } from '../src/analysis/score';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -93,6 +94,18 @@ describe.each(stores)('%s', (_name, open) => {
     const [summary] = await store.list();
     expect(summary.id).toBe(id);
     expect('startedAtSongS' in summary).toBe(false);
+  });
+
+  it('replaces a take’s report and leaves the rest of it alone', async () => {
+    const store = await open();
+    const id = await store.save(make({ createdAt: 5 }));
+    const report = { style: 'open', notesCovered: 2 } as unknown as TakeReport;
+    await store.setReport(id, report);
+    expect((await store.get(id))?.report).toEqual(report);
+    expect((await store.list())[0].report).toEqual(report);
+    expect((await store.get(id))?.frames).toEqual(make().frames);
+    await store.setReport('no-such-take', report);
+    expect(await store.get('no-such-take')).toBeNull();
   });
 
   it('keeps the clock a take was recorded on, in the list and in the full take', async () => {

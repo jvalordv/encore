@@ -20,6 +20,9 @@ export interface LaneStyle {
   hit: string;
   okay: string;
   miss: string;
+  /** A freestyle frame (Open, or a free phrase), and the band behind a free phrase. */
+  free: string;
+  freeBand: string;
   singers: [string, string];
   ribbonWidth: number;
 }
@@ -62,6 +65,8 @@ export function readLaneStyle(): LaneStyle {
     hit: token('--color-hit'),
     okay: token('--color-okay'),
     miss: token('--color-miss'),
+    free: token('--color-free'),
+    freeBand: token('--color-free-band'),
     singers: [token('--color-singer-a'), token('--color-singer-b')],
     ribbonWidth: Number.isFinite(width) ? Math.min(12, Math.max(1, width)) : 3,
   };

@@ -3,7 +3,8 @@
 A song lives in `<cache_dir>/<song_id>/` as `source.<ext>` (the audio),
 `meta.json` (what the song is) and `status.json` (how far preparation has
 got), plus the stems the separation step makes, `vocals.flac` and
-`no_vocals.flac`, and the melody the reference step makes, `reference.json`.
+`no_vocals.flac`, the song's key the key step makes, `key.json`, and the melody
+the reference step makes, `reference.json`.
 Uploads stream into `<cache_dir>/.incoming/` first and are moved into place
 once hashed. A linked song is created with no audio at all;
 its fetch step works in a folder of its own and moves the finished file into
@@ -27,6 +28,7 @@ from typing import Any, TypeVar
 from pydantic import BaseModel, Field
 
 from encore_service.schemas import (
+    KeyMap,
     Reference,
     SongSource,
     SongStatus,
@@ -55,6 +57,8 @@ AUDIO_MEDIA_TYPES = {
     ".opus": "audio/ogg",
 }
 
+# The key step's result, which the key route serves whole.
+KEY_FILE = "key.json"
 # The reference step's melody, which the reference route serves whole.
 REFERENCE_FILE = "reference.json"
 
@@ -63,6 +67,8 @@ REFERENCE_FILE = "reference.json"
 STEM_FILES = {"vocals": "vocals.flac", "no_vocals": "no_vocals.flac"}
 STEM_MEDIA_TYPE = "audio/flac"
 
+# Written to the queued steps behind an interrupted one; shown as is.
+NOT_RUN_MESSAGE = "Not run: the service stopped before this step. Add the song again."
 # Written to a step's error by recover_interrupted; shown to the user as is.
 INTERRUPTED_MESSAGE = (
     "Interrupted: the service stopped while this step ran. Add the song again to retry."
@@ -259,6 +265,22 @@ class SongStore:
         with self._lock:
             _write_json(folder / REFERENCE_FILE, reference, indent=None)
 
+    def key_path(self, song_id: str) -> Path | None:
+        """The finished key map, or None if there is none (yet)."""
+        if not is_valid_id(song_id):
+            return None
+        candidate = self.root / song_id / KEY_FILE
+        return candidate if candidate.is_file() else None
+
+    def write_key(self, song_id: str, key: KeyMap) -> None:
+        """Store a song's key map; the song's folder must exist.
+
+        Written whole and atomically, compact like the reference.
+        """
+        folder = self.song_dir(song_id)
+        with self._lock:
+            _write_json(folder / KEY_FILE, key, indent=None)
+
     def incoming_path(self) -> Path:
         """A fresh path to stream one upload into; the file is not created."""
         folder = self.root / INCOMING_DIR
@@ -400,6 +422,10 @@ class SongStore:
 
         Called once at startup, before the queue starts, so a "running" step
         in a status file always belongs to a process that no longer exists.
+        The steps after it that are still `queued` fail too, as not run: the
+        song is never resumed on its own after a failure, so they would
+        otherwise stay queued for good and a browser would poll them forever.
+        Done and skipped steps are left as they are.
         """
         recovered: list[str] = []
         for song_id in self._song_ids():
@@ -409,19 +435,21 @@ class SongStore:
                 if status is None:
                     continue
                 changed = False
+                interrupted = False
                 for name in SongSteps.model_fields:
                     step: StepStatus = getattr(status.steps, name)
-                    if step.state != "running":
+                    if step.state == "running":
+                        error = INTERRUPTED_MESSAGE
+                        interrupted = True
+                    elif interrupted and step.state == "queued":
+                        error = NOT_RUN_MESSAGE
+                    else:
                         continue
                     setattr(
                         status.steps,
                         name,
                         step.model_copy(
-                            update={
-                                "state": "failed",
-                                "error": INTERRUPTED_MESSAGE,
-                                "detail": None,
-                            }
+                            update={"state": "failed", "error": error, "detail": None}
                         ),
                     )
                     changed = True

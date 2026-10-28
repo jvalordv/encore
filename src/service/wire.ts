@@ -1,11 +1,11 @@
 /**
- * Checks on what the service sends back for a song's stems and melody, apart
- * from the client that asks: the header that carries the stems' gain and the
- * shape test for a reference melody. Pure, so they are tested against plain
- * values (test/service-client.test.ts) and a body the app cannot draw is
- * turned away at the door instead of failing inside the lane.
+ * Checks on what the service sends back for a song's stems, melody and key,
+ * apart from the client that asks: the header that carries the stems' gain and
+ * the shape tests for a reference melody and a key map. Pure, so they are
+ * tested against plain values (test/service-client.test.ts) and a body the app
+ * cannot use is turned away at the door instead of failing further in.
  */
-import type { Reference } from './types';
+import type { KeyMap, Reference } from './types';
 
 /** The header that carries the factor the stems were scaled by. */
 export const STEM_GAIN_HEADER = 'X-Stem-Gain';
@@ -43,4 +43,19 @@ export function isReference(value: unknown): value is Reference {
     isRecord(note) && numbers([note.onset_s, note.offset_s, note.midi]);
   const regionOk = (region: unknown): boolean => numbers(region) && (region as unknown[]).length === 2;
   return value.notes.every(noteOk) && value.unpitched_regions.every(regionOk);
+}
+
+/** True when `value` is a key map this app can judge singing against. */
+export function isKeyMap(value: unknown): value is KeyMap {
+  if (!isRecord(value) || typeof value.tuning_cents !== 'number' || !Number.isFinite(value.tuning_cents)) {
+    return false;
+  }
+  if (!Array.isArray(value.segments)) return false;
+  return value.segments.every((segment: unknown) => {
+    if (!isRecord(segment) || !numbers([segment.start_s, segment.end_s, segment.confidence])) return false;
+    const { tonic, mode } = segment;
+    if (tonic === null) return mode === null;
+    const tonicOk = typeof tonic === 'number' && Number.isInteger(tonic) && tonic >= 0 && tonic <= 11;
+    return tonicOk && (mode === 'major' || mode === 'minor');
+  });
 }

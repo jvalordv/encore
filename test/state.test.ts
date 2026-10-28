@@ -62,6 +62,9 @@ describe('initialState', () => {
         originalOf: null,
       },
       mode: 'karaoke',
+      scoring: 'strict',
+      key: { phase: 'none', message: '' },
+      freePhrases: [],
       pickedResult: null,
       reportTakeId: null,
       positionS: 0,
@@ -722,6 +725,8 @@ describe('Session without Web Audio', () => {
       setNotice: vi.fn(),
       setReference: vi.fn(),
       fitRangeToReference: vi.fn(),
+      setFreePhrases: vi.fn(),
+      setPhraseClick: vi.fn(),
     };
     session.attachLane(lane);
     expect(lane.setTime).toHaveBeenCalledWith(0);
