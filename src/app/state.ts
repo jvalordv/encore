@@ -13,8 +13,17 @@ import type { PitchFrame } from '../analysis/pitch';
 import type { MonitorMode } from '../audio/mic';
 import type { ClockKind, LoopRegion, TrackInfo, TransportState } from '../audio/transport';
 import { noteName } from '../render/lane-geometry';
+import { initialKaraoke } from './karaoke';
+import type { KaraokeState } from './karaoke';
+import { initialMix } from './mix';
+import type { MixState } from './mix';
 import { initialPrepare } from './prepare';
 import type { PrepareState } from './prepare';
+import { initialReference } from './reference';
+import type { ReferenceState } from './reference';
+import { initialSearch } from './search';
+import type { SearchState } from './search';
+import { DEFAULT_GUIDE_LEVEL } from './settings';
 import type { TakeSummary } from './takes';
 
 /** How loudly the status line should speak. */
@@ -66,6 +75,17 @@ export interface AppState {
    * song panel says about it. Phase 'none' while no video is the song.
    */
   prepare: PrepareState;
+  /**
+   * Where the song stands on the way to its karaoke track (upload, the
+   * service's steps, the stems), whatever the song's source.
+   */
+  karaoke: KaraokeState;
+  /** The karaoke mix: whether the stems are in, what plays, the guide level. */
+  mix: MixState;
+  /** The reference melody the lane draws, or why there is none. */
+  reference: ReferenceState;
+  /** The song search: the chip, the words, the results, what to tell. */
+  search: SearchState;
   positionS: number;
   loop: LoopRegion | null;
   durationS: number;
@@ -110,6 +130,10 @@ export function initialState(): AppState {
     embed: null,
     embedOffsetS: 0,
     prepare: initialPrepare(),
+    karaoke: initialKaraoke(),
+    mix: initialMix(DEFAULT_GUIDE_LEVEL),
+    reference: initialReference(),
+    search: initialSearch('karaoke', false),
     positionS: 0,
     loop: null,
     durationS: 0,

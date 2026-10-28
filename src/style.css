@@ -435,6 +435,12 @@ input[type='range'] {
   border-bottom-left-radius: 0;
 }
 
+/* A middle segment is square at both ends. */
+.segmented button:not(:first-child):not(:last-child) {
+  margin-left: calc(var(--border-width) * -1);
+  border-radius: 0;
+}
+
 /* A filled segment, so the active mode reads at a glance in every skin. */
 .segmented button[aria-pressed='true'] {
   position: relative;
@@ -519,6 +525,36 @@ input[type='range'] {
   gap: 2px;
   padding: 0;
   list-style: none;
+}
+
+/* The karaoke track: progress lines, notes about the service and the melody,
+   and the mix (joined buttons, then the guide's slider). */
+.karaoke-lines,
+.karaoke-note {
+  margin: 0;
+}
+
+.karaoke-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  list-style: none;
+}
+
+.karaoke-mix {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.karaoke-mix .segmented button {
+  font-size: 0.8rem;
+}
+
+.karaoke-mix input[type='range'] {
+  width: 100%;
+  accent-color: var(--color-accent);
 }
 
 .unit {

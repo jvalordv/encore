@@ -3,7 +3,8 @@
  * the song, the service address, whether a pasted YouTube link is sent to the
  * service by itself, the voicing threshold, the round-trip latency measured for
  * each device pair, the extra offset applied while a YouTube video supplies
- * the song and the practice mode (karaoke, or the opt-in learning mode).
+ * the song, the level of the vocal guide in the karaoke mix and the practice
+ * mode (karaoke, or the opt-in learning mode).
  * One object under one storage key, behind the KeyValueStore interface, so a
  * native shell can own storage later (see "Built to become an app" in
  * docs/ARCHITECTURE.md). Loading never throws and never trusts what it reads:
@@ -13,6 +14,9 @@
  * script runs.
  */
 import type { MonitorMode } from '../audio/mic';
+import { normalizeApiKey } from '../search/key';
+import { SEARCH_PROVIDER_IDS } from '../search/types';
+import type { SearchProviderId } from '../search/types';
 import type { KeyValueStore } from './storage';
 
 /**
@@ -52,6 +56,15 @@ export interface Settings {
   embedOffsetS: number;
   /** Karaoke (default) or the opt-in learning mode; no UI sets it yet. */
   mode: PracticeMode;
+  /** Level of the original vocal in the "karaoke with a vocal guide" mix, 0..1. */
+  guideLevel: number;
+  /** Which search provider answers the song search; only 'youtube' exists. */
+  searchProvider: SearchProviderId;
+  /**
+   * The person's own YouTube Data API key for the direct provider, or ''.
+   * It stays in this browser's storage and goes nowhere but Google.
+   */
+  youtubeApiKey: string;
 }
 
 /** Key inside the key-value store; the localStorage adapter adds `encore.`. */
@@ -59,6 +72,9 @@ export const SETTINGS_KEY = 'settings';
 
 /** Longest latency accepted, matching what latency.ts will load or save. */
 export const MAX_LATENCY_S = 2;
+
+/** The vocal guide's level until the singer moves the slider. */
+export const DEFAULT_GUIDE_LEVEL = 0.5;
 
 /** Largest embed offset accepted in either direction, in seconds. */
 export const MAX_EMBED_OFFSET_S = 0.5;
@@ -75,6 +91,9 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   latencyByDevicePair: Object.freeze({}) as Record<string, number>,
   embedOffsetS: 0,
   mode: 'karaoke',
+  guideLevel: DEFAULT_GUIDE_LEVEL,
+  searchProvider: 'youtube',
+  youtubeApiKey: '',
 });
 
 /** The offset limited to plus or minus MAX_EMBED_OFFSET_S; NaN reads as 0. */
@@ -102,6 +121,16 @@ function practiceMode(value: unknown): PracticeMode {
   return value === 'learning' ? 'learning' : DEFAULT_SETTINGS.mode;
 }
 
+/** The stored provider if it is one we know; the direct YouTube one otherwise. */
+function searchProviderId(value: unknown): SearchProviderId {
+  return SEARCH_PROVIDER_IDS.find((id) => id === value) ?? DEFAULT_SETTINGS.searchProvider;
+}
+
+/** A stored API key if it can be one; no key otherwise. */
+function apiKey(value: unknown): string {
+  return typeof value === 'string' ? (normalizeApiKey(value) ?? '') : '';
+}
+
 /** An http(s) URL without trailing slashes, or null when it is not one. */
 function serviceUrl(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -124,6 +153,12 @@ function clarity(value: unknown): number {
 function embedOffset(value: unknown): number {
   const ok = typeof value === 'number' && Number.isFinite(value);
   return ok ? clampEmbedOffsetS(value) : DEFAULT_SETTINGS.embedOffsetS;
+}
+
+/** A stored guide level if it is a number from 0 to 1; the default otherwise. */
+function guide(value: unknown): number {
+  const ok = typeof value === 'number' && Number.isFinite(value);
+  return ok && value >= 0 && value <= 1 ? value : DEFAULT_SETTINGS.guideLevel;
 }
 
 /** Keeps the entries whose value is a plausible latency; drops the rest. */
@@ -164,6 +199,9 @@ export function sanitizeSettings(value: unknown): Settings {
     latencyByDevicePair: latencies(raw.latencyByDevicePair),
     embedOffsetS: embedOffset(raw.embedOffsetS),
     mode: practiceMode(raw.mode),
+    guideLevel: guide(raw.guideLevel),
+    searchProvider: searchProviderId(raw.searchProvider),
+    youtubeApiKey: apiKey(raw.youtubeApiKey),
   };
 }
 

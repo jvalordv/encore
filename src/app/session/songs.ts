@@ -98,6 +98,8 @@ export class SongController {
     this.activate(parts.player);
     takes.endReplay();
     this.core.lane?.clearFrames();
+    // The file plays as it is; its karaoke track is made in the background.
+    this.core.stems.beginFile(file);
     await takes.refreshTakes();
     const next = store.state.input.open ? 'Press Space to play.' : 'Pick a microphone, then press Play.';
     store.setStatus(`Loaded ${info.name} (${formatClock(info.durationS)}). ${next}`);
@@ -177,6 +179,8 @@ export class SongController {
     // The follower goes first: pausing the engine below must not be copied to
     // the video it was following.
     prepare.endPrepared();
+    // The stems and melody of the song it replaces are no longer its own.
+    this.core.stems.reset();
     store.patch({ embed: { videoId: link.videoId } });
     this.activate(transport);
     previous?.destroy();

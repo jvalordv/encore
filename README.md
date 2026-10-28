@@ -26,6 +26,30 @@ and calibration behave in a real browser. It is not part of `npm run check` or
 CI yet. It needs Playwright's Chromium (`npx playwright install chromium`, once);
 `@playwright/test` is pinned so that browser build stays the one installed.
 
+### Search for songs (YouTube API key)
+
+The app opens on a search for the song to sing. To search inside the app you
+need your own YouTube Data API key; without one, Search opens YouTube's own
+results in a new tab and you paste the link of what you pick into the link box
+(a pasted link always works).
+
+1. In the [Google Cloud console](https://console.cloud.google.com/) create or
+   pick a project and enable **YouTube Data API v3** for it (APIs & Services,
+   Library).
+2. Create an API key (APIs & Services, Credentials, Create credentials, API
+   key).
+3. Restrict it: under API restrictions choose **YouTube Data API v3** only, and
+   under Application restrictions choose Websites with
+   `http://localhost:5173/*` (the address `npm run dev` serves; add another
+   only if you serve the app from somewhere else).
+4. Paste the key into the **YouTube API key** field at the bottom of the
+   search panel and press Save key. It is kept in this browser's storage and
+   goes only to Google; it is never sent to the Python service or shared.
+
+The free quota is 10,000 units a day and one search costs 101, so about 100
+searches a day. When it is spent the panel says so and Search opens YouTube's
+own page instead until the quota resets (midnight Pacific time).
+
 ## Design
 
 - [ARCHITECTURE.md](./docs/ARCHITECTURE.md) — system design and request/response schemas

@@ -24,17 +24,17 @@ webcam or USB mic.
 
 ## Current state
 
-- **Last done:** **W1** (2026-10-28): the service's reference step
-  (torchcrepe on the vocal stem, notes by the `docs/COACHING.md` rule,
-  `GET /songs/{id}/reference`, a skip for tracks with no singing) and the
-  browser seams (controllers under `src/app/session/`, the frame bus, lane
-  layers, `mode` and `singers`). Before it the scope trim (2026-10-27),
-  P2-T2 and the YouTube work, in `docs/HISTORY.md`.
+- **Last done:** **W2** (2026-10-28): YouTube search as the first screen
+  (`src/search/`, a provider seam, the owner's own key) and the karaoke core
+  (upload to the service, stems, the Original / Karaoke / guide mix, target
+  notes on the lane). Before it W1 (the reference step and the browser
+  seams); older work in `docs/HISTORY.md`.
 - **In progress:** none.
 - **Next:** the owner's test results (list below) if they have any: fix
-  what they show first, as `W0: <summary>`. Then **W2**. W2a needs the
-  owner's YouTube Data API key (pasted into the app, never into chat).
-- **Blockers:** none for W2. YouTube now answers yt-dlp with "Sign in to
+  what they show first, as `W0: <summary>`. Then **W3**. Search needs the
+  owner's YouTube Data API key (README, "Run it"; pasted into the app,
+  never into chat).
+- **Blockers:** none for W3. YouTube now answers yt-dlp with "Sign in to
   confirm you're not a bot" (2026-10-28, seven tries on Big Buck Bunny), so
   Prepare for links and W2's "Find the original" fail until a newer
   yt-dlp gets through (`uv lock --upgrade-package yt-dlp`, then sync as
@@ -91,13 +91,25 @@ webcam or USB mic.
     plays. Report whether the switch is audible, whether the muted video
     stays in step (also after a click on YouTube's timeline and a long
     buffer), and whether Speakers mode keeps the song out of the mic.
-  - Reference melody (W1, before the browser draws it in W2b): start the
-    service, then `curl -F file=@song.mp3 localhost:8765/songs` with a
-    song that has singing and note its `song_id`. When
-    `localhost:8765/songs/<id>` shows `reference` done, open
-    `localhost:8765/songs/<id>/reference`. Report the note count, the
-    range, and whether the first few notes follow the tune. A karaoke
-    track should show `reference` skipped with "No singing found".
+  - Karaoke core (W2b; replaces W1's curl test): start the service, drop
+    an mp3 with singing. It plays at once while the Karaoke track group
+    shows the upload, separation and melody. When the stems arrive Karaoke
+    is selected with no restart (try it while playing). Switch Original,
+    Karaoke and the vocal guide while playing: no gap, similar loudness;
+    the guide level survives a reload. Report whether the note bars line
+    up with the vocal you hear in Original and fit the lane's rows. Record
+    and replay a take over Karaoke. A karaoke mp3 should say "Melody
+    skipped:" and draw no bars. With the service stopped, a dropped file
+    plays and one line says what is missing; start the service, click back
+    into the window, and it uploads by itself.
+  - Search (W2a): with no key, Search opens YouTube's own results in a new
+    tab. Make a key (README, "Run it"), save it in the panel, search a song
+    you know: report any wrong Karaoke or Original badge (Sing King,
+    KaraFun, official videos). Pick a result, then use the song panel's
+    Search button and Close. Try Find the original on a karaoke card. A
+    wrong key should say YouTube does not accept it. Open the mic with no
+    song: the readout and lane work under the search. Check the three
+    skins and a narrow window.
 
 ## Waves
 
@@ -190,7 +202,7 @@ Tracks inside a wave share no files and may run in parallel.
     mic should unsubscribe on close.
   - For W3: `settings.mode` is read by nothing yet, and the lane's overlay
     layer has the hook for hit colours.
-- [ ] **W2: Search and karaoke core.** Two tracks, one commit.
+- [x] **W2: Search and karaoke core.** Two tracks, one commit.
   - **W2a, browser: YouTube search as the first screen.** Owns
     `src/search/` and the search panel. Owner decision (2026-10-27): the
     official API with the owner's own key; no keyless backend for now.
@@ -244,6 +256,38 @@ Tracks inside a wave share no files and may run in parallel.
     - Done when the checks and e2e are green (the fake service serves stems
       and a reference). Owner test: drop an mp3, wait for preparation, sing
       to the instrumental with the melody shown.
+  - Done 2026-10-28. Checks: 1,334 unit tests, 71 e2e, 824 service tests
+    (service untouched). The tracks ran one after the other, since both
+    touch settings, `ui.ts` and the e2e fakes. W2b: `src/app/session/`
+    `stems.ts` and `mix.ts`, pure `mix.ts`, `karaoke.ts` and
+    `reference.ts` in `src/app/`, the karaoke panel, client calls in
+    `src/service/` (`upload.ts`, `wire.ts`). Original plays at the stem
+    gain, stems at unity; takes duck the whole mix. W2a: `src/search/`,
+    a `SearchController`, the search panel above a 160 px lane. One review
+    item fixed: a failure after the stems arrived hid the mix.
+    `solo-loop.spec.ts` now stubs the service (a dropped file probes it),
+    and the fake's linked songs skip the steps after fetch.
+  - Follow-up: not tried on the real API: the Originals query's
+    `-karaoke` operator, and whether a key restricted to
+    `http://localhost:5173/*` accepts the page's referrer.
+  - Follow-up: upload progress was not seen to fire under Playwright's
+    route; check it against the real service with a large file.
+  - Follow-up: the lane fits its rows to the contour's 2nd to 98th
+    percentile, not the reference's `range`; check bars are not clipped.
+  - Follow-up: a stem download that fails after separation says "add it
+    again" and does not re-upload by itself.
+  - Follow-up: the quota-spent flag lives in memory, so after a reload the
+    first search spends a request to learn it again. Changing the chip does
+    not re-run the search (quota); a blocked new tab cannot be detected
+    with `noopener`.
+  - Follow-up: the guide slider saves settings on every input event.
+  - Follow-up: `src/audio/player.ts` (561) and `src/app/ui.ts` (619) are
+    over the 500-line guide; split when a wave next touches them.
+  - For W3: call `session.findOriginal({title, channel})` for a karaoke
+    track; `TrackInfo` has no channel yet, so carry it from the picked
+    result. The mode toggle should call
+    `session.setSearchFilter(filterForMode(mode))`. Panels have no DOM unit
+    tests (vitest runs in node); their view models are tested.
 - [ ] **W3: Learning mode** (was P2-T6, P2-T7, P3-T2, P3-T3; browser
   only). Owns `src/analysis/score.ts`, `src/coach/`, the mode and report
   panels, the lane's overlay layer.
@@ -430,24 +474,24 @@ Not scheduled. Pull one in only when the owner asks.
   length cap, notes while a step runs, clearing crash leftovers, releasing
   GPU memory, and more. None block the goal.
 
-## Estimates (corrected 2026-10-28 after W1, light pipeline)
+## Estimates (corrected 2026-10-28 after W2, light pipeline)
 
 W1 measured about 1 hour of wall time (two workers in parallel, then
-one reviewer) and about 1.0 M subagent tokens: 0.75 M counted plus a
-worker run whose count was lost to an API error. The estimate was 3.5
-hours and 1.8 M, so the rest are scaled down, less than W1's ratio
-since W1 was mostly a move.
+one reviewer) and about 1.0 M subagent tokens. W2 measured 1 hour and
+0.94 M (two workers one after the other, one reviewer, one small fix)
+against an estimate of 2 hours and 1.1 M. Hours for the rest are scaled
+down by about a third; tokens slightly.
 
 | Wave | Agent hours | Subagent tokens | Owner |
 |---|---|---|---|
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
-| W2 Search and karaoke core | 2 (1.5-3) | about 1.1 M | 20 min, an API key |
-| W3 Learning mode | 1.2 (1-2) | about 0.8 M | 20 min |
-| W4 Strict and Open scoring | 1.5 (1-2.5) | about 0.8 M | 20 min |
-| W5 Two singers | 1.5 (1-2.5) | about 0.8 M | 30 min, a second person |
-| W6 Synced lyrics | 0.5 (0.3-1) | about 0.3 M | 5 min |
-| W7 Test and sweep | 1 (0.7-2) | about 0.6 M | 45 min |
-| **Total** | **about 8.7 (6.5-14)** | **about 5.4 M** | **about 2.5 h** |
+| W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
+| W3 Learning mode | 0.8 (0.6-1.5) | about 0.7 M | 20 min |
+| W4 Strict and Open scoring | 1 (0.7-1.8) | about 0.8 M | 20 min |
+| W5 Two singers | 1 (0.7-1.8) | about 0.7 M | 30 min, a second person |
+| W6 Synced lyrics | 0.4 (0.3-0.8) | about 0.3 M | 5 min |
+| W7 Test and sweep | 0.8 (0.6-1.5) | about 0.6 M | 45 min |
+| **Total** | **about 6 (5-9.5)** | **about 5.0 M** | **about 2.5 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The
 orchestrator's own reading adds about 100 to 200 thousand tokens per wave

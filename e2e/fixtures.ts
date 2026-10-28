@@ -5,7 +5,10 @@
  * "mp3" the test drops on the page: a 220 Hz tone that begins after half a
  * second of silence, so its duration and playback position are observable
  * without decoding anything. Both go through the app's own WAV encoder, which
- * also proves the encoder writes files a real decoder accepts.
+ * also proves the encoder writes files a real decoder accepts. `vocals.wav` and
+ * `no_vocals.wav` stand in for the stems the service makes (the stand-in
+ * serves them as FLAC would be served; the browser sniffs the bytes, so WAV
+ * decodes the same) and are as long as the song.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -30,6 +33,10 @@ export const MIC_FILE = path.join(TMP_DIR, 'a440.wav');
 /** Absolute path of the song the test loads. */
 export const SONG_FILE = path.join(TMP_DIR, 'song.wav');
 
+/** Absolute paths of the stand-ins for the two stems of a separated song. */
+export const VOCALS_FILE = path.join(TMP_DIR, 'vocals.wav');
+export const NO_VOCALS_FILE = path.join(TMP_DIR, 'no_vocals.wav');
+
 /** `seconds` of a sine at `hz`, silent for the first `silenceS` seconds. */
 export function sine(hz: number, seconds: number, peak: number, silenceS = 0): Float32Array {
   const out = new Float32Array(Math.round(seconds * FIXTURE_RATE));
@@ -40,9 +47,11 @@ export function sine(hz: number, seconds: number, peak: number, silenceS = 0): F
   return out;
 }
 
-/** Writes both fixtures; Playwright runs this once before any test. */
+/** Writes the fixtures; Playwright runs this once before any test. */
 export default function writeFixtures(): void {
   mkdirSync(TMP_DIR, { recursive: true });
   writeFileSync(MIC_FILE, Buffer.from(encodeWav(sine(440, 8, 0.5), FIXTURE_RATE, 16)));
   writeFileSync(SONG_FILE, Buffer.from(encodeWav(sine(220, SONG_SECONDS, 0.5, 0.5), FIXTURE_RATE, 16)));
+  writeFileSync(VOCALS_FILE, Buffer.from(encodeWav(sine(330, SONG_SECONDS, 0.3, 0.5), FIXTURE_RATE, 16)));
+  writeFileSync(NO_VOCALS_FILE, Buffer.from(encodeWav(sine(110, SONG_SECONDS, 0.3), FIXTURE_RATE, 16)));
 }

@@ -1,0 +1,220 @@
+/*
+ * The song search (src/app/panels/search.ts). It sits in the stage above the
+ * pitch lane: while it shows, the stage is a column, the lane keeps a short,
+ * fixed height so the mic and the pitch readout still work, and the search
+ * takes the rest and scrolls inside itself. Colour, type and shape come only
+ * from the skin tokens, so all three skins read as themselves. Loaded before
+ * style.css, so every rule here that has to beat one there names #app.
+ */
+
+#search {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+#app[data-search='on'] #stage {
+  flex-direction: column;
+}
+
+#app[data-search='on'] #pitch-lane {
+  flex: 0 0 auto;
+  height: 160px;
+  min-height: 160px;
+}
+
+/* The stage asks for the search's least height, a gap and the short lane. */
+#app[data-search='on'] {
+  --stage-min: calc(220px + 12px + 160px);
+}
+
+#app[data-search='on'][data-embed='on'] {
+  --stage-min: calc(var(--embed-w) * 9 / 16 + 32px + 12px + 220px + 12px + 160px);
+}
+
+.search-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-bar input {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-accent);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+.search-bar .segmented {
+  flex: 0 1 auto;
+}
+
+.search-bar button {
+  min-width: 0;
+  padding-inline: 12px;
+}
+
+.search-hint,
+.search-status {
+  margin: 0;
+}
+
+.search-status[data-code]:not([data-code='']) {
+  padding-left: 8px;
+  border-left: calc(var(--border-width) * 3) solid var(--color-miss);
+}
+
+.search-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.search-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px;
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: var(--radius);
+}
+
+.search-card:hover,
+.search-card:focus-within {
+  border-color: var(--color-accent);
+}
+
+/* The whole picture-and-title block is one button; it drops the usual button
+   look so the card reads as a card. */
+.search-pick,
+.search-pick:hover:not(:disabled) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font-weight: 400;
+  text-align: left;
+  transform: none;
+}
+
+.search-thumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--lane-bg);
+  border-radius: var(--radius);
+}
+
+.search-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.search-duration {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 0 5px;
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.search-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.9rem;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.search-channel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.search-badge {
+  padding: 1px 8px;
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: var(--radius);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.search-badge[data-kind='karaoke'] {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.search-foot button {
+  padding: 3px 8px;
+  font-size: 0.75rem;
+}
+
+.search-key-box {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: var(--border-width) solid var(--color-accent-2);
+}
+
+.search-key-box summary {
+  margin-bottom: 8px;
+  color: var(--color-text-muted);
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.search-key-box p {
+  margin: 8px 0 0;
+}
+
+#search-toggle {
+  align-self: flex-start;
+}

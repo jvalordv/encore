@@ -253,6 +253,9 @@ export class PrepareController {
         if (!this.isCurrent(attempt)) return;
       } while (this.recordingBusy());
       this.switchToPrepared(embed, parts);
+      // The service goes on separating the vocal and reading the melody; the
+      // stems join the song when they are ready.
+      this.core.stems.follow(outcome.status);
     } catch (error) {
       if (this.isCurrent(attempt)) {
         this.failPrepare(attempt, `Could not prepare the song: ${messageOf(error)}`);

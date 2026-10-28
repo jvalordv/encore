@@ -38,6 +38,9 @@ describe('DEFAULT_SETTINGS', () => {
       latencyByDevicePair: {},
       embedOffsetS: 0,
       mode: 'karaoke',
+      guideLevel: 0.5,
+      searchProvider: 'youtube',
+      youtubeApiKey: '',
     });
   });
 
@@ -97,6 +100,9 @@ describe('loadSettings', () => {
       latencyByDevicePair: { 'latency.a|b': 0.12 },
       embedOffsetS: 0,
       mode: 'karaoke',
+      guideLevel: 0.5,
+      searchProvider: 'youtube',
+      youtubeApiKey: '',
     });
   });
 
@@ -238,6 +244,9 @@ describe('saveSettings', () => {
     latencyByDevicePair: { 'latency.out-1|in-1': 0.143 },
     embedOffsetS: -0.06,
     mode: 'learning',
+    guideLevel: 0.25,
+    searchProvider: 'youtube',
+    youtubeApiKey: 'AIzaSyExample_key-123',
   };
 
   it('round-trips through a store', () => {
@@ -342,5 +351,59 @@ describe('practice mode', () => {
     const store = memoryStore();
     saveSettings(store, { ...DEFAULT_SETTINGS, mode: 'loud' as unknown as 'karaoke' });
     expect(JSON.parse(store.get('settings') ?? 'null').mode).toBe('karaoke');
+  });
+});
+
+describe('guide level', () => {
+  it('defaults to half', () => {
+    expect(DEFAULT_SETTINGS.guideLevel).toBe(0.5);
+    expect(loadSettings(memoryStore()).guideLevel).toBe(0.5);
+  });
+
+  it('keeps a stored level from 0 to 1', () => {
+    for (const level of [0, 0.2, 1]) {
+      expect(sanitizeSettings({ guideLevel: level }).guideLevel).toBe(level);
+    }
+  });
+
+  it('falls back to the default for anything else', () => {
+    for (const level of [-0.1, 1.5, NaN, Infinity, '0.3', null, true, {}]) {
+      expect(sanitizeSettings({ guideLevel: level }).guideLevel, String(level)).toBe(0.5);
+    }
+  });
+
+  it('never saves a level that load would reject', () => {
+    const store = memoryStore();
+    saveSettings(store, { ...DEFAULT_SETTINGS, guideLevel: 7 });
+    expect(JSON.parse(store.get('settings') ?? 'null').guideLevel).toBe(0.5);
+  });
+});
+
+describe('song search settings', () => {
+  it('defaults to the direct YouTube provider with no key', () => {
+    expect(DEFAULT_SETTINGS.searchProvider).toBe('youtube');
+    expect(DEFAULT_SETTINGS.youtubeApiKey).toBe('');
+  });
+
+  it('keeps a stored key that has the shape of one, trimmed', () => {
+    expect(sanitizeSettings({ youtubeApiKey: ' AIzaSy_abc-123 ' }).youtubeApiKey).toBe('AIzaSy_abc-123');
+  });
+
+  it('drops a stored key that cannot be one', () => {
+    for (const key of ['has space', 'semi;colon', 'x'.repeat(200), 7, null, {}]) {
+      expect(sanitizeSettings({ youtubeApiKey: key }).youtubeApiKey, String(key)).toBe('');
+    }
+  });
+
+  it('reads an unknown provider as the default one', () => {
+    for (const id of ['bing', '', 3, null]) {
+      expect(sanitizeSettings({ searchProvider: id }).searchProvider, String(id)).toBe('youtube');
+    }
+  });
+
+  it('never saves a key that load would reject', () => {
+    const store = memoryStore();
+    saveSettings(store, { ...DEFAULT_SETTINGS, youtubeApiKey: 'not a key' });
+    expect(JSON.parse(store.get('settings') ?? 'null').youtubeApiKey).toBe('');
   });
 });

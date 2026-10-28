@@ -11,9 +11,10 @@
  * src/app/session/, one per concern, sharing a SessionCore that holds the
  * store, the parts and the settings: songs and transports (songs.ts),
  * playback and loop (playback.ts), the service and prepared audio
- * (prepare.ts), the mic (input.ts), devices and output (devices.ts), latency
- * and calibration (latency.ts) and takes (takes.ts). Tracker frames reach the
- * lane and the take recorder through a frame bus (frame-bus.ts).
+ * (prepare.ts), the karaoke track from the service (stems.ts) and the mix of
+ * its stems (mix.ts), the song search (search.ts), the mic (input.ts), devices and output (devices.ts),
+ * latency and calibration (latency.ts) and takes (takes.ts). Tracker frames
+ * reach the lane and the take recorder through a frame bus (frame-bus.ts).
  *
  * The song comes from one of two transports (src/audio/transport.ts): the
  * audio Player for a dropped file, or a YouTubeTransport for a pasted link.
@@ -45,6 +46,8 @@
 import type { MonitorMode } from '../audio/mic';
 import type { Transport } from '../audio/transport';
 import type { EmbedHost } from '../audio/youtube-transport';
+import type { SearchFilter, SearchResult } from '../search';
+import type { MixChoice } from './mix';
 import { SessionCore } from './session/core';
 import { buildParts } from './session/parts';
 import type { DeviceLists, LaneSink, SessionOptions, SessionParts } from './session/types';
@@ -88,6 +91,7 @@ export class Session {
       parts: this.parts,
       takes,
       youtubeApi: options.youtubeApi,
+      search: options.search,
     });
   }
 
@@ -118,6 +122,7 @@ export class Session {
   attachLane(lane: LaneSink): void {
     this.core.lane = lane;
     lane.setTime(this.core.songs.currentPosition());
+    this.core.stems.syncLane();
   }
 
   /**
@@ -146,6 +151,8 @@ export class Session {
     this.core.loop.stop();
     this.core.devices.stop();
     this.core.takes.stopSolo();
+    this.core.stems.reset();
+    this.core.search.dispose();
     this.core.songs.dispose();
     this.core.input.dispose();
   }
@@ -180,11 +187,57 @@ export class Session {
   /** Asks the service again whether it runs, if it was found not to. */
   checkService(): void {
     this.core.prepare.checkService();
+    this.core.stems.checkService();
   }
 
   /** Turns the automatic sending of a link to the service on or off. */
   setAutoPrepareLinks(on: boolean): void {
     this.core.prepare.setAutoPrepareLinks(on);
+  }
+
+  /** Chooses the original, the karaoke track, or the track with a vocal guide. */
+  setMix(choice: MixChoice): void {
+    this.core.mix.setMix(choice);
+  }
+
+  /** Sets, and remembers, the original vocal's level in the guide mix (0..1). */
+  setGuideLevel(level: number): void {
+    this.core.mix.setGuideLevel(level);
+  }
+
+  // ---- Finding a song -----------------------------------------------------
+
+  /**
+   * Searches for songs under the chip, or opens YouTube's own search in a new
+   * tab when there is no key or the quota is spent; call it from the click.
+   */
+  searchSongs(text: string, filter?: SearchFilter): void {
+    this.core.search.search(text, filter);
+  }
+
+  /** Searches for the original behind a karaoke video, as Originals. */
+  findOriginal(video: Pick<SearchResult, 'title' | 'channel'>): void {
+    this.core.search.findOriginal(video);
+  }
+
+  /** Loads a search result as the song, as a pasted link would be. */
+  pickResult(videoId: string): Promise<void> {
+    return this.core.search.pick(videoId);
+  }
+
+  /** Chooses karaoke versions or originals for the next search. */
+  setSearchFilter(filter: SearchFilter): void {
+    this.core.search.setFilter(filter);
+  }
+
+  /** Shows or hides the search while a song is loaded. */
+  setSearchOpen(open: boolean): void {
+    this.core.search.setOpen(open);
+  }
+
+  /** Keeps the YouTube API key for searching ('' forgets it); false if it cannot be one. */
+  setSearchKey(text: string): boolean {
+    return this.core.search.setKey(text);
   }
 
   /** Plays, resuming the saved mic first if none is open. */

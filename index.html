@@ -56,6 +56,9 @@
           <input id="link-input" data-testid="link-input" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="YouTube link" aria-label="YouTube link" />
           <button type="button" id="link-load" data-testid="link-load" title="Load the YouTube link">Load</button>
         </div>
+        <!-- Brings the search back over a loaded song; hidden while no song is
+             loaded, because the search is then what the main area shows. -->
+        <button type="button" id="search-toggle" data-testid="search-toggle" aria-controls="search" aria-expanded="true" hidden>Search for a song</button>
         <!-- Off unless ticked: a link is otherwise sent to the service only when
              Prepare for scoring is pressed. Preparing downloads the video's
              audio, which YouTube's terms restrict (service/README.md). -->
@@ -66,7 +69,7 @@
         <div class="song-info">
           <div id="song-title" class="song-title" data-testid="song-title">No song loaded</div>
           <div id="song-duration" class="song-meta" data-testid="song-duration"></div>
-          <p id="embed-note" class="song-meta" data-testid="embed-note" hidden>Playing in YouTube's player. Live pitch and takes work here, with approximate timing. Prepare the song to have the app play it on its own clock; the reference melody, scoring and stems are not built yet.</p>
+          <p id="embed-note" class="song-meta" data-testid="embed-note" hidden>Playing in YouTube's player. Live pitch and takes work here, with approximate timing. Prepare the song to have the app play it on its own clock, with a karaoke track and the melody; scoring is not built yet.</p>
         </div>
         <!-- Shown while a YouTube video is the song. The button, the service's
              progress and a note are all drawn from state.prepare. -->
@@ -75,6 +78,11 @@
           <ul id="prepare-steps" class="prepare-steps song-meta" data-testid="prepare-steps" hidden></ul>
           <p id="prepare-note" class="song-meta" data-testid="prepare-note" role="status" aria-live="polite"></p>
         </div>
+
+        <!-- The song's karaoke track: upload and service progress, the melody
+             and the mix. Built by src/app/panels/karaoke.ts; hidden until a
+             song has something to say. -->
+        <section id="karaoke" class="panel-group karaoke" data-testid="karaoke" aria-label="Karaoke track" hidden></section>
 
         <section class="panel-group" aria-label="Devices">
           <h3 class="group-title">Devices</h3>
@@ -124,6 +132,12 @@
       </aside>
 
       <div id="stage">
+        <!-- Find a song: the first thing shown with no song loaded, and on
+             request with one. Built by src/app/panels/search.ts. It sits above
+             the lane, which stays so the mic and the pitch work before a song
+             is picked. -->
+        <section id="search" class="search" data-testid="search" aria-label="Find a song"></section>
+
         <!-- YouTube's embedded player. It is never covered, clipped, scaled or
              restyled, and at least 480 by 270 (the lane is a sibling, not an
              overlay); skins style only the frame around it. Hidden until a

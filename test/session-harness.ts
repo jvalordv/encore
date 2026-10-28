@@ -8,6 +8,7 @@
 import { vi } from 'vitest';
 import type { PitchFrame } from '../src/analysis/pitch';
 import { SessionCore } from '../src/app/session/core';
+import type { SearchOptions } from '../src/app/session/search';
 import type { LaneSink, SessionParts } from '../src/app/session/types';
 import { loadSettings } from '../src/app/settings';
 import { StateStore } from '../src/app/state';
@@ -105,6 +106,8 @@ export class FakePlayer extends FakeTransport {
   readonly addStem = vi.fn();
   readonly removeStem = vi.fn();
   readonly setStemGain = vi.fn();
+  /** Decodes a stem; the fake hands back an empty buffer of the bytes' size. */
+  readonly decode = vi.fn(async (bytes: ArrayBuffer) => ({ length: bytes.byteLength }) as unknown as AudioBuffer);
 }
 
 /** The mic: opens instantly with a label, and can be ended by the test. */
@@ -204,8 +207,17 @@ export function fakeLane(): LaneSink & {
   pushFrame: ReturnType<typeof vi.fn>;
   clearFrames: ReturnType<typeof vi.fn>;
   setNotice: ReturnType<typeof vi.fn>;
+  setReference: ReturnType<typeof vi.fn>;
+  fitRangeToReference: ReturnType<typeof vi.fn>;
 } {
-  return { setTime: vi.fn(), pushFrame: vi.fn(), clearFrames: vi.fn(), setNotice: vi.fn() };
+  return {
+    setTime: vi.fn(),
+    pushFrame: vi.fn(),
+    clearFrames: vi.fn(),
+    setNotice: vi.fn(),
+    setReference: vi.fn(),
+    fitRangeToReference: vi.fn(),
+  };
 }
 
 /** A whole session core on fake parts, with handles to every fake. */
@@ -221,8 +233,11 @@ export interface Harness {
   recorder: FakeRecorder;
 }
 
-/** Builds a SessionCore over fake parts; `saved` seeds the settings store. */
-export function makeHarness(saved?: Record<string, unknown>): Harness {
+/**
+ * Builds a SessionCore over fake parts; `saved` seeds the settings store and
+ * `search` replaces what the song search reaches out with.
+ */
+export function makeHarness(saved?: Record<string, unknown>, search?: SearchOptions): Harness {
   const settingsStore = memoryStore();
   if (saved) settingsStore.set('settings', JSON.stringify(saved));
   const store = new StateStore();
@@ -247,6 +262,7 @@ export function makeHarness(saved?: Record<string, unknown>): Harness {
     parts,
     takes: Promise.resolve(takeStore),
     trackerSupported: true,
+    search,
   });
   return { core, store, settingsStore, takeStore, engine, player, mic, tracker, recorder };
 }

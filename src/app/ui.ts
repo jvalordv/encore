@@ -12,12 +12,15 @@
  * Prepare for scoring group is drawn from `state.prepare` through
  * describePrepare, and its button, the automatic-prepare checkbox and a window
  * regaining focus (the service may have been started meanwhile) are the only
- * things here that lead to the service. Importing the file touches no DOM;
- * mountUI does.
+ * things here that lead to the service from a link; a dropped file's karaoke
+ * track has its own panel (panels/karaoke.ts), mounted here. Importing the
+ * file touches no DOM; mountUI does.
  */
 import { isRunning } from '../audio/transport';
 import { domEmbedHost } from '../audio/youtube-transport';
 import { parseYouTubeUrl } from '../audio/youtube-url';
+import { mountKaraokePanel } from './panels/karaoke';
+import { mountSearchPanel } from './panels/search';
 import { describePrepare } from './prepare';
 import type { Session } from './session';
 import { describeHealth, describeMonitor, describePitch, formatClock, meterFraction } from './state';
@@ -427,6 +430,13 @@ export function mountUI(session: Session, root: Document = document): UI {
     else void session.loadSong(file);
   };
   const loadLink = (text: string): void => void session.loadLink(text);
+
+  // The song's karaoke track and its mix are a panel of their own.
+  cleanups.push(mountKaraokePanel(get('karaoke'), { store, session }));
+  // The song search is what the main area shows until a song is loaded.
+  cleanups.push(
+    mountSearchPanel(get('search'), { store, session, toggle: get<HTMLButtonElement>('search-toggle') }),
+  );
 
   // The player is built into this pane; the Session shows and hides it through
   // the state (`embed`), never by touching the element.

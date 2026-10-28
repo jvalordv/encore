@@ -16,10 +16,12 @@ import type { SessionCore } from './core';
 import { firstFrameIndex, messageOf, sleep } from './helpers';
 import type { SessionParts } from './types';
 
-/** Stem ids; 'original' is the player's own and is never removed. */
-const ORIGINAL_STEM = 'original';
+/** The id of the take's stem in the Player. */
 const TAKE_STEM = 'take';
-/** Level of the song while a take plays over it, so the voice stays clear. */
+/**
+ * Level of the song's mix while a take plays over it, so the voice stays
+ * clear (the mix controller applies it to whichever stems are sounding).
+ */
 export const DUCKED_ORIGINAL_GAIN = 0.6;
 /** Seconds of song heard before the take's first sample when it is played. */
 const TAKE_LEAD_IN_S = 1;
@@ -125,7 +127,8 @@ export class TakeController {
       }
       parts.player.addStem(TAKE_STEM, buffer, offsetS);
       parts.player.setStemGain(TAKE_STEM, 1);
-      parts.player.setStemGain(ORIGINAL_STEM, DUCKED_ORIGINAL_GAIN);
+      // Whatever the mix, the song gives way to the take.
+      this.core.mix.setDucked(true);
       this.replay = { frames: take.frames, next: 0 };
       store.patch({ playingTakeId: id });
       // The seek event restarts the trace from just behind the playhead.
@@ -199,7 +202,7 @@ export class TakeController {
     const player = this.core.parts?.player;
     if (player && !wasSolo && this.core.store.state.playingTakeId !== null) {
       player.removeStem(TAKE_STEM);
-      player.setStemGain(ORIGINAL_STEM, 1);
+      this.core.mix.setDucked(false);
     }
     this.replay = null;
     this.core.store.patch({ playingTakeId: null });

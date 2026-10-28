@@ -1,0 +1,21 @@
+{
+  "kind": "youtube#searchListResponse",
+  "items": [
+    {
+      "id": { "kind": "youtube#video", "videoId": "original001" },
+      "snippet": {
+        "title": "Adele - Hello (Official Music Video)",
+        "channelTitle": "Adele",
+        "thumbnails": { "medium": { "url": "https://i.ytimg.com/vi/original001/mqdefault.jpg" } }
+      }
+    },
+    {
+      "id": { "kind": "youtube#video", "videoId": "original002" },
+      "snippet": {
+        "title": "Adele - Hello (Live)",
+        "channelTitle": "Adele",
+        "thumbnails": { "medium": { "url": "https://i.ytimg.com/vi/original002/mqdefault.jpg" } }
+      }
+    }
+  ]
+}

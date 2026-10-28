@@ -206,3 +206,20 @@ describe('style.css keeps the player inside the page at every width', () => {
     }
   });
 });
+
+describe('index.html for the karaoke track', () => {
+  it('holds the karaoke panel in the song panel, after the prepare group and hidden', () => {
+    expect(tagOf('karaoke')).toMatch(/\bhidden\b/);
+    const prepare = html.indexOf('id="prepare"');
+    const karaoke = html.indexOf('id="karaoke"');
+    const devices = html.indexOf('aria-label="Devices"');
+    expect(karaoke).toBeGreaterThan(prepare);
+    expect(karaoke).toBeLessThan(devices);
+  });
+
+  it('no longer says in the embed note that the stems and melody are unbuilt', () => {
+    const note = /id="embed-note"[^>]*>([^<]*)</.exec(html)?.[1] ?? '';
+    expect(note).toMatch(/karaoke track and the melody/);
+    expect(note).not.toMatch(/stems are not built/);
+  });
+});

@@ -21,8 +21,9 @@
  * a video playing on or a file, as it was; with nothing loaded the same
  * failure says only why; a newer load wins over an older one; a video loading
  * behind the one in use never covers it and replaces it only when ready.
- * The service is stubbed as well, answering only its health check: loading and
- * playing links must never send one to it, which every test checks. The tests
+ * The service is stubbed as well, answering its health check and the upload of a
+ * dropped file: loading and playing links must never send one to it, which
+ * every test checks. The tests
  * share one page and run in order, each building on the state the last left
  * behind.
  */
@@ -121,8 +122,10 @@ test.beforeAll(async ({ browser }) => {
 test.afterEach(() => {
   expect(pageErrors, 'page errors').toEqual([]);
   expect(strayRequests, 'requests to YouTube that were not stubbed').toEqual([]);
-  // Nothing is sent to the service for a link unless Prepare is pressed.
-  expect(service.songRequests(), 'requests to the service beyond health checks').toEqual([]);
+  // Nothing is sent to the service for a link unless Prepare is pressed. A
+  // dropped file is offered to it for its karaoke track, which is not a link.
+  const beyondUploads = service.songRequests().filter((r) => !(r.method === 'POST' && r.path === '/songs'));
+  expect(beyondUploads, 'requests to the service beyond health checks and uploads').toEqual([]);
 });
 
 test.afterAll(async () => {

@@ -17,7 +17,10 @@ import {
   laneCaption,
   midiToY,
   noteName,
+  noteRect,
+  overlappingRange,
   referenceSpan,
+  regionRect,
   segmentRibbon,
   timeToX,
   voicedRuns,
@@ -26,6 +29,7 @@ import {
 import type {
   FrameClock,
   LaneFrame,
+  LaneView,
   PixelRatioHost,
   PixelRatioQuery,
 } from '../src/render/pitch-lane';
@@ -352,6 +356,85 @@ describe('referenceSpan', () => {
   it('rejects empty contours and a bad hop', () => {
     expect(referenceSpan({ hopS: 0.01, t0S: 0, f0Hz: [] }, 0, 1)).toBeNull();
     expect(referenceSpan({ hopS: 0, t0S: 0, f0Hz: [220] }, 0, 1)).toBeNull();
+  });
+});
+
+describe('overlappingRange', () => {
+  const items: Array<[number, number]> = [
+    [0, 1],
+    [2, 3],
+    [4, 5],
+    [6, 7],
+  ];
+  const range = (from: number, to: number) =>
+    overlappingRange(items, (i) => i[0], (i) => i[1], from, to);
+
+  it('finds the items that overlap the span, ends included', () => {
+    expect(range(2.5, 4.5)).toEqual({ first: 1, last: 2 });
+    expect(range(0, 100)).toEqual({ first: 0, last: 3 });
+    expect(range(6.5, 6.6)).toEqual({ first: 3, last: 3 });
+    // An item that only touches the span's edge is in view.
+    expect(range(3, 4)).toEqual({ first: 1, last: 2 });
+  });
+
+  it('answers null for a span in a gap, before everything or after everything', () => {
+    expect(range(1.5, 1.9)).toBeNull();
+    expect(range(-5, -1)).toBeNull();
+    expect(range(8, 9)).toBeNull();
+  });
+
+  it('answers null for no items', () => {
+    expect(overlappingRange([], () => 0, () => 0, 0, 1)).toBeNull();
+  });
+});
+
+describe('noteRect and regionRect', () => {
+  // 12 semitone rows of 40 px; the plot starts at 56 px and is 400 px wide,
+  // showing 6 s with the playhead 4.5 s in, so t = 10 sits at x = 356.
+  const view: LaneView = {
+    width: 456,
+    height: 480,
+    now: 10,
+    windowS: 6,
+    futureS: 1.5,
+    midiLow: 48,
+    midiHigh: 59,
+  };
+  const gutter = 56;
+
+  it('puts a note between its onset and offset, on the row of its pitch', () => {
+    const bar = noteRect(view, { onsetS: 10, offsetS: 11, midi: 54 }, gutter);
+    expect(bar.x).toBeCloseTo(356, 9);
+    expect(bar.width).toBeCloseTo(400 / 6, 9);
+    expect(bar.height).toBeCloseTo(28, 9);
+    // The row of MIDI 54 is centred 260 px up from the bottom.
+    expect(bar.y + bar.height / 2).toBeCloseTo(220, 9);
+  });
+
+  it('puts a fractional pitch between the rows', () => {
+    const bar = noteRect(view, { onsetS: 10, offsetS: 11, midi: 54.5 }, gutter);
+    expect(bar.y + bar.height / 2).toBeCloseTo(200, 9);
+  });
+
+  it('never draws a note thinner than 3 px or a bar flatter than 4 px', () => {
+    expect(noteRect(view, { onsetS: 10, offsetS: 10.01, midi: 54 }, gutter).width).toBe(3);
+    const flat = noteRect({ ...view, height: 24 }, { onsetS: 10, offsetS: 11, midi: 54 }, gutter);
+    expect(flat.height).toBe(4);
+  });
+
+  it('holds a note out of the range at the edge of the lane, as the ribbons are', () => {
+    const high = noteRect(view, { onsetS: 10, offsetS: 11, midi: 100 }, gutter);
+    expect(high.y + high.height / 2).toBeCloseTo(20, 9);
+    const low = noteRect(view, { onsetS: 10, offsetS: 11, midi: 20 }, gutter);
+    expect(low.y + low.height / 2).toBeCloseTo(460, 9);
+  });
+
+  it('spans the whole height of the lane for an unpitched region', () => {
+    const tint = regionRect(view, 10, 11, gutter);
+    expect(tint.x).toBeCloseTo(356, 9);
+    expect(tint.width).toBeCloseTo(400 / 6, 9);
+    expect([tint.y, tint.height]).toEqual([0, 480]);
+    expect(regionRect(view, 11, 10, gutter).width).toBe(0);
   });
 });
 

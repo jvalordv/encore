@@ -19,9 +19,13 @@ import { FrameBus } from './frame-bus';
 import { InputController } from './input';
 import { LatencyController } from './latency';
 import { TickLoop } from './loop';
+import { MixController } from './mix';
 import { PlaybackController } from './playback';
 import { PrepareController } from './prepare';
+import { SearchController } from './search';
+import type { SearchOptions } from './search';
 import { SongController } from './songs';
+import { StemsController } from './stems';
 import { TakeController } from './takes';
 import type { LaneSink, SessionParts } from './types';
 
@@ -35,6 +39,8 @@ export interface SessionCoreInit {
   parts: SessionParts | null;
   takes: Promise<TakeStore>;
   youtubeApi?: () => Promise<YouTubeApi>;
+  /** What the song search reaches out with (see SearchOptions). */
+  search?: SearchOptions;
   /** Overrides the worklet support check; tests set it for fake parts. */
   trackerSupported?: boolean;
 }
@@ -62,6 +68,9 @@ export class SessionCore {
   readonly input: InputController;
   readonly devices: DeviceController;
   readonly latency: LatencyController;
+  readonly mix: MixController;
+  readonly stems: StemsController;
+  readonly search: SearchController;
   readonly loop: TickLoop;
 
   constructor(init: SessionCoreInit) {
@@ -81,6 +90,9 @@ export class SessionCore {
     this.input = new InputController(this);
     this.devices = new DeviceController(this);
     this.latency = new LatencyController(this);
+    this.mix = new MixController(this);
+    this.stems = new StemsController(this);
+    this.search = new SearchController(this, init.search);
     this.loop = new TickLoop(this);
     this.bus.subscribe(({ frame }) => {
       // While a take replays, its own trace owns the lane.

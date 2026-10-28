@@ -1,0 +1,37 @@
+{
+  "kind": "youtube#searchListResponse",
+  "items": [
+    {
+      "id": { "kind": "youtube#video", "videoId": "karaoke0001" },
+      "snippet": {
+        "title": "Adele - Hello (Karaoke Version)",
+        "channelTitle": "Sing King",
+        "thumbnails": { "medium": { "url": "https://i.ytimg.com/vi/karaoke0001/mqdefault.jpg" } }
+      }
+    },
+    {
+      "id": { "kind": "youtube#video", "videoId": "karaoke0002" },
+      "snippet": {
+        "title": "Hello &amp; Goodbye - Instrumental",
+        "channelTitle": "Backing Tracks Co",
+        "thumbnails": { "medium": { "url": "https://i.ytimg.com/vi/karaoke0002/mqdefault.jpg" } }
+      }
+    },
+    {
+      "id": { "kind": "youtube#video", "videoId": "karaoke0003" },
+      "snippet": {
+        "title": "Adele: Hello",
+        "channelTitle": "KaraFun",
+        "thumbnails": { "medium": { "url": "https://i.ytimg.com/vi/karaoke0003/mqdefault.jpg" } }
+      }
+    },
+    {
+      "id": { "kind": "youtube#video", "videoId": "original001" },
+      "snippet": {
+        "title": "Adele - Hello (Official Music Video)",
+        "channelTitle": "Adele",
+        "thumbnails": { "medium": { "url": "https://i.ytimg.com/vi/original001/mqdefault.jpg" } }
+      }
+    }
+  ]
+}

@@ -110,6 +110,11 @@ describe('stepLines', () => {
     const busy = steps(step('done', 1), { separation: step('running', 0.5) });
     expect(stepLines(busy)).toEqual(['Fetching audio: done', 'Separating the vocal 50%']);
   });
+
+  it('never shows the lyrics step, whatever it is doing', () => {
+    const lyrics = steps(step('done', 1), { lyrics: step('running', 0.3) });
+    expect(stepLines(lyrics)).toEqual(['Fetching audio: done']);
+  });
 });
 
 describe('describePrepare', () => {
@@ -165,10 +170,10 @@ describe('describePrepare', () => {
     expect(WAITING_NOTE).toMatch(/^Prepared; switching after this take/);
   });
 
-  it('reads Prepared once the app\'s own audio is the song, and says what that is not yet', () => {
+  it('reads Prepared once the app\'s own audio is the song, and says the karaoke track follows', () => {
     const view = describePrepare(state('prepared', { message: PREPARED_NOTE }));
     expect(view).toMatchObject({ label: PREPARED_LABEL, disabled: true, note: PREPARED_NOTE });
-    expect(PREPARED_NOTE).toMatch(/not built yet/);
+    expect(PREPARED_NOTE).toMatch(/karaoke track and the melody follow/);
   });
 
   it('offers Add again, with the reason, after a failure', () => {

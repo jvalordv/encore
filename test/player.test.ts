@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AudioEngine } from '../src/audio/engine';
 import {
   Player,
+  STEM_LEAD_S,
   clampSeek,
   copyOverlap,
   fnv1aHex,
@@ -202,8 +203,11 @@ describe('hashing', () => {
 class FakeParam {
   value = 1;
   targets: number[] = [];
-  setTargetAtTime(v: number): void {
+  /** The context time each target was asked to begin at. */
+  times: number[] = [];
+  setTargetAtTime(v: number, at = 0): void {
     this.targets.push(v);
+    this.times.push(at);
   }
 }
 
@@ -623,6 +627,49 @@ describe('Player stems', () => {
     player.play();
     const takeGain = ctx.sources[1].dest as FakeGain;
     expect(takeGain.gain.targets).toEqual([1, 0, 0.25]);
+  });
+
+  it('starts a stem at the level it is added with, so a silent one is never heard', async () => {
+    const { player, ctx } = await loaded();
+    player.play();
+    player.addStem('no_vocals', stemBuffer(30), 0, 0);
+    expect(player.stemGain('no_vocals')).toBe(0);
+    const gain = ctx.sources[1].dest as FakeGain;
+    expect(gain.gain.value).toBe(0);
+    // Added while playing, it is already running beside the original.
+    expect(ctx.sources).toHaveLength(2);
+    expect(ctx.sources[1].starts).toHaveLength(1);
+  });
+
+  it('keeps the level of a stem added again, unless the call names one', async () => {
+    const { player } = await loaded();
+    player.addStem('take', stemBuffer(30), 0, 0.4);
+    expect(player.stemGain('take')).toBe(0.4);
+    player.addStem('take', stemBuffer(20));
+    expect(player.stemGain('take')).toBe(0.4);
+    player.addStem('take', stemBuffer(20), 0, 0.9);
+    expect(player.stemGain('take')).toBe(0.9);
+  });
+
+  it('can begin a change of level later, so one stem can take over from another', async () => {
+    const { player, ctx } = await loaded();
+    player.addStem('take', stemBuffer(30));
+    ctx.currentTime = 2;
+    player.setStemGain('take', 0.5, STEM_LEAD_S);
+    player.setStemGain('take', 0.25);
+    player.play();
+    const gain = ctx.sources[1].dest as FakeGain;
+    expect(gain.gain.targets).toEqual([0.5, 0.25]);
+    expect(gain.gain.times[0]).toBeCloseTo(2 + LEAD, 9);
+    expect(gain.gain.times[1]).toBe(2);
+    expect(STEM_LEAD_S).toBe(LEAD);
+  });
+
+  it('decodes bytes the way it decodes a song, for a stem', async () => {
+    const { player, ctx } = await loaded();
+    const stem = new FakeBuffer(2, 30 * RATE, RATE);
+    ctx.decoded = stem;
+    expect(await player.decode(new ArrayBuffer(4))).toBe(stem);
   });
 
   it('places a stem by its offset in song time', async () => {

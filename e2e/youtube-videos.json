@@ -1,0 +1,10 @@
+{
+  "kind": "youtube#videoListResponse",
+  "items": [
+    { "id": "karaoke0001", "contentDetails": { "duration": "PT3M42S" } },
+    { "id": "karaoke0002", "contentDetails": { "duration": "PT4M1S" } },
+    { "id": "karaoke0003", "contentDetails": { "duration": "PT1H2M3S" } },
+    { "id": "original001", "contentDetails": { "duration": "PT6M7S" } },
+    { "id": "original002", "contentDetails": { "duration": "PT5M" } }
+  ]
+}

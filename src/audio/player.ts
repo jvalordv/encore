@@ -44,6 +44,12 @@ const ORIGINAL = 'original';
  * in the same audio render quantum and they cannot drift apart at the start.
  */
 const START_LEAD_S = 0.03;
+/**
+ * How long a stem added during playback waits before it sounds. A change of
+ * level meant to take over from another stem starts this late, so the old one
+ * is not faded out before the new one is heard.
+ */
+export const STEM_LEAD_S = START_LEAD_S;
 /** Loops shorter than this are rejected; they would just buzz. */
 const MIN_LOOP_S = 0.1;
 /** Positions this close to the end count as the end. */
@@ -273,12 +279,19 @@ export class Player implements Transport {
     return this.infoValue;
   }
 
+  /** Decodes audio bytes into a buffer at the engine's rate, for `addStem`. */
+  decode(bytes: ArrayBuffer): Promise<AudioBuffer> {
+    return this.engine.context.decodeAudioData(bytes);
+  }
+
   /**
    * Adds or replaces a stem played in sync with the original. `offsetS` is
-   * the song time at which the buffer's first sample plays. Throws before a
-   * song is loaded, and for the reserved id 'original' (use `load`).
+   * the song time at which the buffer's first sample plays, and `level` the
+   * gain it starts at (default 1; a stem meant to be silent at first is not
+   * heard for the moment before its level is set). Throws before a song is loaded, and for
+   * the reserved id 'original' (use `load`).
    */
-  addStem(id: string, buffer: AudioBuffer, offsetS = 0): void {
+  addStem(id: string, buffer: AudioBuffer, offsetS = 0, level?: number): void {
     if (this.stateValue === 'empty') throw new Error('Load a song before adding stems');
     if (id === ORIGINAL) throw new Error("The 'original' stem is set by load()");
     let stem = this.stems.get(id);
@@ -286,8 +299,10 @@ export class Player implements Transport {
       this.retire(stem, this.engine.now());
       stem.buffer = buffer;
       stem.offsetS = offsetS;
+      // A stem added again keeps its level unless this call names one.
+      if (level !== undefined) this.applyLevel(stem, level, 0);
     } else {
-      stem = this.makeStem(buffer, offsetS);
+      stem = this.makeStem(buffer, offsetS, level);
       this.stems.set(id, stem);
     }
     if (this.stateValue === 'playing') {
@@ -307,12 +322,14 @@ export class Player implements Transport {
     this.emit('stems');
   }
 
-  /** Sets a stem's level, clamped to 0..1 and smoothed to avoid clicks. */
-  setStemGain(id: string, gain: number): void {
+  /**
+   * Sets a stem's level, clamped to 0..1 and smoothed to avoid clicks. With
+   * `delayS` the change begins that many seconds from now.
+   */
+  setStemGain(id: string, gain: number, delayS = 0): void {
     const stem = this.stems.get(id);
     if (!stem || Number.isNaN(gain)) return;
-    stem.level = Math.min(Math.max(gain, 0), 1);
-    stem.gain.gain.setTargetAtTime(stem.level, this.engine.now(), GAIN_SMOOTH_S);
+    this.applyLevel(stem, gain, delayS);
     this.emit('stems');
   }
 
@@ -436,11 +453,19 @@ export class Player implements Transport {
     return wrapLoop(Math.max(this.anchorSongS, linear), this.runLoop, this.duration);
   }
 
-  private makeStem(buffer: AudioBuffer, offsetS = 0): Stem {
+  private makeStem(buffer: AudioBuffer, offsetS = 0, level = 1): Stem {
     const gain = this.engine.context.createGain();
-    gain.gain.value = 1;
+    const start = Math.min(Math.max(Number.isNaN(level) ? 1 : level, 0), 1);
+    gain.gain.value = start;
     gain.connect(this.engine.master);
-    return { buffer, offsetS, level: 1, gain, source: null };
+    return { buffer, offsetS, level: start, gain, source: null };
+  }
+
+  /** Moves a stem's gain to `level` (clamped) over a short ramp. */
+  private applyLevel(stem: Stem, level: number, delayS: number): void {
+    stem.level = Math.min(Math.max(level, 0), 1);
+    const at = this.engine.now() + Math.max(0, delayS);
+    stem.gain.gain.setTargetAtTime(stem.level, at, GAIN_SMOOTH_S);
   }
 
   /**

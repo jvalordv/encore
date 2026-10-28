@@ -46,6 +46,21 @@ describe('initialState', () => {
       embed: null,
       embedOffsetS: 0,
       prepare: { phase: 'none', steps: null, message: '' },
+      karaoke: { phase: 'none', uploadProgress: 0, steps: null, message: '' },
+      mix: { available: false, choice: 'original', guideLevel: 0.5 },
+      reference: { phase: 'none', notes: 0, message: '' },
+      search: {
+        open: false,
+        filter: 'karaoke',
+        query: '',
+        phase: 'idle',
+        results: [],
+        errorCode: null,
+        message: '',
+        hasKey: false,
+        quotaSpent: false,
+        originalOf: null,
+      },
       positionS: 0,
       loop: null,
       durationS: 0,
@@ -697,7 +712,14 @@ describe('Session without Web Audio', () => {
   it('has no transport and reads the lane position as zero', () => {
     const { session } = bare();
     expect(session.transport).toBeNull();
-    const lane = { setTime: vi.fn(), pushFrame: vi.fn(), clearFrames: vi.fn(), setNotice: vi.fn() };
+    const lane = {
+      setTime: vi.fn(),
+      pushFrame: vi.fn(),
+      clearFrames: vi.fn(),
+      setNotice: vi.fn(),
+      setReference: vi.fn(),
+      fitRangeToReference: vi.fn(),
+    };
     session.attachLane(lane);
     expect(lane.setTime).toHaveBeenCalledWith(0);
   });

@@ -4,8 +4,10 @@
  * worth a dependency; change both together). Field names are the wire's own,
  * snake_case, so a parsed JSON body is one of these without a translation
  * layer. Only what the browser reads today is mirrored: the song status the
- * app polls and the request that adds a link. The rest (contour, notes,
- * lyrics, take analysis) joins it as the tasks that use it land.
+ * app polls, the request that adds a link and the reference melody (`Reference`
+ * with its `Contour` and `Note`s; a note's `vibrato` is not measured yet and is
+ * left out). The rest (lyrics, take analysis) joins it as the tasks that use
+ * it land.
  */
 
 /** Lifecycle of one preparation step. */
@@ -52,3 +54,35 @@ export interface SongStatus {
 export interface SongLinkRequest {
   url: string;
 }
+
+/** Frame-by-frame pitch track: `f0_hz[i]` is at `t0_s + i * hop_s`. */
+export interface Contour {
+  hop_s: number;
+  t0_s: number;
+  /** Fundamental in Hz; 0 means unvoiced. */
+  f0_hz: number[];
+  confidence: number[];
+}
+
+/** One segmented note of the original vocal. */
+export interface Note {
+  onset_s: number;
+  offset_s: number;
+  /** Fractional MIDI note number. */
+  midi: number;
+  cents_mean: number;
+  cents_std: number;
+  scoop_cents: number;
+}
+
+/** The original vocal's melody, as `GET /songs/{id}/reference` sends it. */
+export interface Reference {
+  contour: Contour;
+  notes: Note[];
+  range: { low_midi: number; high_midi: number };
+  /** Stretches [start_s, end_s] where something sounds but no note was sung. */
+  unpitched_regions: Array<[number, number]>;
+}
+
+/** Which stem `GET /songs/{id}/stems/{stem}` serves. */
+export type StemName = 'vocals' | 'no_vocals';

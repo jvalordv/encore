@@ -1,12 +1,15 @@
 /**
  * Typed client for the optional Python service (see "Song sources" in
  * docs/ARCHITECTURE.md and the routes in service/encore_service/routes/
- * songs.py). It wraps the five calls the browser makes today: `health` (is the
- * service running), `createSongFromUrl` (add a YouTube link), `getSong` (one
- * status), `fetchSongAudio` (the stored audio) and `pollSong` (a status loop
- * that ends when the audio is fetched or a step has failed). Nothing here
- * decides to talk to the service: the caller does, and a client is built from
- * the `serviceUrl` setting each time, so a changed setting needs no restart.
+ * songs.py). It wraps the calls the browser makes: `health` (is the service
+ * running), `createSongFromUrl` (add a YouTube link), `uploadSong` (add a
+ * file, with progress), `getSong` (one status), `fetchSongAudio` (the stored
+ * audio), `fetchStem` (the vocal or the backing, with the gain they were
+ * scaled by), `fetchReference` (the melody) and `pollSong` (a status loop that
+ * ends when the audio is fetched, when a chosen step has settled, or when a
+ * step has failed). Nothing here decides to talk to the service: the caller
+ * does, and a client is built from the `serviceUrl` setting each time, so a
+ * changed setting needs no restart.
  *
  * A failed call throws a ServiceError whose `kind` says what to do about it:
  * 'unreachable' (no answer, or too slow), 'rejected' (a 422 or 502 whose plain
@@ -19,7 +22,10 @@
  * network.
  */
 import { STEP_NAMES } from './types';
-import type { SongLinkRequest, SongStatus, StepName, StepState } from './types';
+import type { Reference, SongLinkRequest, SongStatus, StemName, StepName, StepState } from './types';
+import { postFile } from './upload';
+import { isReference, parseStemGain, STEM_GAIN_HEADER } from './wire';
+import type { StemDownload } from './wire';
 
 /** Longest GET /health may take before the service counts as not running. */
 export const HEALTH_TIMEOUT_MS = 1500;
@@ -29,6 +35,9 @@ export const REQUEST_TIMEOUT_MS = 30_000;
 
 /** Longest the audio download may take, body included. */
 export const AUDIO_TIMEOUT_MS = 120_000;
+
+/** Longest an upload may take, the service's reply included. */
+export const UPLOAD_TIMEOUT_MS = 300_000;
 
 /** Wait before the first status poll, and the most the wait grows to. */
 export const POLL_FIRST_MS = 500;
@@ -154,6 +163,22 @@ export function failedStep(status: SongStatus): StepName | null {
 }
 
 /**
+ * True once every step up to and including `upTo` has run its course: done,
+ * skipped or failed. A step that failed ends the wait early, since the ones
+ * after it stay queued (a restart interrupts a song that way) and the caller
+ * reads the failure from the step itself.
+ */
+export function settledThrough(status: SongStatus, upTo: StepName): boolean {
+  for (const name of STEP_NAMES) {
+    const { state } = status.steps[name];
+    if (state === 'failed') return true;
+    if (state === 'queued' || state === 'running') return false;
+    if (name === upTo) return true;
+  }
+  return true;
+}
+
+/**
  * Wait before the poll that follows `attempt` earlier ones: 500 ms, then 750,
  * 1125, 1688 and 2000 from there on. Slow enough not to hammer a service busy
  * downloading, quick enough that a short fetch is noticed.
@@ -163,9 +188,13 @@ export function pollDelayMs(attempt: number): number {
   return Math.min(POLL_MAX_MS, Math.round(POLL_FIRST_MS * POLL_GROWTH ** n));
 }
 
-/** What pollSong reports when it stops. */
+/**
+ * What pollSong reports when it stops. 'settled' answers `through` (see
+ * PollOptions): the steps up to it have run their course, whichever way.
+ */
 export type PollOutcome =
   | { kind: 'fetched'; status: SongStatus }
+  | { kind: 'settled'; status: SongStatus }
   | { kind: 'failed'; status: SongStatus; step: StepName }
   | { kind: 'aborted' };
 
@@ -175,6 +204,12 @@ export interface PollOptions {
   onUpdate?: (status: SongStatus) => void;
   /** Stops the polling at once; pollSong then settles as 'aborted'. */
   signal?: AbortSignal;
+  /**
+   * Keep polling until the steps up to this one have settled (see
+   * `settledThrough`), whatever the later ones do. Without it the poll ends
+   * when the audio is fetched or any step has failed.
+   */
+  through?: StepName;
 }
 
 /** Resolves true after `ms`, or false at once if `signal` aborts first. */
@@ -207,33 +242,38 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-/** The ServiceError for a response with a failing status. */
-async function failureOf(response: Response): Promise<ServiceError> {
-  const kind = kindOfStatus(response.status);
-  let body: unknown = null;
+/** Parses text as JSON; null for what is not (an error page, no body). */
+function parseJson(text: string): unknown {
   try {
-    body = JSON.parse(await response.text()) as unknown;
+    return JSON.parse(text) as unknown;
   } catch {
-    // An error page that is not JSON: the status alone has to do.
+    return null;
   }
+}
+
+/** The ServiceError for a failing status and the JSON body that came with it. */
+function failureFrom(status: number, body: unknown): ServiceError {
+  const kind = kindOfStatus(status);
   switch (kind) {
     case 'rejected':
       return new ServiceError(
         kind,
-        plainDetail(body, `The service refused the request (HTTP ${response.status}).`),
-        response.status,
+        plainDetail(body, `The service refused the request (HTTP ${status}).`),
+        status,
       );
     case 'not-found':
-      return new ServiceError(kind, NOT_FOUND_MESSAGE, response.status);
+      return new ServiceError(kind, NOT_FOUND_MESSAGE, status);
     case 'not-fetched':
-      return new ServiceError(kind, NOT_FETCHED_MESSAGE, response.status);
+      return new ServiceError(kind, NOT_FETCHED_MESSAGE, status);
     default:
-      return new ServiceError(
-        kind,
-        `The service answered with an error (HTTP ${response.status}).`,
-        response.status,
-      );
+      return new ServiceError(kind, `The service answered with an error (HTTP ${status}).`, status);
   }
+}
+
+/** The ServiceError for a response with a failing status. */
+async function failureOf(response: Response): Promise<ServiceError> {
+  // An error page that is not JSON leaves the status alone to do the talking.
+  return failureFrom(response.status, parseJson(await response.text()));
 }
 
 /** Everything injectable; only the address is required. */
@@ -245,6 +285,16 @@ export interface ServiceClientOptions {
   healthTimeoutMs?: number;
   requestTimeoutMs?: number;
   audioTimeoutMs?: number;
+  uploadTimeoutMs?: number;
+  /** Builds the upload's request; the page's own XMLHttpRequest by default. */
+  xhr?: () => XMLHttpRequest;
+}
+
+/** What an upload is told and what it reports. */
+export interface UploadCallOptions {
+  /** Called with the share sent, 0 to 1. */
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
 }
 
 /** The service's HTTP API, as far as the browser uses it. */
@@ -254,6 +304,8 @@ export class ServiceClient {
   private readonly healthTimeoutMs: number;
   private readonly requestTimeoutMs: number;
   private readonly audioTimeoutMs: number;
+  private readonly uploadTimeoutMs: number;
+  private readonly xhrFactory: (() => XMLHttpRequest) | undefined;
 
   constructor(options: ServiceClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
@@ -261,6 +313,8 @@ export class ServiceClient {
     this.healthTimeoutMs = options.healthTimeoutMs ?? HEALTH_TIMEOUT_MS;
     this.requestTimeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
     this.audioTimeoutMs = options.audioTimeoutMs ?? AUDIO_TIMEOUT_MS;
+    this.uploadTimeoutMs = options.uploadTimeoutMs ?? UPLOAD_TIMEOUT_MS;
+    this.xhrFactory = options.xhr;
   }
 
   /**
@@ -308,14 +362,70 @@ export class ServiceClient {
   }
 
   /**
+   * Adds an audio file as a song and answers with its status. The service
+   * names a song by the hash of its bytes, so a file it has is a cache hit.
+   * `onProgress` hears the share sent (0 to 1); a stop through `signal` is an
+   * AbortError, like any other call. A refusal (an empty file, one over the
+   * size limit, one of a type it does not take) carries the service's own
+   * plain reason.
+   */
+  async uploadSong(file: File, options: UploadCallOptions = {}): Promise<SongStatus> {
+    const result = await postFile(`${this.baseUrl}/songs`, 'file', file, {
+      onProgress: options.onProgress,
+      signal: options.signal,
+      timeoutMs: this.uploadTimeoutMs,
+      xhr: this.xhrFactory,
+    });
+    if (result.kind === 'aborted') throw abortError();
+    if (result.kind === 'network') throw new ServiceError('unreachable', UNREACHABLE_MESSAGE);
+    const body = parseJson(result.text);
+    if (result.status < 200 || result.status >= 300) {
+      // The upload route also says no with a 400, 413 or 415, each with a
+      // plain reason of its own.
+      if ([400, 413, 415].includes(result.status)) {
+        const fallback = `The service refused the file (HTTP ${result.status}).`;
+        throw new ServiceError('rejected', plainDetail(body, fallback), result.status);
+      }
+      throw failureFrom(result.status, body);
+    }
+    return this.statusOf(body);
+  }
+
+  /**
+   * One stem of a separated song (24-bit FLAC) with the factor the song was
+   * scaled by to make the stems. A 409 ('not-fetched') means it has not been
+   * separated yet.
+   */
+  async fetchStem(id: string, stem: StemName, signal?: AbortSignal): Promise<StemDownload> {
+    const path = `/songs/${encodeURIComponent(id)}/stems/${stem}`;
+    const limits = { timeoutMs: this.audioTimeoutMs, signal };
+    return this.call(path, { method: 'GET' }, limits, async (response) => ({
+      bytes: await response.arrayBuffer(),
+      gain: parseStemGain(response.headers.get(STEM_GAIN_HEADER)),
+    }));
+  }
+
+  /**
+   * The song's reference melody. A 409 ('not-fetched') means there is none:
+   * the step has not finished, or it was skipped (the status says which).
+   */
+  async fetchReference(id: string, signal?: AbortSignal): Promise<Reference> {
+    const path = `/songs/${encodeURIComponent(id)}/reference`;
+    const limits = { timeoutMs: this.requestTimeoutMs, signal };
+    const body = await this.call(path, { method: 'GET' }, limits, readJson);
+    if (!isReference(body)) throw new ServiceError('unexpected', BAD_BODY_MESSAGE);
+    return body;
+  }
+
+  /**
    * Polls the song's status with a growing wait (see `pollDelayMs`) until it
-   * settles (see `settledAs`) or `signal` aborts. One dropped request should
-   * not lose a download that is under way, so a poll nobody answers is tried
-   * again; POLL_MAX_UNANSWERED of them in a row, or any other failure, is
-   * thrown.
+   * settles (see `settledAs`, or `settledThrough` with the `through` option)
+   * or `signal` aborts. One dropped request should not lose a download that is
+   * under way, so a poll nobody answers is tried again; POLL_MAX_UNANSWERED of
+   * them in a row, or any other failure, is thrown.
    */
   async pollSong(id: string, options: PollOptions = {}): Promise<PollOutcome> {
-    const { signal, onUpdate } = options;
+    const { signal, onUpdate, through } = options;
     let attempt = 0;
     let unanswered = 0;
     for (;;) {
@@ -333,6 +443,10 @@ export class ServiceClient {
       }
       unanswered = 0;
       onUpdate?.(status);
+      if (through !== undefined) {
+        if (settledThrough(status, through)) return { kind: 'settled', status };
+        continue;
+      }
       const settled = settledAs(status);
       if (settled === 'fetched') return { kind: 'fetched', status };
       if (settled === 'failed') {

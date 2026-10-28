@@ -12,11 +12,15 @@ import type { Recorder } from '../../audio/recorder';
 import type { YouTubeApi } from '../../audio/youtube-api';
 import type { PitchLane } from '../../render/pitch-lane';
 import type { StateStore } from '../state';
+import type { SearchOptions } from './search';
 import type { KeyValueStore } from '../storage';
 import type { TakeStore } from '../takes';
 
 /** The lane methods the Session drives; PitchLane satisfies them. */
-export type LaneSink = Pick<PitchLane, 'setTime' | 'pushFrame' | 'clearFrames' | 'setNotice'>;
+export type LaneSink = Pick<
+  PitchLane,
+  'setTime' | 'pushFrame' | 'clearFrames' | 'setNotice' | 'setReference' | 'fitRangeToReference'
+>;
 
 /** The audio objects behind the Session, exposed for tests and debugging. */
 export interface SessionParts {
@@ -41,6 +45,8 @@ export interface SessionOptions {
    * fetches Google's script. Tests and the end-to-end run substitute a stub.
    */
   youtubeApi?: () => Promise<YouTubeApi>;
+  /** What the song search reaches out with; tests and the e2e run replace it. */
+  search?: SearchOptions;
 }
 
 /** Devices the browser currently offers. */

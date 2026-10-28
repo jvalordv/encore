@@ -2,8 +2,9 @@
  * The pitch lane canvas. Owns the <canvas>, keeps its bitmap matched to its
  * container (ResizeObserver plus devicePixelRatio) and composes the layers
  * back to front: the grid (background, semitone and octave rows, piano-key
- * gutter; lane-grid.ts), the reference contour as a soft band
- * (lane-reference.ts), one live f0 ribbon per singer (lane-ribbon.ts), and the
+ * gutter; lane-grid.ts), the reference melody (a tint where it has sound but
+ * no note, the contour as a soft band, the target notes as bars;
+ * lane-reference.ts), one live f0 ribbon per singer (lane-ribbon.ts), and the
  * overlay with the notice and the playhead (lane-overlay.ts). The lane scrolls
  * with song time, so what the singer sees at the playhead is what they are
  * singing now and what is coming sits to its right. A one-line notice can be
@@ -42,12 +43,23 @@ export {
   isBlackKey,
   midiToY,
   noteName,
+  noteRect,
+  overlappingRange,
   referenceSpan,
+  regionRect,
   segmentRibbon,
   timeToX,
   voicedRuns,
 } from './lane-geometry';
-export type { AlphaRun, LaneFrame, LaneOptions, LaneReference } from './lane-geometry';
+export type {
+  AlphaRun,
+  LaneFrame,
+  LaneNote,
+  LaneOptions,
+  LaneRect,
+  LaneReference,
+  LaneView,
+} from './lane-geometry';
 export { RedrawLoop, watchPixelRatio } from './lane-clock';
 export type { FrameClock, PixelRatioHost, PixelRatioQuery } from './lane-clock';
 export { laneCaption } from './lane-overlay';
@@ -78,6 +90,10 @@ export class PitchLane {
   private readonly stopPixelRatio: () => void;
   private midiLow = DEFAULT_LOW_MIDI;
   private midiHigh = DEFAULT_HIGH_MIDI;
+  // The rows the lane was built with, and whether a reference has moved them.
+  private baseLow = DEFAULT_LOW_MIDI;
+  private baseHigh = DEFAULT_HIGH_MIDI;
+  private fitted = false;
   private style: LaneStyle;
   private reference: LaneReference | null = null;
   private notice: string | null = null;
@@ -109,6 +125,8 @@ export class PitchLane {
     this.windowS = Math.max(0.5, options.windowS ?? DEFAULT_WINDOW_S);
     this.futureS = Math.min(this.windowS * 0.9, Math.max(0, options.futureS ?? DEFAULT_FUTURE_S));
     this.applyRange(options.midiLow ?? DEFAULT_LOW_MIDI, options.midiHigh ?? DEFAULT_HIGH_MIDI);
+    this.baseLow = this.midiLow;
+    this.baseHigh = this.midiHigh;
     const capacity = Math.ceil((this.windowS + TRIM_MARGIN_S) * RING_SLOTS_PER_S);
     this.rings = [new FrameRing(capacity), new FrameRing(capacity)];
     this.style = readLaneStyle();
@@ -162,9 +180,17 @@ export class PitchLane {
     this.loop.invalidate();
   }
 
-  /** Sets the reference contour to overlay, or null to remove it. */
+  /**
+   * Sets the reference melody to overlay, or null to remove it. Removing it
+   * also puts back the rows the lane was built with, if a reference had fitted
+   * them to its melody.
+   */
   setReference(ref: LaneReference | null): void {
     this.reference = ref;
+    if (ref === null && this.fitted) {
+      this.fitted = false;
+      this.setRange(this.baseLow, this.baseHigh);
+    }
     this.loop.invalidate();
   }
 
@@ -179,6 +205,7 @@ export class PitchLane {
   fitRangeToReference(): void {
     if (!this.reference) return;
     const { midiLow, midiHigh } = fitRange(this.reference.f0Hz);
+    this.fitted = true;
     this.setRange(midiLow, midiHigh);
   }
 

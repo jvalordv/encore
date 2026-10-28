@@ -184,7 +184,21 @@ so learning mode when it is up. Scoring and tips run in the browser.
   - `playback.ts`, `PlaybackController`: play, pause, stop, seek, nudge and
     the loop A/B controls, each a guard over the active transport.
   - `prepare.ts`, `PrepareController`: the service probe, the preparation
-    attempt and the switch to prepared audio, with the embed follower.
+    attempt and the switch to prepared audio, with the embed follower. After
+    the switch it hands the song's status to `stems.follow`.
+  - `stems.ts`, `StemsController`: the karaoke track of the song in use. A
+    dropped file is sent to `POST /songs` once it has loaded (after a health
+    check, in the background; with the service away the song plays as before
+    and the panel says so in one line, and a return to the window asks
+    again), a prepared link is followed from its status. Either way it
+    polls through separation, downloads and decodes both stems into the mix,
+    polls through the reference step and puts the melody on the lane. One
+    run belongs to one song: a newer song taking over (`reset`) aborts the
+    upload and the polling through their `AbortSignal`, and a late result is
+    turned away by `isCurrent` (epoch, signal and the Player's song key). A
+    load that fails leaves the old song and its track as they were.
+  - `mix.ts`, `MixController`: the stems it put into the Player and which of
+    them are heard. See Stems and the mix, below.
   - `input.ts`, `InputController`: the mic, headphone or speaker mode, the
     tracker connection, and turning tracker frames into song-time frames.
   - `devices.ts`, `DeviceController`: device lists, the output choice.
@@ -211,15 +225,102 @@ so learning mode when it is up. Scoring and tips run in the browser.
   canvas, the resize and skin listeners and the redraw loop, and composes
   layers back to front, each a function over a `LaneView` and a `LaneStyle`:
   `lane-grid.ts` (rows, octave lines, piano gutter; cached offscreen),
-  `lane-reference.ts` (the reference band), `lane-ribbon.ts` (one call per
-  singer), `lane-overlay.ts` (notice or invitation, playhead; hit colours
-  land here). Pure arithmetic is in `lane-geometry.ts`, the redraw loop and
-  pixel-ratio watcher in `lane-clock.ts`, the skin colours in
+  `lane-reference.ts` (the reference melody, below), `lane-ribbon.ts` (one
+  call per singer), `lane-overlay.ts` (notice or invitation, playhead; hit
+  colours land here). Pure arithmetic is in `lane-geometry.ts`, the redraw
+  loop and pixel-ratio watcher in `lane-clock.ts`, the skin colours in
   `lane-style.ts`. `pitch-lane.ts` re-exports the pure helpers.
+- **Stems and the mix** (W2b). The service's stems are the song times a
+  factor `g` (`X-Stem-Gain`, at most 1, so they cannot clip). The Player
+  holds the original (its `original` stem) and, once they arrive,
+  `no_vocals` and `vocals`, all playing in step from the same anchor. A mix is
+  only a level per stem (`mixLevels` in `src/app/mix.ts`, pure and tested):
+  *Original* plays the original at `g`; *Karaoke* the instrumental at unity;
+  *Karaoke with a vocal guide* adds the vocal at the slider's level
+  (`guideLevel` in settings, through `sanitizeSettings`). The stems are never
+  scaled up, and the original is brought down to their level, so a mix change
+  does not change the loudness. Karaoke becomes the selection when the stems
+  arrive, also mid-song: they are added silent (`Player.addStem` takes a
+  level), then raised as the original falls, both starting `STEM_LEAD_S` from
+  now, so the song carries on at the same position with no restart and no
+  step. A switch of mix is a gain move smoothed over 10 ms. A take replayed
+  over the song lowers the whole mix (`MixController.setDucked`) instead of
+  only the original, so it works in every mix; loop, seek and recording act
+  on the transport and never see the mix. `AppState` carries `karaoke` (the
+  phase of the track, the upload's progress and the service's steps),
+  `mix` (`available`, `choice`, `guideLevel`) and `reference` (`phase`,
+  `notes`, `message`); the karaoke panel draws them through the pure
+  `describeKaraoke`.
+- **The reference melody on the lane.** `laneReferenceOf`
+  (`src/app/reference.ts`) turns the service's `Reference` into a
+  `LaneReference`: the contour, the notes (`onsetS`, `offsetS`, `midi`) and
+  the unpitched regions, the last two sorted. `drawReference` paints, back to
+  front: a quiet tint of the muted text colour across the lane's height over
+  each unpitched region (sound with no note sung), the contour as a soft
+  band, and the notes as bars (3 px at the narrowest, 70% of a semitone row
+  high) in the skin's reference colour. The in-view notes and regions are
+  found by a binary search (`overlappingRange`), and the bar and tint
+  rectangles come from `noteRect` and `regionRect`, all pure. Loading a
+  melody fits the lane's rows to it, and removing it puts the rows back.
+  A skipped reference leaves the lane without targets and the panel shows
+  its `detail`. Nothing here depends on the singing: karaoke mode draws no
+  scores, colours or misses, and learning mode's hit colours are the overlay
+  layer's.
 - **Panels.** New UI is a panel in `src/app/panels/<name>.ts` exporting a
   mount function `(host, deps) => dispose` (the types are in
   `panels/panel.ts`); `ui.ts` only composes panels. Existing UI stays in
-  `ui.ts` until a wave has reason to move it.
+  `ui.ts` until a wave has reason to move it. The first is the karaoke
+  panel (`panels/karaoke.ts`, mounted on `#karaoke` in the song panel): the
+  upload and step progress lines, the one line that says what is missing when
+  the service is away, the melody line, the mix buttons and the guide slider.
+  The second is the search panel (below).
+- **Song search** (W2a: `src/search/`, `src/app/search.ts`,
+  `src/app/session/search.ts`, `src/app/panels/search.ts`). The provider seam:
+  a `SearchProvider` takes `{text, filter}` (`'karaoke'` or `'original'`) and
+  an abort signal and returns a `SearchOutcome`, either `{ok: true, results}`
+  or `{ok: false, error: {code, message}}`; it never throws. Codes: `no-key`,
+  `bad-key`, `restricted` (a referrer or API block), `quota`, `network`,
+  `failed` and `aborted`, each with a sentence in plain words that never holds
+  the key. `createSearchProvider(settings)` in `src/search/index.ts` is the
+  only reader of the `searchProvider` setting (today only `'youtube'`); a
+  provider that calls a server holding the key, for a public app, is one more
+  case there and nothing else changes. The YouTube provider calls the Data API
+  v3 straight from the page with the key in `youtubeApiKey`: `search.list`
+  (`part=snippet`, `type=video`, `videoEmbeddable=true`, `maxResults=12`; 100
+  units), then one `videos.list` (`part=contentDetails`; 1 unit) for the
+  lengths, which are a nicety, so a failure there only drops the numbers. The
+  pure pieces are tested on their own: ISO 8601 durations, the karaoke or
+  original classifier (title and channel words, known karaoke channels), the
+  query for the chip (Karaoke versions adds "karaoke"; Originals adds
+  `-karaoke`, unless the words ask for it), `findOriginalQuery` (a karaoke
+  title without its karaoke words, bracketed tags, `|` tag lines and the
+  channel's name, keeping an "Originally performed by" artist), the key's
+  shape, error reading and HTML entities in titles. The state is
+  `AppState.search` (`open`, `filter`, `query`, `phase`, `results`,
+  `errorCode`, `message`, `hasKey`, `quotaSpent`, `originalOf`) written by the
+  Session's `SearchController` through `searchSongs`, `setSearchFilter`,
+  `setSearchOpen`, `setSearchKey`, `pickResult` and `findOriginal`; the panel
+  only draws it. With no key, or once the quota is spent (`quotaExceeded`,
+  `dailyLimitExceeded`; remembered until the page reloads or a key is saved),
+  `searchSongs` opens `https://www.youtube.com/results?search_query=...` with
+  `window.open(url, '_blank', 'noopener')`, before anything is awaited so it
+  stays inside the click. A pick goes down `loadLink`, the path of a pasted
+  link. The search is what `#stage` shows with no song and on request with one
+  (the Search button in the song panel); the lane stays under it at a fixed
+  height so the mic and the pitch readout work before a song is picked. The
+  key is kept in the settings blob through the storage adapter, shown nowhere
+  once saved, and goes only to Google. `Session.findOriginal({title, channel})`
+  is what W3's learning mode calls for a karaoke track.
+- **Service client additions** (W2b). `ServiceClient` gains `uploadSong`
+  (XMLHttpRequest in `src/service/upload.ts`, because `fetch` has no upload
+  progress), `fetchStem` (bytes and the gain from the header, which the
+  service lets a page on another origin read) and `fetchReference`
+  (checked by `isReference` in `src/service/wire.ts` before the lane sees
+  it), all abortable. `pollSong` takes `through: <step>` and then ends when
+  every step up to it is done, skipped or failed (`settledThrough`; a failure
+  ends the wait early since the steps after it stay queued), instead of at
+  the fetch. `types.ts` mirrors `Reference`, `Contour` and `Note`; the
+  lyrics step stays in the types but no panel line names it.
 
 ## Service
 

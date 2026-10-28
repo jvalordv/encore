@@ -84,7 +84,7 @@ export const WAITING_NOTE = 'Prepared; switching after this take.';
 /** The note once the app's own audio has taken the song over. */
 export const PREPARED_NOTE =
   "The app now plays this song's audio and keeps its own time. The video " +
-  'follows, muted. The reference melody and scoring are not built yet.';
+  'follows, muted. The karaoke track and the melody follow below.';
 /** Why a preparation failed when the service stopped answering. */
 export const SERVICE_STOPPED =
   'The service stopped answering. Check that it is running (service/README.md), ' +
@@ -129,14 +129,15 @@ export function describeStep(name: StepName, step: StepStatus): string {
 /**
  * The lines for the steps worth showing: the fetch always, since it is what
  * the person waits for, and any other step once it is under way. The later
- * steps sit queued or skipped until their tasks exist, and saying so would be
- * noise.
+ * steps sit queued or skipped until they have work, and saying so would be
+ * noise. The lyrics step is never shown: the app finds lyrics itself, and the
+ * service's step is only a stub.
  */
 export function stepLines(steps: SongSteps | null): string[] {
   if (steps === null) return [ASKING_LINE];
-  return STEP_NAMES.filter((name) => name === 'fetch' || steps[name].state === 'running').map(
-    (name) => describeStep(name, steps[name]),
-  );
+  return STEP_NAMES.filter(
+    (name) => name !== 'lyrics' && (name === 'fetch' || steps[name].state === 'running'),
+  ).map((name) => describeStep(name, steps[name]));
 }
 
 /** What the panel shows for a PrepareState. */

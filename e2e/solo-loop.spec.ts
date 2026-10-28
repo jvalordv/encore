@@ -14,6 +14,7 @@ import { expect, test } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
 import type { AppState } from '../src/app/state';
 import { decodeWav } from '../src/audio/wav';
+import { stubService } from './fake-service';
 import { PORT, SONG_FILE, SONG_SECONDS } from './fixtures';
 
 test.describe.configure({ mode: 'serial' });
@@ -59,6 +60,9 @@ test.beforeAll(async ({ browser }) => {
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) =>
     route.fulfill({ status: 200, contentType: 'text/css', body: '' }),
   );
+  // A dropped song is offered to the service in the background; the stand-in
+  // answers, so the run never reaches a port nothing listens on.
+  await stubService(context, 'solo');
   page = await context.newPage();
   page.on('pageerror', (error) => pageErrors.push(`uncaught: ${error.message}`));
   page.on('console', (message) => {

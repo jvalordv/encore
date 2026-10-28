@@ -31,7 +31,15 @@ const ALPHA_CHUNK = 8;
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const BLACK_PITCH_CLASSES = new Set([1, 3, 6, 8, 10]);
 
-/** Reference melody to overlay; mirrors the service's Contour. */
+/** One target note of the reference melody, in song time. */
+export interface LaneNote {
+  onsetS: number;
+  offsetS: number;
+  /** Fractional MIDI note number. */
+  midi: number;
+}
+
+/** Reference melody to overlay: the service's Contour, notes and gaps. */
 export interface LaneReference {
   /** Seconds between samples. */
   hopS: number;
@@ -39,6 +47,13 @@ export interface LaneReference {
   t0S: number;
   /** Fundamental per sample in Hz; 0 means unvoiced. */
   f0Hz: ArrayLike<number>;
+  /** Target notes drawn as bars over the band; in time order. */
+  notes?: readonly LaneNote[];
+  /**
+   * Stretches [start_s, end_s] where something sounds but no note was sung;
+   * tinted across the lane's height. In time order.
+   */
+  unpitchedS?: ReadonlyArray<readonly [number, number]>;
 }
 
 /** One live pitch sample positioned in song time. */
@@ -330,6 +345,48 @@ export function voicedRuns(
   return runs;
 }
 
+/**
+ * Index range of the items that overlap [fromS, toS], for items in time order
+ * that do not overlap each other (notes, unpitched regions): their ends rise
+ * with their starts, so a binary search finds the first one still sounding at
+ * `fromS` and the scan runs on while items start before `toS`. Null when none
+ * does. An item that only touches an edge of the span counts as overlapping.
+ */
+export function overlappingRange<T>(
+  items: readonly T[],
+  startOf: (item: T) => number,
+  endOf: (item: T) => number,
+  fromS: number,
+  toS: number,
+): { first: number; last: number } | null {
+  let lo = 0;
+  let hi = items.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (endOf(items[mid]) < fromS) lo = mid + 1;
+    else hi = mid;
+  }
+  const first = lo;
+  let last = first - 1;
+  while (last + 1 < items.length && startOf(items[last + 1]) <= toS) last += 1;
+  return last >= first ? { first, last } : null;
+}
+
+/** A rectangle in CSS pixels. */
+export interface LaneRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Narrowest a target note bar is drawn, so a staccato note is still seen. */
+const MIN_NOTE_WIDTH_PX = 3;
+/** Share of a semitone row a target note bar fills. */
+const NOTE_BAR_ROW_SHARE = 0.7;
+/** A target note bar is never thinner than this many CSS pixels. */
+const MIN_NOTE_HEIGHT_PX = 4;
+
 /** What the drawing layers need to know about the lane right now. */
 export interface LaneView {
   /** CSS pixel size of the lane. */
@@ -358,4 +415,30 @@ export function viewX(view: LaneView, t: number, gutter: number): number {
 export function viewY(view: LaneView, hz: number): number {
   const midi = Math.min(view.midiHigh, Math.max(view.midiLow, hzToMidi(hz)));
   return midiToY(midi, view.midiLow, view.midiHigh, view.height);
+}
+
+/**
+ * The bar for a target note: its onset to its offset in song time, centred on
+ * the pitch's row and held at the lane's edge when out of range, as the
+ * ribbons are.
+ */
+export function noteRect(view: LaneView, note: LaneNote, gutter: number): LaneRect {
+  const x = viewX(view, note.onsetS, gutter);
+  const width = Math.max(MIN_NOTE_WIDTH_PX, viewX(view, note.offsetS, gutter) - x);
+  const rowHeight = view.height / (view.midiHigh - view.midiLow + 1);
+  const height = Math.max(MIN_NOTE_HEIGHT_PX, rowHeight * NOTE_BAR_ROW_SHARE);
+  const midi = Math.min(view.midiHigh, Math.max(view.midiLow, note.midi));
+  const centre = midiToY(midi, view.midiLow, view.midiHigh, view.height);
+  return { x, y: centre - height / 2, width, height };
+}
+
+/** The full-height column for a stretch of song time (an unpitched region). */
+export function regionRect(
+  view: LaneView,
+  startS: number,
+  endS: number,
+  gutter: number,
+): LaneRect {
+  const x = viewX(view, startS, gutter);
+  return { x, y: 0, width: Math.max(0, viewX(view, endS, gutter) - x), height: view.height };
 }
