@@ -12,8 +12,9 @@ Status: songs can be added (`POST /songs`, `POST /songs/url`,
 queued for preparation, a link to a YouTube video is looked up, cached and its
 audio fetched (see "YouTube links"), the vocal is separated from the rest
 (`GET /songs/{id}/stems/{stem}`, see "Separation"), and `/health` and `/gpu`
-work. The reference pitch step arrives in ROADMAP W1; until then it reports
-`skipped` with a "Not built yet" note. The lyrics step always skips (lyrics
+work. The reference step takes the melody from the vocal
+(`GET /songs/{id}/reference`, see "Reference melody"), and is `skipped` with a
+reason for a track with no singing in it. The lyrics step always skips (lyrics
 come from a lookup in the app). `/analyze` and `/duet/*` are stubs that
 answer 501; they belong to work the roadmap lists as Later.
 
@@ -54,8 +55,8 @@ current driver.
 
 | Extra | Holds | Needed by |
 |---|---|---|
-| `separation` | torch, torchaudio, demucs | P2-T2, vocal separation. The only one declared so far. |
-| `pitch` | torch, torchcrepe | W1, the reference melody. |
+| `separation` | torch, torchaudio, demucs, julius | P2-T2, vocal separation. |
+| `pitch` | torch, torchaudio, torchcrepe | W1a, the reference melody. |
 
 Extras for Whisper lyrics, take analysis and speaker embeddings are Later
 in the roadmap and are not planned.
@@ -88,11 +89,10 @@ and pin every package today.
 4. **Install the extras you need:**
 
    ```
-   uv sync --extra separation
+   uv sync --extra separation --extra pitch
    ```
 
-   When more extras exist, repeat the flag, as in
-   `uv sync --extra separation --extra pitch`, or install every one with
+   Repeat the flag for each extra, or install every one with
    `uv sync --all-extras`. Name them every time. `uv sync` makes the
    environment match exactly what it is asked for, so a plain `uv sync`
    **removes** torch and every other extra. To refresh the base dependencies
@@ -149,15 +149,16 @@ The browser adds a song, then polls it while the service prepares it.
 | `GET /songs/{id}` | The song's status: `title`, `duration_s`, and for each step (`fetch`, `separation`, `reference`, `lyrics`) a `state` (`queued`, `running`, `done`, `failed` or `skipped`), a `progress` from 0 to 1, an `error` when it failed and a `detail` saying why it was skipped. 404 for an unknown id. |
 | `GET /songs/{id}/audio` | The stored source file, so the browser can reload a song without the original. 404 for an unknown id, 409 while the song has no source audio. |
 | `GET /songs/{id}/stems/{stem}` | One stem the separation step made, `vocals` or `no_vocals`, as 24-bit FLAC (`audio/flac`, with range requests) and the song's stem gain in the `X-Stem-Gain` header. 404 for an unknown id or any other stem name, 409 while the song has not been separated. See "Separation". |
+| `GET /songs/{id}/reference` | The song's reference melody, the `Reference` of `docs/ARCHITECTURE.md` (contour, notes, range, unpitched regions), as JSON. 404 for an unknown id, 409 while the song has none: not made yet, or the step was skipped (see its `detail`). See "Reference melody". |
 
 Songs are prepared one at a time in a background queue, so two songs never
 compete for GPU memory. `fetch` is `skipped` for uploads, which arrive with
-their audio, and is the download for a link. A step whose model is not built
-yet is `skipped` with a "Not built yet" detail naming the ROADMAP task; add
-the song again after that task lands and the step runs. A step that cannot
-run on this machine, such as separation without its extra installed, is
-`skipped` too, with a detail that says what to do; the steps that need it are
-`skipped` with "Needs <step>".
+their audio, and is the download for a link. A step that cannot run on this
+machine, such as separation without its extra installed, or has nothing to do,
+such as the reference step for a track with no singing, is `skipped` with a
+`detail` that says why; add the song again after fixing it and the step runs.
+The steps that need a skipped step are `skipped` with "Needs <step>". The
+lyrics step always skips: "Lyrics come from a lookup in the app".
 
 The cache is under `service/cache` (or `ENCORE_CACHE_DIR`), one folder per song:
 
@@ -167,6 +168,7 @@ The cache is under `service/cache` (or `ENCORE_CACHE_DIR`), one folder per song:
 <song_id>/status.json       the state of each step
 <song_id>/vocals.flac       the sung part, from the separation step
 <song_id>/no_vocals.flac    everything else, from the separation step
+<song_id>/reference.json    the melody of the vocal, from the reference step
 <song_id>/.fetch/           a link's download while it is under way
 <song_id>/.separate/        the separation's working files while it runs
 .incoming/                  uploads still arriving
@@ -347,13 +349,53 @@ fails, neither stem is left, so the two are never a mismatched pair. Add the
 song again to retry. That also runs a finished separation again when its stems
 have gone from the song's folder.
 
+## Reference melody
+
+The `reference` step takes the melody from the vocal stem, for the browser to
+draw and, in learning mode, to score against. It needs the `pitch` extra
+("GPU setup", step 4); without it a sung song is `skipped` with the command
+that installs it. It is stored as `<song_id>/reference.json` and served by
+`GET /songs/{id}/reference`: the `Reference` of `docs/ARCHITECTURE.md`.
+
+- **Is anyone singing.** Checked first, before any model is loaded. A karaoke
+  upload or an instrumental has an empty vocal stem, and a contour drawn from
+  its noise would show a melody that is not there. A global level against the
+  song cannot tell them apart (a few seconds of animal calls lift a film
+  soundtrack to a sung song's), so the test is on the vocal stem alone: the
+  share of 1 s windows whose RMS level, divided by the song's `stem_gain` to
+  put it back on the song's scale, is above -40 dBFS. Measured, a film with
+  no singing sits at a few percent and a sung song around four fifths; under
+  15% the step is `skipped` with "No singing found: ..." and the share.
+- **The contour.** torchcrepe (the full model, its weights bundled) runs on
+  the vocal at 16 kHz with Viterbi decoding, one frame per 10 ms, in chunks of
+  6 s with 1 s of context at each end so the decoder is not cut off at a seam.
+  Frame `i` is at `i * 0.01` s whatever the stem's own rate. A frame whose
+  confidence is under 0.3, or that is under -50 dBFS on the song's scale,
+  is unvoiced (`f0_hz` 0). The rest is smoothed with a 5-frame median, since
+  the model answers in steps of 20 cents, and brief octave slips are moved
+  back: a run of up to 100 ms that sits whole octaves from the notes either
+  side of it, and from nothing else, is shifted; a real octave leap is left.
+- **The notes** follow `docs/COACHING.md`: a voiced run of at least 80 ms
+  (gaps under 40 ms bridged), split where the median-filtered pitch moves 80
+  cents and stays for 60 ms. `midi` is the median of the note's frames;
+  `cents_mean` and `cents_std` are the mean and spread of those frames against
+  the nearest whole semitone; `scoop_cents` is the first 150 ms against the
+  rest, negative for a note that starts flat. `range` is the lowest and highest
+  note. `unpitched_regions` are stretches of 150 ms or more where the vocal
+  sounds (above -50 dBFS) but there is no note: breaths, consonants, spoken or
+  rapped lines. `vibrato` is not measured yet.
+- **Cost.** Tracking runs at about 14 times real time on the 4070 Ti after
+  the first song in a service run (loading the model and compiling the
+  resampler and decoder take about 15 s once); the model holds about 100 MB,
+  and a chunk takes about 2 GB while it is decoded, given back afterwards.
+
 ## Configuration
 
 Environment variables, all optional:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ENCORE_DEVICE` | `cuda` if torch sees CUDA, else `cpu` | Device for the models. |
+| `ENCORE_DEVICE` | `cuda` if torch sees CUDA, else `cpu` | Device for the models (separation and pitch). |
 | `ENCORE_DEMUCS_MODEL` | `htdemucs_ft` | The demucs model that separates the vocal (see "Separation"). Any name demucs knows; blank means the default. |
 | `ENCORE_CACHE_DIR` | `service/cache` | Where songs and their stems are stored. For YouTube links the path must not hold a `$` that yt-dlp would expand, such as `$HOME`; the fetch step fails and says so. |
 | `ENCORE_PORT` | `8765` | Port for `python -m encore_service`. |
@@ -372,4 +414,7 @@ uv run ruff check . && uv run ruff format --check . && uv run pytest
 They need no GPU extra and pass with or without one installed. The tests that
 run demucs itself (`tests/test_separation_torch.py`) use small models with
 random weights, download nothing, and are skipped where torch is absent, as in
-CI; the CUDA ones are skipped where there is no GPU.
+CI; the CUDA ones are skipped where there is no GPU. Likewise the tests of the
+pitch model (`tests/test_reference_torch.py`) run torchcrepe's real weights
+(they ship with the package) on a synthetic voice, and are skipped where
+torchcrepe is absent.

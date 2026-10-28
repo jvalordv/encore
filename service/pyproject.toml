@@ -25,18 +25,33 @@ dependencies = [
 # held to the same minor version here; unpinned, uv would pair torchaudio with
 # a newer torch it was not built for. demucs itself needs only torch
 # (torchaudio is in its training extra), but later extras import torchaudio, so
-# it is kept: torch is then downloaded once, not again when P2-T3 lands.
+# it is kept: torch is then downloaded once, not again when the pitch extra
+# lands. julius, demucs's resampler, is a hard import of the separation step
+# (demucs lists it as a dependency, but the step does not rely on that).
 # demucs 4.1.0 caps torch below 2.3 on Intel Macs, which no current torch
 # supports and which contradicts the pin; without the marker, uv would lock
 # demucs 4.0.1 and its training dependencies for that platform.
 separation = [
     "torch~=2.11.0",
     "torchaudio~=2.11.0",
+    "julius",
     "demucs; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+]
+# pitch (W1a) is the reference melody: torchcrepe tracks the pitch of the
+# vocal stem. torch and torchaudio are held to the same minor version as
+# above so that installing this extra alone gets the same CUDA build;
+# torchcrepe imports torchaudio without declaring it. torchcrepe bundles its
+# weights; it pulls resampy, and through it numba, which resamples the audio
+# to 16 kHz, and librosa, for its Viterbi decoder. Its own audio loader needs
+# torchcodec, which is not installed: the step reads audio with soundfile and
+# hands torchcrepe tensors.
+pitch = [
+    "torch~=2.11.0",
+    "torchaudio~=2.11.0",
+    "torchcrepe",
 ]
 # Extras still to come, each declared by the task that needs it. Declaring one
 # now would make `uv lock` resolve and pin it today.
-#   pitch     torch, torchcrepe               P2-T3
 #   lyrics    torch, torchaudio, whisperx     P2-T4
 #   analysis  praat-parselmouth, librosa      P3-T1
 #   speaker   torch, torchaudio, speechbrain  P4-T2

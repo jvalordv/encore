@@ -49,8 +49,8 @@ so learning mode when it is up. Scoring and tips run in the browser.
   `context.currentTime` (the centre of its analysis window) and shifted by the
   calibrated round-trip latency so that what the singer heard at time *t* and
   what they sang at *t* line up. The shift is applied once, in
-  `frameToSongTime` (`src/app/session.ts`): song time = song position now
-  minus the frame's age minus the latency. A take's WAV is stored unshifted,
+  `frameToSongTime` (`src/app/session/helpers.ts`): song time = song position
+  now minus the frame's age minus the latency. A take's WAV is stored unshifted,
   with `startedAtSongS` and `latencyS` beside it, so a better calibration can
   re-align it later (`songTimeOfSample` in `src/audio/wav.ts`); its f0 frames
   are stored already on song time.
@@ -170,6 +170,56 @@ so learning mode when it is up. Scoring and tips run in the browser.
 - **Rendering.** Canvas 2D for the pitch lane and FX. DOM for everything
   else. Skins are CSS custom properties plus a TS personality object
   (`docs/SKINS.md`).
+- **Session and controllers.** `Session` (`src/app/session.ts`) is the only
+  thing the UI calls, and stays a thin facade: every intent delegates to one
+  controller in `src/app/session/`. They share a `SessionCore` (`core.ts`)
+  that is built from injected parts: the `StateStore`, the settings storage
+  and object, the audio parts (`buildParts` in `parts.ts` makes the real
+  ones, tests hand in fakes, see `test/session-harness.ts`), the take store,
+  the lane and the frame bus. The controllers reach each other through the
+  core (`core.songs`, `core.takes`, ...):
+  - `songs.ts`, `SongController`: load a file or a link, the active
+    transport, the embed lifecycle and the load token (a newer load wins),
+    copying the transport into the store and lane, the ad notice.
+  - `playback.ts`, `PlaybackController`: play, pause, stop, seek, nudge and
+    the loop A/B controls, each a guard over the active transport.
+  - `prepare.ts`, `PrepareController`: the service probe, the preparation
+    attempt and the switch to prepared audio, with the embed follower.
+  - `input.ts`, `InputController`: the mic, headphone or speaker mode, the
+    tracker connection, and turning tracker frames into song-time frames.
+  - `devices.ts`, `DeviceController`: device lists, the output choice.
+  - `latency.ts`, `LatencyController`: calibration, stored latency, the
+    embed offset.
+  - `takes.ts`, `TakeController`: record, save, replay (under the song, or
+    by itself under a video) and delete.
+  - `loop.ts`, `TickLoop`: the per-frame loop that moves the lane and writes
+    position, level and tracker health.
+  Pure helpers (frame-to-song-time, loop button maths, replay indexing) are
+  in `helpers.ts`. A controller owns its state; what another controller
+  needs of it is a public field or method with a doc line, never a reach
+  into a private.
+- **Frame bus.** `FrameBus` (`session/frame-bus.ts`) is where a pitch frame,
+  once on song time, is announced as `{ singer, frame }` (singer 0 until a
+  second mic exists). The input controller publishes; subscribers are called
+  in subscription order. Today the take recorder (collecting the frames saved
+  with a take) and the pitch lane (unless a take is replaying and owns the
+  lane) subscribe; scoring (W3) and a second mic (W4) subscribe here and add
+  nothing to the input controller. `AppState.singers` holds one entry per
+  singer (its mic state, mirrored from `input` for singer 0) and settings
+  carry `mode` (`'karaoke'` by default, or `'learning'`; no UI yet).
+- **Pitch lane layers.** `PitchLane` (`src/render/pitch-lane.ts`) owns the
+  canvas, the resize and skin listeners and the redraw loop, and composes
+  layers back to front, each a function over a `LaneView` and a `LaneStyle`:
+  `lane-grid.ts` (rows, octave lines, piano gutter; cached offscreen),
+  `lane-reference.ts` (the reference band), `lane-ribbon.ts` (one call per
+  singer), `lane-overlay.ts` (notice or invitation, playhead; hit colours
+  land here). Pure arithmetic is in `lane-geometry.ts`, the redraw loop and
+  pixel-ratio watcher in `lane-clock.ts`, the skin colours in
+  `lane-style.ts`. `pitch-lane.ts` re-exports the pure helpers.
+- **Panels.** New UI is a panel in `src/app/panels/<name>.ts` exporting a
+  mount function `(host, deps) => dispose` (the types are in
+  `panels/panel.ts`); `ui.ts` only composes panels. Existing UI stays in
+  `ui.ts` until a wave has reason to move it.
 
 ## Service
 
@@ -177,7 +227,8 @@ so learning mode when it is up. Scoring and tips run in the browser.
   environment. CPU deps install everywhere (CI included). The heavy models
   come in one extra per feature, each declared and installed by the task
   that needs it, so nothing is downloaded before it is used: `separation`
-  (torch, torchaudio, demucs; P2-T2) now, then `pitch` (torchcrepe, W1).
+  (torch, torchaudio, demucs, julius; P2-T2) and `pitch` (torch, torchaudio,
+  torchcrepe; W1a).
   Extras for Whisper lyrics, take analysis and speaker embeddings are
   Later. torch and torchaudio come from PyTorch's
   CUDA 12.8 index (cu128) and are held to 2.11: torchaudio stopped at 2.11.0,
@@ -221,6 +272,21 @@ so learning mode when it is up. Scoring and tips run in the browser.
   step is skipped with the install hint (`StepSkipped`, which any runner
   can raise). On the 4070 Ti: about 14 times real time, 1.4 GB VRAM peak,
   about 0.6 GB RAM per minute of audio.
+- **Reference** (W1a, `reference.py` and `melody.py`). Reads `vocals.flac`
+  (mono mix), and first asks whether anyone sings: the share of 1 s windows
+  above -40 dBFS once divided by `stem_gain` (see Karaoke uploads below);
+  under 15% the step skips with a reason, before any model is loaded. Then
+  torchcrepe (full, weights bundled) tracks the pitch at 16 kHz, a frame per
+  10 ms, Viterbi decoded in chunks of 6 s with 1 s of context; frame `i` is
+  at `i * 0.01` s. `melody.py` (plain numpy, tested on synthetic tracks)
+  gates frames under 0.3 confidence, median-filters (5 frames), mends brief
+  octave slips, segments notes by the rule in `docs/COACHING.md`, and finds
+  the range and the unpitched regions (sounding, no note). Written whole as
+  compact `reference.json`, served by `GET /songs/{id}/reference` (409 when
+  there is none). The model sits behind a `PitchTracker` protocol, so unit
+  tests never load it. Without the `pitch` extra a sung song is skipped with
+  the install hint. The `lyrics` step is a runner that always skips: "Lyrics
+  come from a lookup in the app".
 - **Song sources.** A song enters as an uploaded file or a YouTube link;
   everything after intake is identical.
   - *File:* `POST /songs`, id is the sha256 of the bytes.
@@ -268,12 +334,14 @@ so learning mode when it is up. Scoring and tips run in the browser.
     carry a note saying no runtime was found.
   - *Karaoke uploads* download fine but contain no vocal. The reference
     step reports `skipped` with a reason when `vocals.flac` holds no
-    singing (P2-T3) instead of drawing a flat contour. Measured: a global
+    singing (the reference step) instead of drawing a flat contour. Measured: a global
     vocals-to-mix level ratio cannot tell (-17 dB on a film with no
     singing, -10 dB on a sung song); the share of 1 s windows with the
     vocal stem above -40 dBFS can (3.5% versus 81%).
-- **Models are loaded lazily** on first use and kept resident. A `/gpu`
-  endpoint reports device, VRAM, and which models are loaded.
+- **Models are loaded lazily** on first use and kept resident, in the one
+  registry in `registry.py` (family, name, device). A `/gpu` endpoint
+  reports device, VRAM, and which models are loaded as `family:name@device`
+  (`demucs:htdemucs_ft@cuda`, `crepe:full@cuda`).
 
 ## Shared schemas
 

@@ -2,8 +2,8 @@
  * Persistent user settings: the devices last chosen, how the singer monitors
  * the song, the service address, whether a pasted YouTube link is sent to the
  * service by itself, the voicing threshold, the round-trip latency measured for
- * each device pair and the extra offset applied while a YouTube video supplies
- * the song.
+ * each device pair, the extra offset applied while a YouTube video supplies
+ * the song and the practice mode (karaoke, or the opt-in learning mode).
  * One object under one storage key, behind the KeyValueStore interface, so a
  * native shell can own storage later (see "Built to become an app" in
  * docs/ARCHITECTURE.md). Loading never throws and never trusts what it reads:
@@ -14,6 +14,13 @@
  */
 import type { MonitorMode } from '../audio/mic';
 import type { KeyValueStore } from './storage';
+
+/**
+ * What the app does with the singing: 'karaoke' never judges; 'learning' is
+ * the opt-in mode that says where the singing misses. Karaoke is the default
+ * and nothing from learning leaks into it.
+ */
+export type PracticeMode = 'karaoke' | 'learning';
 
 /** Everything the user has chosen that should survive a reload. */
 export interface Settings {
@@ -43,6 +50,8 @@ export interface Settings {
    * plus or minus MAX_EMBED_OFFSET_S.
    */
   embedOffsetS: number;
+  /** Karaoke (default) or the opt-in learning mode; no UI sets it yet. */
+  mode: PracticeMode;
 }
 
 /** Key inside the key-value store; the localStorage adapter adds `encore.`. */
@@ -65,6 +74,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   octaveInvariant: false,
   latencyByDevicePair: Object.freeze({}) as Record<string, number>,
   embedOffsetS: 0,
+  mode: 'karaoke',
 });
 
 /** The offset limited to plus or minus MAX_EMBED_OFFSET_S; NaN reads as 0. */
@@ -85,6 +95,11 @@ function deviceId(value: unknown): string | null {
 /** The stored mode if it is one we know; headphones for anything else. */
 function monitorMode(value: unknown): MonitorMode {
   return value === 'speakers' ? 'speakers' : DEFAULT_SETTINGS.monitor;
+}
+
+/** The stored mode if it is one we know; karaoke for anything else. */
+function practiceMode(value: unknown): PracticeMode {
+  return value === 'learning' ? 'learning' : DEFAULT_SETTINGS.mode;
 }
 
 /** An http(s) URL without trailing slashes, or null when it is not one. */
@@ -148,6 +163,7 @@ export function sanitizeSettings(value: unknown): Settings {
         : DEFAULT_SETTINGS.octaveInvariant,
     latencyByDevicePair: latencies(raw.latencyByDevicePair),
     embedOffsetS: embedOffset(raw.embedOffsetS),
+    mode: practiceMode(raw.mode),
   };
 }
 

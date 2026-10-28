@@ -12,13 +12,39 @@ import { hzToMidi } from '../analysis/pitch';
 import type { PitchFrame } from '../analysis/pitch';
 import type { MonitorMode } from '../audio/mic';
 import type { ClockKind, LoopRegion, TrackInfo, TransportState } from '../audio/transport';
-import { noteName } from '../render/pitch-lane';
+import { noteName } from '../render/lane-geometry';
 import { initialPrepare } from './prepare';
 import type { PrepareState } from './prepare';
 import type { TakeSummary } from './takes';
 
 /** How loudly the status line should speak. */
 export type StatusKind = 'info' | 'warn' | 'error';
+
+/** The mic a singer sings into, as the UI shows it. */
+export interface InputState {
+  deviceId: string | null;
+  label: string;
+  open: boolean;
+  /** Peak level 0..1, smoothed by the Session for display. */
+  level: number;
+  /** What the browser really applied; null while unknown. */
+  processing: { aec: boolean | null; ns: boolean | null; agc: boolean | null };
+  /** How the singer monitors the song; the saved choice, open or not. */
+  monitor: MonitorMode;
+  /**
+   * True when the open mic was asked for echo cancellation. Differs from
+   * `monitor` only while calibration borrows a raw mic. Compare with
+   * `processing.aec` to see whether the browser honoured the request.
+   */
+  requestedAec: boolean;
+}
+
+/** One singer: today just the mic; scoring and a second mic hang off this. */
+export interface SingerState {
+  /** Position in `AppState.singers`; the id frames on the bus carry. */
+  id: number;
+  input: InputState;
+}
 
 /** Everything the UI shows; the Session is the only writer. */
 export interface AppState {
@@ -43,23 +69,12 @@ export interface AppState {
   positionS: number;
   loop: LoopRegion | null;
   durationS: number;
-  input: {
-    deviceId: string | null;
-    label: string;
-    open: boolean;
-    /** Peak level 0..1, smoothed by the Session for display. */
-    level: number;
-    /** What the browser really applied; null while unknown. */
-    processing: { aec: boolean | null; ns: boolean | null; agc: boolean | null };
-    /** How the singer monitors the song; the saved choice, open or not. */
-    monitor: MonitorMode;
-    /**
-     * True when the open mic was asked for echo cancellation. Differs from
-     * `monitor` only while calibration borrows a raw mic. Compare with
-     * `processing.aec` to see whether the browser honoured the request.
-     */
-    requestedAec: boolean;
-  };
+  input: InputState;
+  /**
+   * The singers, one entry for now. Entry 0 shares its `input` object with
+   * the field above, which the store keeps in step (patchSection).
+   */
+  singers: SingerState[];
   output: { deviceId: string | null; label: string; selectable: boolean };
   /** Round-trip latency for the current device pair; null when not set. */
   latencyS: number | null;
@@ -79,6 +94,15 @@ export type Listener = (state: AppState, changed: ReadonlySet<keyof AppState>) =
 
 /** A fresh state for a page that has just loaded: nothing open, nothing set. */
 export function initialState(): AppState {
+  const input: InputState = {
+    deviceId: null,
+    label: '',
+    open: false,
+    level: 0,
+    processing: { aec: null, ns: null, agc: null },
+    monitor: 'headphones',
+    requestedAec: false,
+  };
   return {
     song: null,
     player: 'empty',
@@ -89,15 +113,8 @@ export function initialState(): AppState {
     positionS: 0,
     loop: null,
     durationS: 0,
-    input: {
-      deviceId: null,
-      label: '',
-      open: false,
-      level: 0,
-      processing: { aec: null, ns: null, agc: null },
-      monitor: 'headphones',
-      requestedAec: false,
-    },
+    input,
+    singers: [{ id: 0, input }],
     output: { deviceId: null, label: '', selectable: false },
     latencyS: null,
     calibrating: false,
@@ -166,7 +183,15 @@ export class StateStore {
   patchSection<K extends 'input' | 'output'>(key: K, p: Partial<AppState[K]>): void {
     const current = this.state[key];
     const next = { ...current, ...p } as AppState[K];
-    if (!samePlain(current, next)) this.patch({ [key]: next } as Partial<AppState>);
+    if (samePlain(current, next)) return;
+    const [first, ...others] = this.state.singers;
+    if (key === 'input' && first) {
+      // The first singer's mic is the same object, so it moves with `input`.
+      const singers = [{ ...first, input: next as InputState }, ...others];
+      this.patch({ input: next as InputState, singers });
+    } else {
+      this.patch({ [key]: next } as Partial<AppState>);
+    }
   }
 
   /** Sets the status line; repeating the same message is not a change. */

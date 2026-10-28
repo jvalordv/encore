@@ -2,14 +2,14 @@
 
 This is the first thing to check after setup (README.md). It must work
 without torch installed, so torch is imported inside the handler. The models
-the service holds in memory come from the registry in `separation.py`, which
+the service holds in memory come from the registry in `registry.py`, which
 is plain bookkeeping and needs no torch either.
 """
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from encore_service import separation
+from encore_service import registry
 
 router = APIRouter(tags=["gpu"])
 
@@ -34,7 +34,7 @@ class GpuStatus(BaseModel):
 def get_gpu(request: Request) -> GpuStatus:
     """Report torch and CUDA status without failing when torch is absent."""
     device = request.app.state.settings.device
-    loaded = separation.loaded_models()
+    loaded = registry.loaded_models()
     try:
         import torch
     except (ImportError, OSError):

@@ -3,8 +3,9 @@
 A song lives in `<cache_dir>/<song_id>/` as `source.<ext>` (the audio),
 `meta.json` (what the song is) and `status.json` (how far preparation has
 got), plus the stems the separation step makes, `vocals.flac` and
-`no_vocals.flac`. Uploads stream into `<cache_dir>/.incoming/` first and are
-moved into place once hashed. A linked song is created with no audio at all;
+`no_vocals.flac`, and the melody the reference step makes, `reference.json`.
+Uploads stream into `<cache_dir>/.incoming/` first and are moved into place
+once hashed. A linked song is created with no audio at all;
 its fetch step works in a folder of its own and moves the finished file into
 place (`install_source`), and the separation step does the same for each stem
 (`install_stem`). The routes, the job queue and the preparation steps all
@@ -26,6 +27,7 @@ from typing import Any, TypeVar
 from pydantic import BaseModel, Field
 
 from encore_service.schemas import (
+    Reference,
     SongSource,
     SongStatus,
     SongSteps,
@@ -52,6 +54,9 @@ AUDIO_MEDIA_TYPES = {
     ".ogg": "audio/ogg",
     ".opus": "audio/ogg",
 }
+
+# The reference step's melody, which the reference route serves whole.
+REFERENCE_FILE = "reference.json"
 
 # The stems the separation step makes, by the name a request uses, and the
 # file each is kept in. A request never builds a path: it picks a key.
@@ -109,12 +114,15 @@ def _replace(src: Path, dst: Path) -> None:
             return
 
 
-def _write_json(path: Path, model: BaseModel) -> None:
-    """Write `model` to `path` atomically; the caller holds the store lock."""
+def _write_json(path: Path, model: BaseModel, indent: int | None = 2) -> None:
+    """Write `model` to `path` atomically; the caller holds the store lock.
+
+    `indent` None writes it compact, for a file that is mostly long lists.
+    """
     tmp = path.with_name(path.name + ".tmp")
     try:
         # Bytes, not text mode, so Windows does not turn newlines into CRLF.
-        tmp.write_bytes(model.model_dump_json(indent=2).encode("utf-8"))
+        tmp.write_bytes(model.model_dump_json(indent=indent).encode("utf-8"))
         _replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
@@ -233,6 +241,23 @@ class SongStore:
             return None
         candidate = self.root / song_id / name
         return candidate if candidate.is_file() else None
+
+    def reference_path(self, song_id: str) -> Path | None:
+        """The finished reference melody, or None if there is none (yet)."""
+        if not is_valid_id(song_id):
+            return None
+        candidate = self.root / song_id / REFERENCE_FILE
+        return candidate if candidate.is_file() else None
+
+    def write_reference(self, song_id: str, reference: Reference) -> None:
+        """Store a song's reference melody; the song's folder must exist.
+
+        Written whole and atomically, and compact: the contour is two long
+        lists, which indentation would put one value to a line.
+        """
+        folder = self.song_dir(song_id)
+        with self._lock:
+            _write_json(folder / REFERENCE_FILE, reference, indent=None)
 
     def incoming_path(self) -> Path:
         """A fresh path to stream one upload into; the file is not created."""

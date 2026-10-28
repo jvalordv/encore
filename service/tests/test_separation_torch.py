@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from encore_service import separation
+from encore_service import registry, separation
 from encore_service.separation import (
     OUT_OF_MEMORY,
     DemucsSeparator,
@@ -477,7 +477,7 @@ def test_running_out_of_gpu_memory_while_loading_reaches_the_step_as_the_advice(
     # Not "Loading the separation model failed: CUDA out of memory...".
     assert str(raised.value) == OUT_OF_MEMORY
     assert cache_emptied == ["empty"]
-    assert separation.loaded_models() == []
+    assert registry.loaded_models() == []
     assert song_files(store, song_id) == ["meta.json", "source.wav", "status.json"]
 
 
@@ -521,7 +521,7 @@ def test_a_model_with_no_voice_fails_the_step_before_any_audio_is_read(
         "the model makes no vocals source, only drums, bass"
     )
     # Never kept as loaded, so the next song asks for it afresh.
-    assert separation.loaded_models() == []
+    assert registry.loaded_models() == []
     assert song_files(store, song_id) == ["meta.json", "source.wav", "status.json"]
 
 
@@ -566,7 +566,7 @@ def test_the_step_runs_end_to_end_on_a_real_model(
     meta = store.read_meta(song_id)
     assert meta is not None and meta.duration_s == pytest.approx(1.0)
     assert reported[-1] == 1.0
-    assert separation.loaded_models() == ["demucs:demucs_unittest@cpu"]
+    assert registry.loaded_models() == ["demucs:demucs_unittest@cpu"]
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="no CUDA device")

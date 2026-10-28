@@ -22,15 +22,22 @@ webcam or USB mic.
 
 ## Current state
 
-- **Last done:** scope trimmed to the goal above (2026-10-27): waves
-  replace Phases 2 to 6, deferred work is under Later. Before it P2-T2
-  (demucs separation on the GPU) and the YouTube work (P2-T1 to P2-T1d),
-  both in `docs/HISTORY.md`.
+- **Last done:** **W1** (2026-10-28): the service's reference step
+  (torchcrepe on the vocal stem, notes by the `docs/COACHING.md` rule,
+  `GET /songs/{id}/reference`, a skip for tracks with no singing) and the
+  browser seams (controllers under `src/app/session/`, the frame bus, lane
+  layers, `mode` and `singers`). Before it the scope trim (2026-10-27),
+  P2-T2 and the YouTube work, in `docs/HISTORY.md`.
 - **In progress:** none.
 - **Next:** the owner's test results (list below) if they have any: fix
-  what they show first, as `W0: <summary>`. Then **W1**. The owner is
-  creating a YouTube Data API key for W2's search (2026-10-27).
-- **Blockers:** none.
+  what they show first, as `W0: <summary>`. Then **W2**. W2a needs the
+  owner's YouTube Data API key (pasted into the app, never into chat).
+- **Blockers:** none for W2. YouTube now answers yt-dlp with "Sign in to
+  confirm you're not a bot" (2026-10-28, seven tries on Big Buck Bunny), so
+  Prepare for links and W2's "Find the original" fail until a newer
+  yt-dlp gets through (`uv lock --upgrade-package yt-dlp`, then sync as
+  below). Passing browser cookies is the owner's call, not an agent's.
+  Uploads and search are not affected.
 - **Policy flag:** the terms for YouTube's embedded player forbid
   downloading or caching its content, separating its audio, and fetching
   its data by other means (developer policies III.E.1.a, III.I.7,
@@ -43,11 +50,11 @@ webcam or USB mic.
 - **Machine facts (checked 2026-10-24):** Windows 10, RTX 4070 Ti 12 GB,
   NVIDIA driver 617.42, `uv` 0.11.16, Python 3.11.15, `ffmpeg` 9.0.2
   (winget), Node 24 on PATH (yt-dlp's JavaScript runtime). `service/.venv`
-  has the CPU deps, yt-dlp[default] and the `separation` extra (torch and
-  torchaudio 2.11.0+cu128, demucs 4.1.0). In `service/` use
-  `uv sync --extra separation` (add `--extra pitch` from W1), or
-  `--inexact`; a plain `uv sync` uninstalls torch. C: had 156 GB free at
-  the P2-T2 commit; keep 15 GB free. uv's cache still holds a cu130 torch
+  has the CPU deps, yt-dlp[default], the `separation` extra (torch and
+  torchaudio 2.11.0+cu128, demucs 4.1.0) and the `pitch` extra
+  (torchcrepe). In `service/` use
+  `uv sync --inexact --extra separation --extra pitch`; a plain `uv sync`
+  uninstalls torch. C: had 152 GB free at the W1 commit; keep 15 GB free. uv's cache still holds a cu130 torch
   wheel (about 2.7 GiB); `uv cache clean torch torchaudio` frees it once
   nothing locks the files. The service is not running by default; the
   Vite dev server on :5173 is the owner's.
@@ -82,13 +89,20 @@ webcam or USB mic.
     plays. Report whether the switch is audible, whether the muted video
     stays in step (also after a click on YouTube's timeline and a long
     buffer), and whether Speakers mode keeps the song out of the mic.
+  - Reference melody (W1, before the browser draws it in W2b): start the
+    service, then `curl -F file=@song.mp3 localhost:8765/songs` with a
+    song that has singing and note its `song_id`. When
+    `localhost:8765/songs/<id>` shows `reference` done, open
+    `localhost:8765/songs/<id>/reference`. Report the note count, the
+    range, and whether the first few notes follow the tune. A karaoke
+    track should show `reference` skipped with "No singing found".
 
 ## Waves
 
 Each wave lists what to build, the files it owns, and when it is done.
 Tracks inside a wave share no files and may run in parallel.
 
-- [ ] **W1: Seams and the reference melody.** Two tracks, one commit.
+- [x] **W1: Seams and the reference melody.** Two tracks, one commit.
   - **W1a, service: reference melody** (was P2-T3). New `reference` step
     after separation: `torchcrepe` (full model) on `vocals.flac` at 10 ms
     hop, Viterbi decoding, a confidence gate, a median filter for octave
@@ -147,6 +161,33 @@ Tracks inside a wave share no files and may run in parallel.
       `src/app/session/` is over about 500 lines, and
       `docs/ARCHITECTURE.md` (Browser) names the controllers and the
       frame bus.
+  - Done 2026-10-28. Checks: 1,159 unit tests, 51 e2e, 824 service tests.
+    `src/app/session.ts` is a 285-line facade; the largest controller is
+    381 lines. The lane is `pitch-lane.ts` (310) over `lane-*.ts` layers.
+    Real run on YouTube blocked (bot check, see Blockers), so the reference
+    step ran on the GPU on a synthetic sung line instead: 8 of 8 known
+    notes within 50 cents and 60 ms, presence 1.0; the backing alone gave
+    0.0 and skipped. 10 s of audio separated and tracked in 8.5 s cold;
+    both models resident cost about 0.9 GB of VRAM. A pure tone is not a
+    vocal to demucs (it lands in `no_vocals`), so test mixes need a
+    formant voice. Frames under -50 dBFS get no pitch, which removed
+    notes tracked from separation leftovers between words.
+  - Follow-up: the spot-check on a real sung song is the owner's (list
+    above); the 15% presence cut-off and the 0.3 confidence gate are
+    untuned on real vocals.
+  - Follow-up: the lyrics step still waits on separation ("Needs
+    separation") when separation fails; make it independent.
+  - Follow-up: `_is_done` in `pipeline.py` does not check that
+    `reference.json` exists.
+  - Follow-up: `vibrato` on notes is not measured (Later, deeper
+    analysis).
+  - Follow-up: `loadLink` has no unit test beyond its guards (it needs a
+    fake YouTube API); e2e covers it.
+  - Follow-up: the frame bus's unsubscribe functions are never called;
+    harmless while `tracker.disconnect()` stops frames, but W4's second
+    mic should unsubscribe on close.
+  - For W3: `settings.mode` is read by nothing yet, and the lane's overlay
+    layer has the hook for hit colours.
 - [ ] **W2: Search and karaoke core.** Two tracks, one commit.
   - **W2a, browser: YouTube search as the first screen.** Owns
     `src/search/` and the search panel. Owner decision (2026-10-27): the
@@ -323,19 +364,23 @@ Not scheduled. Pull one in only when the owner asks.
   length cap, notes while a step runs, clearing crash leftovers, releasing
   GPU memory, and more. None block the goal.
 
-## Estimates (2026-10-27, light pipeline)
+## Estimates (corrected 2026-10-28 after W1, light pipeline)
 
-Rough until W1 is measured; correct them after each wave.
+W1 measured about 1 hour of wall time (two workers in parallel, then
+one reviewer) and about 1.0 M subagent tokens: 0.75 M counted plus a
+worker run whose count was lost to an API error. The estimate was 3.5
+hours and 1.8 M, so the rest are scaled down, less than W1's ratio
+since W1 was mostly a move.
 
 | Wave | Agent hours | Subagent tokens | Owner |
 |---|---|---|---|
-| W1 Seams and reference | 3.5 (2.5-6) | about 1.8 M | 5 min |
-| W2 Search and karaoke core | 4.5 (3-7) | about 1.8 M | 20 min, an API key |
-| W3 Learning mode | 3 (2-5) | about 1.2 M | 20 min |
-| W4 Two singers | 3 (2-5) | about 1.2 M | 30 min, a second person |
-| W5 Synced lyrics | 1 (0.5-2) | about 0.4 M | 5 min |
-| W6 Test and sweep | 1.5 (1-3) | about 0.8 M | 45 min |
-| **Total** | **about 16.5 (11-28)** | **about 7.2 M** | **about 2 h** |
+| W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
+| W2 Search and karaoke core | 2 (1.5-3) | about 1.1 M | 20 min, an API key |
+| W3 Learning mode | 1.2 (1-2) | about 0.8 M | 20 min |
+| W4 Two singers | 1.5 (1-2.5) | about 0.8 M | 30 min, a second person |
+| W5 Synced lyrics | 0.5 (0.3-1) | about 0.3 M | 5 min |
+| W6 Test and sweep | 1 (0.7-2) | about 0.6 M | 45 min |
+| **Total** | **about 7.2 (5.5-11.5)** | **about 4.6 M** | **about 2 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The
 orchestrator's own reading adds about 100 to 200 thousand tokens per wave

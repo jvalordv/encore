@@ -4,10 +4,10 @@
 song in it the way the routes do, so store and pipeline tests start from real
 cache contents rather than hand-built folders. Every test also runs with the
 step registry emptied (see `no_runners`), with yt-dlp out of reach (see
-`no_unfaked_yt_dlp`) and with no real separation model to load (see
+`no_unfaked_yt_dlp`) and with no real model to load (see
 `no_real_models`). `ydl`, `fakes` and `node_only` keep the YouTube code away
 from the network, ffmpeg and whatever this machine has on PATH, and `separator`
-stands in for the separation model.
+and `pitch_tracker` stand in for the separation and pitch models.
 """
 
 import hashlib
@@ -16,14 +16,16 @@ from pathlib import Path
 
 import pytest
 
-from encore_service import pipeline, separation, youtube
+from encore_service import pipeline, reference, registry, separation, youtube
 from encore_service.pipeline import initial_status
 from encore_service.store import SongMeta, SongStore
 from tests.fakes import (
+    FakePitchTracker,
     FakeSeparator,
     FetchFakes,
     Ydl,
     install_fake_fetch,
+    install_fake_pitch_tracker,
     install_fake_separator,
     install_fake_ydl,
 )
@@ -33,8 +35,8 @@ UNFAKED = (
     "youtube.lookup or the fetch calls (see tests/fakes.py)."
 )
 UNFAKED_MODEL = (
-    "A test reached the real separation model without a fake. Use the "
-    "`separator` fixture (see tests/fakes.py)."
+    "A test reached a real model without a fake. Use the `separator` or "
+    "`pitch_tracker` fixture (see tests/fakes.py)."
 )
 
 
@@ -83,8 +85,8 @@ def no_real_models(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
     download weights. The attempt is also remembered and fails the test
     afterwards, because the separation step turns any error into a failed step
     and a test that expects a failure would otherwise pass for the wrong
-    reason. The `separator` fixture runs after this one and puts its fake in
-    the loader's place. Yields the list of attempts.
+    reason. The `separator` and `pitch_tracker` fixtures run after this one and
+    put their fakes in the loaders' place. Yields the list of attempts.
     """
     reached: list[str] = []
 
@@ -92,8 +94,9 @@ def no_real_models(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
         reached.append(UNFAKED_MODEL)
         raise AssertionError(UNFAKED_MODEL)
 
-    monkeypatch.setattr(separation, "models", separation.ModelRegistry())
+    monkeypatch.setattr(registry, "models", registry.ModelRegistry())
     monkeypatch.setattr(separation, "load_demucs", unfaked)
+    monkeypatch.setattr(reference, "load_crepe", unfaked)
     yield reached
     assert not reached, UNFAKED_MODEL
 
@@ -164,3 +167,9 @@ def fakes(monkeypatch: pytest.MonkeyPatch) -> FetchFakes:
 def separator(monkeypatch: pytest.MonkeyPatch) -> FakeSeparator:
     """A fake separation model that makes known stems; see tests/fakes.py."""
     return install_fake_separator(monkeypatch)
+
+
+@pytest.fixture
+def pitch_tracker(monkeypatch: pytest.MonkeyPatch) -> FakePitchTracker:
+    """A fake pitch model that follows a known melody; see tests/fakes.py."""
+    return install_fake_pitch_tracker(monkeypatch)

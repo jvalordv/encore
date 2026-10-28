@@ -66,8 +66,8 @@ Some things only the owner can do, since the service needs their GPU and the
 app needs their mics:
 
 - First run of the service with each extra as its wave lands
-  (`service/README.md`, "GPU setup"); `separation` is installed, `pitch`
-  comes with W1.
+  (`service/README.md`, "GPU setup"); `separation` and `pitch` are
+  installed.
 - A YouTube Data API key for W2's search, pasted into the app's search
   panel (never into chat).
 - The owner test named at the end of each wave, with a real song and a

@@ -21,6 +21,7 @@ from functools import partial
 from encore_service.errors import StepSkipped
 from encore_service.fetch import fetch_source
 from encore_service.jobs import JobQueue
+from encore_service.reference import extract_reference
 from encore_service.schemas import (
     SongSource,
     SongStatus,
@@ -41,12 +42,23 @@ Report = Callable[[float], None]
 # Does one step's work for one song, and raises when it cannot.
 Runner = Callable[[SongStore, str, Report], None]
 
+# What the lyrics step says: the words come from a lookup the browser makes,
+# so the service has nothing to prepare, but the step stays in the status so
+# the browser's list of steps does not change when the service gains lyrics.
+LYRICS_SKIPPED = "Lyrics come from a lookup in the app"
+
+
+def skip_lyrics(store: SongStore, song_id: str, report: Report) -> None:
+    """The lyrics step's runner: there is nothing to do, and it says so."""
+    raise StepSkipped(LYRICS_SKIPPED)
+
+
 # Step name -> its runner, or None while the step is not built.
 RUNNERS: dict[StepName, Runner | None] = {
     "fetch": fetch_source,
     "separation": separate_vocals,
-    "reference": None,
-    "lyrics": None,
+    "reference": extract_reference,
+    "lyrics": skip_lyrics,
 }
 
 # The ROADMAP task that registers each runner, for the "Not built yet" note.

@@ -5,7 +5,9 @@ YouTube: it records the options and URLs it is given and answers from fields
 the test sets. `FetchFakes` replaces the two calls the fetch step makes
 (`youtube.download_audio` and `youtube.to_flac`), so a test can run that step
 without a network or ffmpeg; its conversion writes a real FLAC.
-`FakeSeparator` stands in for a loaded separation model: it returns stems of
+`FakePitchTracker` does the same for the pitch model of the reference step: it
+follows a known melody whatever audio it is given. `FakeSeparator` stands in
+for a loaded separation model: it returns stems of
 known tones and records what it was given, so the separation step runs without
 torch or weights; `add_song`, `known_sources` and the other audio helpers make
 what the separation tests feed it and check against. The `ydl`, `fakes` and
@@ -26,7 +28,7 @@ import pytest
 import soundfile as sf
 import yt_dlp
 
-from encore_service import separation, youtube
+from encore_service import melody, pipeline, reference, separation, youtube
 from encore_service.config import Settings
 from encore_service.pipeline import initial_status
 from encore_service.separation import Audio
@@ -37,6 +39,9 @@ from encore_service.store import SongMeta, SongStore
 REAL_YOUTUBE_DL = yt_dlp.YoutubeDL
 # Likewise the real model loader, for the test of what it does without torch.
 REAL_LOAD_DEMUCS = separation.load_demucs
+REAL_LOAD_CREPE = reference.load_crepe
+# The step registry as shipped, before the tests empty it.
+REAL_RUNNERS = dict(pipeline.RUNNERS)
 
 # The audio the fake conversion writes, so its real length is known.
 RATE = 8_000
@@ -289,4 +294,61 @@ def install_fake_separator(monkeypatch: pytest.MonkeyPatch) -> FakeSeparator:
         return fake
 
     monkeypatch.setattr(separation, "load_demucs", load)
+    return fake
+
+
+# --- pitch -------------------------------------------------------------------
+
+# What the fake pitch model hears: a rest, a note, a rest, a higher note.
+FAKE_MELODY: tuple[tuple[float | None, float], ...] = (
+    (None, 0.2),
+    (57.0, 0.5),
+    (None, 0.3),
+    (64.0, 0.6),
+)
+
+
+@dataclass
+class FakePitchTracker:
+    """A loaded pitch model that follows `melody` and records its use."""
+
+    melody: tuple[tuple[float | None, float], ...] = FAKE_MELODY
+    error: BaseException | None = None
+    load_error: BaseException | None = None
+    loads: list[tuple[str, str]] = field(default_factory=list)
+    # The length in samples and the rate of each audio it was given.
+    heard: list[tuple[int, int]] = field(default_factory=list)
+
+    def track(
+        self, mono: Audio, samplerate: int, report: Callable[[float], None]
+    ) -> tuple[np.ndarray, np.ndarray]:
+        self.heard.append((len(mono), samplerate))
+        for value in (0.3, 0.6, 1.0):
+            report(value)
+        if self.error is not None:
+            raise self.error
+        frames = 1 + len(mono) * 100 // samplerate
+        midi = np.full(frames, np.nan)
+        at = 0
+        for pitch, seconds in self.melody:
+            count = round(seconds * 100)
+            if pitch is not None:
+                midi[at : at + count] = pitch
+            at += count
+        f0 = melody.midi_to_hz(midi).astype(np.float32)
+        confidence = np.where(np.isnan(midi), 0.05, 0.9).astype(np.float32)
+        return f0, confidence
+
+
+def install_fake_pitch_tracker(monkeypatch: pytest.MonkeyPatch) -> FakePitchTracker:
+    """Make the reference step's loader hand out one fake pitch model."""
+    fake = FakePitchTracker()
+
+    def load(name: str, device: str) -> FakePitchTracker:
+        fake.loads.append((name, device))
+        if fake.load_error is not None:
+            raise fake.load_error
+        return fake
+
+    monkeypatch.setattr(reference, "load_crepe", load)
     return fake

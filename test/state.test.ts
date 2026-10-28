@@ -58,6 +58,20 @@ describe('initialState', () => {
         monitor: 'headphones',
         requestedAec: false,
       },
+      singers: [
+        {
+          id: 0,
+          input: {
+            deviceId: null,
+            label: '',
+            open: false,
+            level: 0,
+            processing: { aec: null, ns: null, agc: null },
+            monitor: 'headphones',
+            requestedAec: false,
+          },
+        },
+      ],
       output: { deviceId: null, label: '', selectable: false },
       latencyS: null,
       calibrating: false,
@@ -773,5 +787,35 @@ describe('Session without Web Audio', () => {
     const session = new Session({ settings, takes: memoryTakeStore() });
     expect(session.store.state.input.deviceId).toBe('usb-mic');
     expect(session.store.state.input.open).toBe(false);
+  });
+});
+
+describe('singers', () => {
+  it('starts with one singer whose input is the state input', () => {
+    const state = initialState();
+    expect(state.singers).toHaveLength(1);
+    expect(state.singers[0].id).toBe(0);
+    expect(state.singers[0].input).toEqual(state.input);
+  });
+
+  it('keeps the first singer in step with patchSection on the input', () => {
+    const store = new StateStore();
+    const calls: Array<Set<keyof AppState>> = [];
+    store.subscribe((_s, changed) => calls.push(new Set(changed)));
+    store.patchSection('input', { label: 'USB mic', open: true });
+    expect(store.state.singers[0].input).toEqual(store.state.input);
+    expect(store.state.singers[0].input.label).toBe('USB mic');
+    expect(calls).toEqual([new Set(['input', 'singers'])]);
+  });
+
+  it('leaves the singers alone for the output section and for no-op patches', () => {
+    const store = new StateStore();
+    const before = store.state.singers;
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.patchSection('output', { selectable: true });
+    store.patchSection('input', {});
+    expect(store.state.singers).toBe(before);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });

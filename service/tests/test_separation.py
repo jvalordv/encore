@@ -13,7 +13,6 @@ import json
 import logging
 import subprocess
 import sys
-import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -23,7 +22,7 @@ import pytest
 import soundfile as sf
 from fastapi.testclient import TestClient
 
-from encore_service import pipeline, separation
+from encore_service import pipeline, registry, separation
 from encore_service.app import create_app
 from encore_service.config import Settings
 from encore_service.errors import StepSkipped
@@ -32,7 +31,6 @@ from encore_service.separation import (
     CLIP_CEILING,
     INSTALL_HINT,
     Audio,
-    ModelRegistry,
     SeparationError,
     separate_vocals,
 )
@@ -73,106 +71,6 @@ def run(store: SongStore, song_id: str) -> list[float]:
     reported: list[float] = []
     separate_vocals(store, song_id, reported.append)
     return reported
-
-
-# --- the registry -------------------------------------------------------------
-
-
-def test_a_model_is_loaded_once_per_name_and_device() -> None:
-    registry = ModelRegistry()
-    loads: list[tuple[str, str]] = []
-
-    def load(name: str, device: str) -> FakeSeparator:
-        loads.append((name, device))
-        return FakeSeparator()
-
-    first = registry.get("htdemucs_ft", "cuda", load)
-    again = registry.get("htdemucs_ft", "cuda", load)
-    other_device = registry.get("htdemucs_ft", "cpu", load)
-    other_model = registry.get("htdemucs", "cuda", load)
-
-    assert again is first
-    assert other_device is not first and other_model is not first
-    assert loads == [
-        ("htdemucs_ft", "cuda"),
-        ("htdemucs_ft", "cpu"),
-        ("htdemucs", "cuda"),
-    ]
-
-
-def test_the_registry_lists_what_it_holds_by_family_name_and_device() -> None:
-    registry = ModelRegistry()
-    assert registry.loaded() == []
-
-    registry.get("htdemucs_ft", "cuda", lambda name, device: FakeSeparator())
-    registry.get("htdemucs", "cpu", lambda name, device: FakeSeparator())
-
-    assert registry.loaded() == ["demucs:htdemucs@cpu", "demucs:htdemucs_ft@cuda"]
-
-
-def test_a_load_that_fails_is_not_kept_and_can_be_tried_again() -> None:
-    registry = ModelRegistry()
-
-    def refuse(name: str, device: str) -> FakeSeparator:
-        raise OSError("no network")
-
-    with pytest.raises(OSError, match="no network"):
-        registry.get("htdemucs_ft", "cuda", refuse)
-    assert registry.loaded() == []
-
-    model = FakeSeparator()
-    assert registry.get("htdemucs_ft", "cuda", lambda n, d: model) is model
-
-
-def test_two_requests_for_a_model_at_once_load_it_once() -> None:
-    registry = ModelRegistry()
-    loading, release = threading.Event(), threading.Event()
-    loads: list[str] = []
-
-    def slow_load(name: str, device: str) -> FakeSeparator:
-        loads.append(name)
-        loading.set()
-        assert release.wait(WAIT_S)
-        return FakeSeparator()
-
-    results: list[object] = []
-    threads = [
-        threading.Thread(
-            target=lambda: results.append(registry.get("m", "cpu", slow_load))
-        )
-        for _ in range(2)
-    ]
-    threads[0].start()
-    assert loading.wait(WAIT_S)
-    threads[1].start()
-    release.set()
-    for thread in threads:
-        thread.join(WAIT_S)
-
-    assert loads == ["m"]
-    assert len(results) == 2 and results[0] is results[1]
-
-
-def test_listing_the_models_does_not_wait_for_a_load_in_progress() -> None:
-    registry = ModelRegistry()
-    registry.get("held", "cpu", lambda name, device: FakeSeparator())
-    loading, release = threading.Event(), threading.Event()
-
-    def slow_load(name: str, device: str) -> FakeSeparator:
-        loading.set()
-        assert release.wait(WAIT_S)
-        return FakeSeparator()
-
-    thread = threading.Thread(target=lambda: registry.get("slow", "cpu", slow_load))
-    thread.start()
-    try:
-        assert loading.wait(WAIT_S)
-        # A first use may download for minutes; GET /gpu must still answer.
-        assert registry.loaded() == ["demucs:held@cpu"]
-    finally:
-        release.set()
-        thread.join(WAIT_S)
-    assert registry.loaded() == ["demucs:held@cpu", "demucs:slow@cpu"]
 
 
 # --- the step, end to end with a fake model -----------------------------------
@@ -492,7 +390,7 @@ def test_the_model_is_loaded_once_and_kept_for_the_next_song(
     run(store, second)
 
     assert separator.loads == [("htdemucs_ft", "cpu")]
-    assert separation.loaded_models() == ["demucs:htdemucs_ft@cpu"]
+    assert registry.loaded_models() == ["demucs:htdemucs_ft@cpu"]
 
 
 def test_the_model_and_device_come_from_the_environment(
@@ -504,7 +402,7 @@ def test_the_model_and_device_come_from_the_environment(
     run(store, add_song(store))
 
     assert separator.loads == [("htdemucs_6s", "cuda")]
-    assert separation.loaded_models() == ["demucs:htdemucs_6s@cuda"]
+    assert registry.loaded_models() == ["demucs:htdemucs_6s@cuda"]
 
 
 # --- the step, failing --------------------------------------------------------
@@ -577,7 +475,7 @@ def test_a_model_that_cannot_be_loaded_fails_before_the_audio_is_read(
     assert str(raised.value) == (
         "Loading the separation model failed: no network to fetch the weights"
     )
-    assert separation.loaded_models() == []
+    assert registry.loaded_models() == []
     assert_nothing_left_behind(store, song_id)
 
 
@@ -830,7 +728,7 @@ def test_a_missing_piece_of_the_extra_skips_the_step_with_the_install_command(
     )
     # Nothing was read or made, and no model is claimed to be loaded.
     assert not (store.song_dir(song_id) / ".separate").exists()
-    assert separation.loaded_models() == []
+    assert registry.loaded_models() == []
 
 
 def test_a_torch_that_will_not_load_skips_the_step_and_says_why(

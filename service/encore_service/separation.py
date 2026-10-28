@@ -4,14 +4,14 @@
 `pipeline.py`. It reads the song's source audio, has demucs split it into
 stems, and installs `vocals.flac` and `no_vocals.flac` (the sum of every other
 stem, which is the karaoke backing) in the song's folder as 24-bit FLAC. The
-model is loaded on first use and kept in a small registry (`models`) that
-`GET /gpu` lists. Nothing here imports torch or demucs until a song is
-separated, so this module loads, and the rest of the service runs, without the
-`separation` extra: the step is then skipped with the command that installs
-it. The model is reached through the `Separator` protocol and `load_demucs`,
-which tests replace, so no test downloads weights. The sums and scalings are
-plain numpy so they are tested without torch. See "Models are loaded lazily"
-in docs/ARCHITECTURE.md.
+model is loaded on first use and kept in the service's model registry
+(`registry.py`), which `GET /gpu` lists. Nothing here imports torch or demucs
+until a song is separated, so this module loads, and the rest of the service
+runs, without the `separation` extra: the step is then skipped with the
+command that installs it. The model is reached through the `Separator`
+protocol and `load_demucs`, which tests replace, so no test downloads weights.
+The sums and scalings are plain numpy so they are tested without torch. See
+"Models are loaded lazily" in docs/ARCHITECTURE.md.
 
 The stems are the model's estimates, not an exact split of the song. The
 models are trained on music, so they drop sound effects and put nothing above
@@ -33,7 +33,6 @@ import logging
 import math
 import shutil
 import subprocess
-import threading
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import partial
@@ -44,7 +43,7 @@ import numpy as np
 import soundfile as sf
 from numpy.typing import NDArray
 
-from encore_service import youtube
+from encore_service import registry, youtube
 from encore_service.config import Settings
 from encore_service.errors import StepSkipped
 from encore_service.store import STEM_FILES, SongStore
@@ -69,6 +68,8 @@ DECODED_NAME = "decoded.wav"
 # The source demucs calls the voice; every other source is the backing.
 VOCALS = "vocals"
 NO_VOCALS = "no_vocals"
+# This model family's prefix in `GET /gpu`'s `loaded_models`.
+DEMUCS_FAMILY = "demucs"
 
 # What the demucs command line does by default, which is what its published
 # quality is measured with: one pass at a random time shift, and segments
@@ -120,47 +121,6 @@ class Separator(Protocol):
         `report` from 0 up to about PROGRESS_CAP.
         """
         ...
-
-
-class ModelRegistry:
-    """The models held in memory, one per (name, device): load once, keep."""
-
-    def __init__(self) -> None:
-        # Loading is slow (a first use downloads weights), so loads are
-        # serialised by one lock and the dictionary has another. Asking which
-        # models are loaded then never waits for a download to finish.
-        self._load_lock = threading.Lock()
-        self._state_lock = threading.Lock()
-        self._models: dict[tuple[str, str], Separator] = {}
-
-    def get(
-        self, name: str, device: str, load: Callable[[str, str], Separator]
-    ) -> Separator:
-        """The model for `name` on `device`, made with `load` on first use."""
-        key = (name, device)
-        with self._load_lock:
-            with self._state_lock:
-                held = self._models.get(key)
-            if held is not None:
-                return held
-            model = load(name, device)
-            with self._state_lock:
-                self._models[key] = model
-            return model
-
-    def loaded(self) -> list[str]:
-        """The held models as `demucs:<name>@<device>`, in name order."""
-        with self._state_lock:
-            return sorted(f"demucs:{name}@{device}" for name, device in self._models)
-
-
-# The service's one registry. Tests put a fresh one in its place.
-models = ModelRegistry()
-
-
-def loaded_models() -> list[str]:
-    """The models held in memory, for GET /gpu; never imports torch."""
-    return models.loaded()
 
 
 # --- the arithmetic on audio, which needs no torch ---------------------------
@@ -577,7 +537,13 @@ def separate_vocals(store: SongStore, song_id: str, report: Report) -> None:
         # and a model that will not load fails it before any is decoded.
         separator = _attempt(
             "Loading the separation model",
-            partial(models.get, settings.demucs_model, settings.device, load_demucs),
+            partial(
+                registry.models.get,
+                DEMUCS_FAMILY,
+                settings.demucs_model,
+                settings.device,
+                load_demucs,
+            ),
         )
         _attempt("Preparing the separation folder", partial(_fresh_dir, work))
         wav, samplerate = _attempt(

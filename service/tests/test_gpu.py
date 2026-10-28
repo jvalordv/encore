@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from encore_service import separation
+from encore_service import registry
 from encore_service.app import create_app
 from encore_service.config import Settings
 from tests.fakes import FakeSeparator
@@ -79,7 +79,7 @@ def test_gpu_reports_the_forced_device(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _hold(name: str, device: str) -> None:
     """Put a model in the service's registry, as a separated song would."""
-    separation.models.get(name, device, lambda n, d: FakeSeparator())
+    registry.models.get("demucs", name, device, lambda n, d: FakeSeparator())
 
 
 @pytest.mark.parametrize("torch_state", ["absent", "cpu_only", "cuda"])

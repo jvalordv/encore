@@ -37,6 +37,7 @@ describe('DEFAULT_SETTINGS', () => {
       octaveInvariant: false,
       latencyByDevicePair: {},
       embedOffsetS: 0,
+      mode: 'karaoke',
     });
   });
 
@@ -95,6 +96,7 @@ describe('loadSettings', () => {
       octaveInvariant: false,
       latencyByDevicePair: { 'latency.a|b': 0.12 },
       embedOffsetS: 0,
+      mode: 'karaoke',
     });
   });
 
@@ -235,6 +237,7 @@ describe('saveSettings', () => {
     octaveInvariant: true,
     latencyByDevicePair: { 'latency.out-1|in-1': 0.143 },
     embedOffsetS: -0.06,
+    mode: 'learning',
   };
 
   it('round-trips through a store', () => {
@@ -315,5 +318,29 @@ describe('saveSettings', () => {
     expect(() => saveSettings(store, custom)).not.toThrow();
     // The store remembers the write in memory, so this session still sees it.
     expect(loadSettings(store)).toEqual(custom);
+  });
+});
+
+describe('practice mode', () => {
+  it('defaults to karaoke', () => {
+    expect(DEFAULT_SETTINGS.mode).toBe('karaoke');
+    expect(loadSettings(memoryStore()).mode).toBe('karaoke');
+  });
+
+  it('keeps a stored learning mode', () => {
+    expect(sanitizeSettings({ mode: 'learning' }).mode).toBe('learning');
+    expect(loadSettings(storeWith(JSON.stringify({ mode: 'learning' }))).mode).toBe('learning');
+  });
+
+  it('falls back to karaoke for anything else', () => {
+    for (const mode of ['Learning', 'coach', '', 7, null, true, {}, ['learning']]) {
+      expect(sanitizeSettings({ mode }).mode, String(mode)).toBe('karaoke');
+    }
+  });
+
+  it('never saves a mode that load would reject', () => {
+    const store = memoryStore();
+    saveSettings(store, { ...DEFAULT_SETTINGS, mode: 'loud' as unknown as 'karaoke' });
+    expect(JSON.parse(store.get('settings') ?? 'null').mode).toBe('karaoke');
   });
 });

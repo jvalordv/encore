@@ -10,7 +10,8 @@ video is, and creates the song as `yt-<video id>` for the fetch step to fill.
 /songs/{id}/audio` serves the stored source so a song can be reloaded without
 the original file. `GET /songs/{id}/stems/{stem}` serves the vocal or the
 backing that the separation step made, with the level they were scaled by in
-the `X-Stem-Gain` header. Storage lives in `store.py`, the queue in `jobs.py`,
+the `X-Stem-Gain` header, and `GET /songs/{id}/reference` the melody the
+reference step took from the vocal. Storage lives in `store.py`, the queue in `jobs.py`,
 the steps in `pipeline.py` and the YouTube access in `youtube.py`; this module
 is the HTTP edge over them.
 """
@@ -273,3 +274,27 @@ def get_song_stem(song_id: str, stem: str, request: Request) -> FileResponse:
     return FileResponse(
         path, media_type=STEM_MEDIA_TYPE, headers={STEM_GAIN_HEADER: str(gain)}
     )
+
+
+@router.get(
+    "/{song_id}/reference",
+    response_class=FileResponse,
+    responses={
+        404: {"description": "No such song."},
+        409: {"description": "The song has no reference melody."},
+    },
+)
+def get_song_reference(song_id: str, request: Request) -> FileResponse:
+    """Serve the song's reference melody (the `Reference` schema) as JSON.
+
+    A song has none until its reference step is done, and never has one when
+    that step was skipped (a track with no singing in it, or no pitch model
+    installed); the status says which.
+    """
+    store: SongStore = request.app.state.store
+    if not store.exists(song_id):
+        raise HTTPException(status_code=404, detail="No such song.")
+    path = store.reference_path(song_id)
+    if path is None:
+        raise HTTPException(status_code=409, detail="Song has no reference melody.")
+    return FileResponse(path, media_type="application/json")
