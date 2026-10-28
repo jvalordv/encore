@@ -12,9 +12,12 @@
  * store, the parts and the settings: songs and transports (songs.ts),
  * playback and loop (playback.ts), the service and prepared audio
  * (prepare.ts), the karaoke track from the service (stems.ts) and the mix of
- * its stems (mix.ts), the song search (search.ts), the mic (input.ts), devices and output (devices.ts),
- * latency and calibration (latency.ts) and takes (takes.ts). Tracker frames
- * reach the lane and the take recorder through a frame bus (frame-bus.ts).
+ * its stems (mix.ts), the song search (search.ts), the mic (input.ts), devices
+ * and output (devices.ts), latency and calibration (latency.ts), takes
+ * (takes.ts) and learning mode (scoring.ts: the practice mode, the live grade
+ * of each frame and the report a take gets). Tracker frames reach the take
+ * recorder and, graded in learning mode, the lane through a frame bus
+ * (frame-bus.ts).
  *
  * The song comes from one of two transports (src/audio/transport.ts): the
  * audio Player for a dropped file, or a YouTubeTransport for a pasted link.
@@ -52,7 +55,7 @@ import { SessionCore } from './session/core';
 import { buildParts } from './session/parts';
 import type { DeviceLists, LaneSink, SessionOptions, SessionParts } from './session/types';
 import { loadSettings } from './settings';
-import type { Settings } from './settings';
+import type { PracticeMode, Settings } from './settings';
 import { StateStore } from './state';
 import { localStorageStore } from './storage';
 import { memoryTakeStore, openTakeStore } from './takes';
@@ -205,6 +208,21 @@ export class Session {
     this.core.mix.setGuideLevel(level);
   }
 
+  // ---- Learning mode ------------------------------------------------------
+
+  /**
+   * Switches between karaoke (never judges) and learning (scores against the
+   * original, tips on request); remembers it and sets the search chip to match.
+   */
+  setMode(mode: PracticeMode): void {
+    this.core.scoring.setMode(mode);
+  }
+
+  /** Opens a take's report card (learning mode only shows it); null closes it. */
+  showReport(takeId: string | null): void {
+    this.core.scoring.showReport(takeId);
+  }
+
   // ---- Finding a song -----------------------------------------------------
 
   /**
@@ -329,9 +347,12 @@ export class Session {
     return this.core.takes.toggleRecord();
   }
 
-  /** Plays a saved take under the song, or by itself under a video. */
-  playTake(id: string): Promise<void> {
-    return this.core.takes.playTake(id);
+  /**
+   * Plays a saved take under the song, or by itself under a video; `fromS`
+   * (song time) starts it a moment before that point instead of at its start.
+   */
+  playTake(id: string, fromS?: number): Promise<void> {
+    return this.core.takes.playTake(id, fromS);
   }
 
   /** Stops the take, restores the song's level and pauses. */

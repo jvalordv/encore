@@ -22,6 +22,7 @@ import { TickLoop } from './loop';
 import { MixController } from './mix';
 import { PlaybackController } from './playback';
 import { PrepareController } from './prepare';
+import { ScoringController } from './scoring';
 import { SearchController } from './search';
 import type { SearchOptions } from './search';
 import { SongController } from './songs';
@@ -62,6 +63,7 @@ export class SessionCore {
   lane: LaneSink | null = null;
 
   readonly takes: TakeController;
+  readonly scoring: ScoringController;
   readonly songs: SongController;
   readonly playback: PlaybackController;
   readonly prepare: PrepareController;
@@ -82,8 +84,10 @@ export class SessionCore {
     this.trackerSupported = init.trackerSupported ?? (PitchTracker.isSupported() && PcmCapture.isSupported());
 
     // The take controller goes first so its frame subscriber runs before the
-    // lane's, as the take recorded a frame before the lane drew it.
+    // lane's (the scoring controller feeds the lane), as the take recorded a
+    // frame before the lane drew it.
     this.takes = new TakeController(this);
+    this.scoring = new ScoringController(this);
     this.songs = new SongController(this, init.youtubeApi);
     this.playback = new PlaybackController(this);
     this.prepare = new PrepareController(this);
@@ -94,17 +98,12 @@ export class SessionCore {
     this.stems = new StemsController(this);
     this.search = new SearchController(this, init.search);
     this.loop = new TickLoop(this);
-    this.bus.subscribe(({ frame }) => {
-      // While a take replays, its own trace owns the lane.
-      if (this.store.state.playingTakeId === null) {
-        this.lane?.pushFrame({ t: frame.t, f0: frame.f0, clarity: frame.clarity });
-      }
-    });
 
     const sinkCapable = typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;
     this.store.patch({
       tracker: this.trackerSupported ? 'idle' : 'unsupported',
       embedOffsetS: this.current.embedOffsetS,
+      mode: this.current.mode,
     });
     this.store.patchSection('input', {
       deviceId: this.current.inputDeviceId,

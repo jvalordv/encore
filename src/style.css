@@ -80,9 +80,10 @@ body {
 #topbar {
   grid-area: topbar;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 8px 16px;
   padding: 8px 16px;
 }
 
@@ -750,4 +751,83 @@ button[aria-pressed='true'] {
   content: '\25CF';
   margin-right: 6px;
   color: var(--color-miss);
+}
+
+/* ---- Mode toggle and learning mode ---------------------------------------- */
+
+.mode-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+}
+
+.mode-picker .segmented button {
+  padding: 4px 14px;
+}
+
+/* The karaoke-track notice and the report card; neither exists in karaoke mode. */
+.learning-notice,
+.report-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-accent-2);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+}
+
+.learning-notice p,
+.report-card p {
+  margin: 0;
+}
+
+.report-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.report-headline {
+  font-weight: 700;
+}
+
+.report-sub {
+  margin: 4px 0 0;
+  color: var(--color-text-muted);
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.report-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.report-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.report-list li > span:first-child {
+  flex: 1 1 100%;
+}
+
+.report-card button,
+.learning-notice button {
+  min-width: 0;
+  padding: 3px 8px;
+  font-size: 0.8rem;
 }

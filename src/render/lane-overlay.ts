@@ -1,11 +1,12 @@
 /**
  * The pitch lane's overlay layer, painted last: the line across the middle
  * (a notice such as an ad playing, or the invitation to sing when the lane is
- * empty) and the playhead. Anything that sits over the traces, such as hit
- * colours, belongs here.
+ * empty) and the playhead, plus the hit colours: in learning mode each graded
+ * stretch of the ribbon is painted over in the grade's skin colour. A frame
+ * without a grade paints nothing, so karaoke mode draws exactly the ribbon.
  */
-import { viewX } from './lane-geometry';
-import type { LaneView } from './lane-geometry';
+import { gradeRuns, LIVE_HOP_S, segmentRibbon, viewX, viewY } from './lane-geometry';
+import type { LaneFrame, LaneView } from './lane-geometry';
 import type { LaneStyle } from './lane-style';
 
 /** What an empty lane invites the singer to do. */
@@ -55,4 +56,33 @@ export function drawPlayhead(
   ctx.moveTo(x, 0);
   ctx.lineTo(x, view.height);
   ctx.stroke();
+}
+
+/** One singer's graded frames, painted over their ribbon in the grade colours. */
+export function drawGrades(
+  ctx: CanvasRenderingContext2D,
+  view: LaneView,
+  style: LaneStyle,
+  frames: LaneFrame[],
+  gutter: number,
+): void {
+  if (!frames.some((f) => f.grade !== undefined)) return;
+  ctx.lineWidth = style.ribbonWidth;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const segment of segmentRibbon(frames, LIVE_HOP_S)) {
+    for (const run of gradeRuns(segment)) {
+      ctx.strokeStyle = style[run.grade];
+      ctx.beginPath();
+      for (let i = run.from; i <= run.to; i++) {
+        const x = viewX(view, segment[i].t, gutter);
+        const y = viewY(view, segment[i].f0);
+        if (i === run.from) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        // An isolated frame is a zero-length line; nudge it so caps paint.
+        if (run.from === run.to) ctx.lineTo(x + 0.01, y);
+      }
+      ctx.stroke();
+    }
+  }
 }

@@ -4,8 +4,9 @@
  * back to front: the grid (background, semitone and octave rows, piano-key
  * gutter; lane-grid.ts), the reference melody (a tint where it has sound but
  * no note, the contour as a soft band, the target notes as bars;
- * lane-reference.ts), one live f0 ribbon per singer (lane-ribbon.ts), and the
- * overlay with the notice and the playhead (lane-overlay.ts). The lane scrolls
+ * lane-reference.ts), one live f0 ribbon per singer (lane-ribbon.ts), the hit
+ * colours over the ribbons (learning mode only; lane-overlay.ts), and the
+ * overlay with the notice and the playhead. The lane scrolls
  * with song time, so what the singer sees at the playhead is what they are
  * singing now and what is coming sits to its right. A one-line notice can be
  * set across the middle (an ad is playing in the embedded video, so nothing is
@@ -29,7 +30,7 @@ import {
 } from './lane-geometry';
 import type { LaneFrame, LaneOptions, LaneReference, LaneView } from './lane-geometry';
 import { drawGrid } from './lane-grid';
-import { drawCaption, drawPlayhead } from './lane-overlay';
+import { drawCaption, drawGrades, drawPlayhead } from './lane-overlay';
 import { drawReference } from './lane-reference';
 import { drawRibbon } from './lane-ribbon';
 import { readLaneStyle } from './lane-style';
@@ -40,6 +41,7 @@ export {
   clarityAlpha,
   FrameRing,
   fitRange,
+  gradeRuns,
   isBlackKey,
   midiToY,
   noteName,
@@ -53,6 +55,7 @@ export {
 } from './lane-geometry';
 export type {
   AlphaRun,
+  GradeRun,
   LaneFrame,
   LaneNote,
   LaneOptions,
@@ -258,6 +261,8 @@ export class PitchLane {
     drawReference(ctx, view, this.style, this.reference, gutter);
     drawRibbon(ctx, view, this.style, traces[0], 0, gutter);
     drawRibbon(ctx, view, this.style, traces[1], 1, gutter);
+    drawGrades(ctx, view, this.style, traces[0], gutter);
+    drawGrades(ctx, view, this.style, traces[1], gutter);
     ctx.restore();
 
     drawCaption(ctx, view, this.style, this.notice, empty, gutter);

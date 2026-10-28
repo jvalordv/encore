@@ -1,7 +1,8 @@
 /**
  * Take storage. A take is one recorded attempt at a song: the WAV blob, the
  * live pitch frames, the latency it was recorded with, the clock its song time
- * came from (the audio engine's, or an embedded video's approximate one) and,
+ * came from (the audio engine's, or an embedded video's approximate one),
+ * learning mode's report on it, when there was a melody to compare with, and,
  * later, the service's analysis. They live in IndexedDB (see "Storage" in
  * docs/ARCHITECTURE.md) because a WAV outgrows localStorage within a minute.
  * The store sits behind the small TakeStore interface so the shell can swap in
@@ -11,6 +12,7 @@
  * and takes last until the page closes.
  */
 import type { PitchFrame } from '../analysis/pitch';
+import type { TakeReport } from '../analysis/score';
 
 /**
  * The clock a take's song time came from: the audio engine's sample-accurate
@@ -40,6 +42,12 @@ export interface TakeSummary {
   startedAtSongS?: number;
   /** Absent on takes saved before embedded video; read it with takeClockOf. */
   clock?: TakeClock;
+  /**
+   * Learning mode's measurements of the take against the melody. Absent on a
+   * take recorded in karaoke mode, without a melody, or before learning mode
+   * existed; such a take has no card.
+   */
+  report?: TakeReport;
 }
 
 /** The clock of a take; takes saved without one came from the engine. */
@@ -108,6 +116,7 @@ function toSummary(record: TakeRecord): TakeSummary {
   };
   if (record.startedAtSongS !== undefined) summary.startedAtSongS = record.startedAtSongS;
   if (record.clock !== undefined) summary.clock = record.clock;
+  if (record.report !== undefined) summary.report = record.report;
   return summary;
 }
 

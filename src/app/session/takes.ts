@@ -98,9 +98,11 @@ export class TakeController {
   /**
    * Plays a saved take under the song, aligned as it was sung. Under a
    * YouTube video the take plays by itself instead, because the video's sound
-   * cannot be mixed with it, and the status line says so.
+   * cannot be mixed with it, and the status line says so. `fromS`, a song
+   * time, starts the replay a lead-in before that moment instead of at the
+   * take's beginning (the report card's Replay).
    */
-  async playTake(id: string): Promise<void> {
+  async playTake(id: string, fromS?: number): Promise<void> {
     const { parts, store, songs } = this.core;
     const state = store.state;
     if (!parts || !songs.active || state.recording || state.calibrating) return;
@@ -121,8 +123,11 @@ export class TakeController {
       // The sung audio trails the song by the latency it was recorded with, so
       // it is placed that much earlier to sound the way it was meant to.
       const offsetS = songTimeOfSample(0, wav.sampleRate, take.startedAtSongS ?? 0, take.latencyS);
+      // Where the replay begins on song time: a lead-in before the moment asked
+      // for, never before the take's own first sample.
+      const startS = Math.max(offsetS, (fromS ?? offsetS) - TAKE_LEAD_IN_S);
       if (songs.active?.clock === 'embed') {
-        this.playTakeAlone(parts, id, take, buffer, offsetS);
+        this.playTakeAlone(parts, id, take, buffer, offsetS, startS);
         return;
       }
       parts.player.addStem(TAKE_STEM, buffer, offsetS);
@@ -132,7 +137,7 @@ export class TakeController {
       this.replay = { frames: take.frames, next: 0 };
       store.patch({ playingTakeId: id });
       // The seek event restarts the trace from just behind the playhead.
-      parts.player.seek(Math.max(0, offsetS - TAKE_LEAD_IN_S));
+      parts.player.seek(Math.max(0, fromS === undefined ? offsetS - TAKE_LEAD_IN_S : startS));
       parts.player.play();
       store.setStatus(`Playing take from ${formatClock(take.startedAtSongS ?? 0)}.`);
     } catch (error) {
@@ -151,6 +156,7 @@ export class TakeController {
     take: TakeRecord,
     buffer: AudioBuffer,
     offsetS: number,
+    startS: number,
   ): void {
     const { engine } = parts;
     this.endReplay();
@@ -162,10 +168,13 @@ export class TakeController {
     source.onended = () => {
       if (this.solo?.source === source) this.stopTake();
     };
-    const startedAtContextS = engine.now();
-    source.start();
+    // Starting inside the buffer: the playhead reads as if the take had begun
+    // that much earlier, so it lands on song time `startS`.
+    const intoTakeS = Math.max(0, startS - offsetS);
+    const startedAtContextS = engine.now() - intoTakeS;
+    source.start(0, intoTakeS);
     this.solo = { source, startedAtContextS, offsetS };
-    this.replay = { frames: take.frames, next: firstFrameIndex(take.frames, offsetS - REPLAY_BACK_S) };
+    this.replay = { frames: take.frames, next: firstFrameIndex(take.frames, startS - REPLAY_BACK_S) };
     this.core.lane?.clearFrames();
     this.core.store.patch({ playingTakeId: id });
     this.core.store.setStatus(
@@ -328,7 +337,9 @@ export class TakeController {
       return;
     }
     const takes = await this.core.takesReady;
-    await takes.save({
+    // Learning mode's measurements; none in karaoke mode or without a melody.
+    const report = this.core.scoring.reportFor(frames);
+    const id = await takes.save({
       songHash: song.hash,
       songName: song.name,
       createdAt: Date.now(),
@@ -342,8 +353,10 @@ export class TakeController {
       // Frames are on song time with the latency already taken off.
       frames,
       wav: encodeWavBlob(rec.pcm, rec.sampleRate, 16),
+      ...(report ? { report } : {}),
     });
     await this.refreshTakes();
+    if (report) this.core.scoring.showReport(id);
     this.core.store.setStatus(`Take saved (${rec.durationS.toFixed(1)} s).`);
   }
 

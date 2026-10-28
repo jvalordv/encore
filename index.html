@@ -40,6 +40,9 @@
     <div id="app">
       <header id="topbar">
         <h1 class="wordmark">encore</h1>
+        <!-- Karaoke (never judges) or Learning (opt-in). Built by
+             src/app/panels/mode.ts. -->
+        <div id="mode" class="mode-picker" data-testid="mode"></div>
         <div class="skin-picker">
           <label for="skin-switcher">Skin</label>
           <select id="skin-switcher"></select>
@@ -83,6 +86,10 @@
              and the mix. Built by src/app/panels/karaoke.ts; hidden until a
              song has something to say. -->
         <section id="karaoke" class="panel-group karaoke" data-testid="karaoke" aria-label="Karaoke track" hidden></section>
+        <!-- Learning mode only: the karaoke-track notice before a take and the
+             report card after it. Built by src/app/panels/report.ts; hidden
+             in karaoke mode and whenever there is nothing to say. -->
+        <section id="report" class="panel-group report" data-testid="report" aria-label="Learning mode" hidden></section>
 
         <section class="panel-group" aria-label="Devices">
           <h3 class="group-title">Devices</h3>
@@ -124,7 +131,7 @@
           <input id="clarity-input" data-testid="clarity-input" type="range" min="0.5" max="0.99" step="0.01" />
         </section>
 
-        <section class="panel-group" aria-label="Takes">
+        <section id="takes" class="panel-group" aria-label="Takes">
           <h3 class="group-title">Takes</h3>
           <ul id="take-list" class="take-list" data-testid="take-list"></ul>
           <p id="take-empty" class="song-meta">No takes yet. Press Record and sing.</p>

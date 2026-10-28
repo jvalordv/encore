@@ -16,6 +16,10 @@ export interface LaneStyle {
   labelFont: string;
   reference: string;
   accent: string;
+  /** Colours of the three grades, painted over the ribbon in learning mode. */
+  hit: string;
+  okay: string;
+  miss: string;
   singers: [string, string];
   ribbonWidth: number;
 }
@@ -55,6 +59,9 @@ export function readLaneStyle(): LaneStyle {
     labelFont: token('--font-mono'),
     reference: token('--color-reference'),
     accent: token('--color-accent'),
+    hit: token('--color-hit'),
+    okay: token('--color-okay'),
+    miss: token('--color-miss'),
     singers: [token('--color-singer-a'), token('--color-singer-b')],
     ribbonWidth: Number.isFinite(width) ? Math.min(12, Math.max(1, width)) : 3,
   };

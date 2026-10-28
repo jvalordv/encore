@@ -1,9 +1,10 @@
 /**
  * The frame bus: where a pitch frame, once put on song time, is announced to
  * whoever wants it. Each message carries the singer it belongs to (0 for the
- * only mic today) so scoring and a second mic can subscribe later without the
- * input controller knowing about them. Today the pitch lane and the take
- * recorder subscribe; subscribers are called in the order they joined.
+ * only mic today) so a second mic can join without the input controller
+ * knowing about it. Today the take recorder and the live scorer subscribe (the
+ * scorer grades each frame and feeds the lane); subscribers are called in the
+ * order they joined.
  */
 import type { PitchFrame } from '../../analysis/pitch';
 

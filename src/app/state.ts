@@ -22,8 +22,9 @@ import type { PrepareState } from './prepare';
 import { initialReference } from './reference';
 import type { ReferenceState } from './reference';
 import { initialSearch } from './search';
-import type { SearchState } from './search';
+import type { PickedResult, SearchState } from './search';
 import { DEFAULT_GUIDE_LEVEL } from './settings';
+import type { PracticeMode } from './settings';
 import type { TakeSummary } from './takes';
 
 /** How loudly the status line should speak. */
@@ -86,6 +87,18 @@ export interface AppState {
   reference: ReferenceState;
   /** The song search: the chip, the words, the results, what to tell. */
   search: SearchState;
+  /**
+   * Karaoke (never judges) or learning (scores against the original). Mirrors
+   * `settings.mode`; the Session is the one that changes both.
+   */
+  mode: PracticeMode;
+  /** The search result that became the song, or null for a file or a link. */
+  pickedResult: PickedResult | null;
+  /**
+   * The take whose report card is open, or null. The card is shown only in
+   * learning mode and only for a take that has a report.
+   */
+  reportTakeId: string | null;
   positionS: number;
   loop: LoopRegion | null;
   durationS: number;
@@ -134,6 +147,9 @@ export function initialState(): AppState {
     mix: initialMix(DEFAULT_GUIDE_LEVEL),
     reference: initialReference(),
     search: initialSearch('karaoke', false),
+    mode: 'karaoke',
+    pickedResult: null,
+    reportTakeId: null,
     positionS: 0,
     loop: null,
     durationS: 0,

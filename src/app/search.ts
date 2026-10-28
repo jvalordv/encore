@@ -6,7 +6,7 @@
  * Session's SearchController (src/app/session/search.ts) runs it and writes
  * this state; the panel (src/app/panels/search.ts) draws it.
  */
-import type { SearchErrorCode, SearchFilter, SearchResult } from '../search/types';
+import type { ResultKind, SearchErrorCode, SearchFilter, SearchResult } from '../search/types';
 import type { PracticeMode } from './settings';
 
 /** Where the last search stands: none yet, under way, answered, or failed. */
@@ -32,6 +32,17 @@ export interface SearchState {
   quotaSpent: boolean;
   /** The karaoke title a "Find the original" search began from; else null. */
   originalOf: string | null;
+}
+
+/**
+ * The search result that became the song: what learning mode needs to know
+ * about it (is it a karaoke track, and what to look for to find the original).
+ */
+export interface PickedResult {
+  videoId: string;
+  title: string;
+  channel: string;
+  kind: ResultKind;
 }
 
 /** The chip a practice mode starts on: karaoke asks for karaoke, learning for originals. */

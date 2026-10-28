@@ -5,8 +5,9 @@
  * or once the key's quota is spent, a search instead opens YouTube's own
  * results in a new tab, which has to happen in the click that asked for it,
  * so that check comes before anything is awaited. A pick loads like a pasted
- * link. "Find the original" turns a karaoke result's title into an Originals
- * search; learning mode (W3) calls it for a karaoke track. The search panel
+ * link, and is remembered as `pickedResult` for learning mode. "Find the
+ * original" turns a karaoke result's title into an Originals search; learning
+ * mode calls it for a karaoke track. The search panel
  * shows this state and holds no logic of its own.
  */
 import {
@@ -159,8 +160,16 @@ export class SearchController {
 
   /** Loads a result as the song, the way a pasted link is loaded. */
   async pick(videoId: string): Promise<void> {
+    const result = this.state.results.find((r) => r.videoId === videoId);
     await this.core.songs.loadLink(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`);
-    if (this.core.store.state.song?.hash === `yt-${videoId}`) this.setOpen(false);
+    if (this.core.store.state.song?.hash !== `yt-${videoId}`) return;
+    // Learning mode needs the badge and the channel of what was picked.
+    this.core.store.patch({
+      pickedResult: result
+        ? { videoId, title: result.title, channel: result.channel, kind: result.kind }
+        : null,
+    });
+    this.setOpen(false);
   }
 
   /** Cancels a search under way. */

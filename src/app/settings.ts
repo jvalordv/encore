@@ -54,7 +54,7 @@ export interface Settings {
    * plus or minus MAX_EMBED_OFFSET_S.
    */
   embedOffsetS: number;
-  /** Karaoke (default) or the opt-in learning mode; no UI sets it yet. */
+  /** Karaoke (default) or the opt-in learning mode; the header toggle sets it. */
   mode: PracticeMode;
   /** Level of the original vocal in the "karaoke with a vocal guide" mix, 0..1. */
   guideLevel: number;

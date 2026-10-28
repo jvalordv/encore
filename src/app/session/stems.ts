@@ -14,13 +14,14 @@
  * song) before it can touch the new song. A load that fails leaves the old
  * song, and its karaoke track, as they were.
  */
+import type { ScoreReference } from '../../analysis/score';
 import type { LaneReference } from '../../render/lane-geometry';
 import { isAbortError, ServiceClient, ServiceError, settledThrough } from '../../service/client';
 import type { Reference, SongStatus } from '../../service/types';
 import { initialKaraoke } from '../karaoke';
 import type { KaraokeState } from '../karaoke';
 import { describeFailure, describeServiceError } from '../prepare';
-import { initialReference, laneReferenceOf } from '../reference';
+import { initialReference, laneReferenceOf, scoreReferenceOf } from '../reference';
 import type { ReferenceState } from '../reference';
 import type { SessionCore } from './core';
 
@@ -270,20 +271,28 @@ export class StemsController {
         return;
       }
       if (!this.isCurrent(job)) return;
-      this.showReference(laneReferenceOf(reference), {
-        phase: 'ready',
-        notes: reference.notes.length,
-        message: '',
-      });
+      this.showReference(
+        laneReferenceOf(reference),
+        { phase: 'ready', notes: reference.notes.length, message: '' },
+        scoreReferenceOf(reference),
+      );
       return;
     }
     const message = this.whyNot(status, 'reference');
     this.showReference(null, { phase: state === 'failed' ? 'failed' : 'skipped', notes: 0, message });
   }
 
-  /** Puts a melody (or none) on the lane and its state in the panel. */
-  private showReference(lane: LaneReference | null, state: ReferenceState): void {
+  /**
+   * Puts a melody (or none) on the lane, hands it to learning mode to score
+   * against, and its state in the panel.
+   */
+  private showReference(
+    lane: LaneReference | null,
+    state: ReferenceState,
+    score: ScoreReference | null = null,
+  ): void {
     this.laneReference = lane;
+    this.core.scoring.setReference(score);
     this.syncLane();
     this.core.store.patch({ reference: state });
   }

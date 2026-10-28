@@ -206,6 +206,10 @@ so learning mode when it is up. Scoring and tips run in the browser.
     embed offset.
   - `takes.ts`, `TakeController`: record, save, replay (under the song, or
     by itself under a video) and delete.
+  - `scoring.ts`, `ScoringController`: learning mode in the session. It
+    owns the practice mode (`setMode`), the melody scored against, the live
+    scorer on the frame bus, and the report a finished take gets. See
+    Learning mode, below.
   - `loop.ts`, `TickLoop`: the per-frame loop that moves the lane and writes
     position, level and tracker health.
   Pure helpers (frame-to-song-time, loop button maths, replay indexing) are
@@ -216,18 +220,21 @@ so learning mode when it is up. Scoring and tips run in the browser.
   once on song time, is announced as `{ singer, frame }` (singer 0 until a
   second mic exists). The input controller publishes; subscribers are called
   in subscription order. Today the take recorder (collecting the frames saved
-  with a take) and the pitch lane (unless a take is replaying and owns the
-  lane) subscribe; scoring (W3) and a second mic (W5) subscribe here and add
-  nothing to the input controller. `AppState.singers` holds one entry per
-  singer (its mic state, mirrored from `input` for singer 0) and settings
-  carry `mode` (`'karaoke'` by default, or `'learning'`; no UI yet).
+  with a take) and the live scorer (`LiveScorer`, below) subscribe; the scorer
+  grades each frame and feeds the pitch lane (unless a take is replaying and
+  owns the lane). A second mic (W5) subscribes here and adds nothing to the
+  input controller. `AppState.singers` holds one entry per singer (its mic
+  state, mirrored from `input` for singer 0), and `AppState.mode` mirrors the
+  `mode` setting (`'karaoke'` by default, or `'learning'`).
 - **Pitch lane layers.** `PitchLane` (`src/render/pitch-lane.ts`) owns the
   canvas, the resize and skin listeners and the redraw loop, and composes
   layers back to front, each a function over a `LaneView` and a `LaneStyle`:
   `lane-grid.ts` (rows, octave lines, piano gutter; cached offscreen),
   `lane-reference.ts` (the reference melody, below), `lane-ribbon.ts` (one
-  call per singer), `lane-overlay.ts` (notice or invitation, playhead; hit
-  colours land here). Pure arithmetic is in `lane-geometry.ts`, the redraw
+  call per singer), `lane-overlay.ts` (notice or invitation, playhead, and in learning mode
+  the hit, okay and miss colours painted over the ribbon from each frame's
+  optional `grade`, with the skin's `--color-hit`, `--color-okay` and
+  `--color-miss`). Pure arithmetic is in `lane-geometry.ts`, the redraw
   loop and pixel-ratio watcher in `lane-clock.ts`, the skin colours in
   `lane-style.ts`. `pitch-lane.ts` re-exports the pure helpers.
 - **Stems and the mix** (W2b). The service's stems are the song times a
@@ -273,7 +280,46 @@ so learning mode when it is up. Scoring and tips run in the browser.
   panel (`panels/karaoke.ts`, mounted on `#karaoke` in the song panel): the
   upload and step progress lines, the one line that says what is missing when
   the service is away, the melody line, the mix buttons and the guide slider.
-  The second is the search panel (below).
+  The search panel is below. Learning mode adds three: the mode toggle
+  (`panels/mode.ts`, in the header), the takes list (`panels/takes.ts`, moved
+  out of `ui.ts`, with a Report button in learning mode) and the learning
+  panel (`panels/report.ts`, on `#report` in the song panel).
+- **Learning mode** (W3). Karaoke mode computes, stores and shows nothing
+  about the singing; everything below runs only when `settings.mode` is
+  `'learning'`.
+  - *Measurement* is pure and lives in `src/analysis/`. `phrases.ts` is the
+    one phrase splitter (a rest of 0.6 s or more starts a phrase; W4 and W5
+    reuse it). `take-notes.ts` segments a take into sung notes by the same
+    rule as the service's `melody.py`, on a 10 ms grid. `score.ts` grades a
+    frame against the reference note under it (error in cents, folded into
+    +-600 c when `octaveInvariant` is on; hit within 25 c, okay within 50 c,
+    else miss; frames outside any note or inside an unpitched region are not
+    scored), `LiveScorer` does that for each frame on the bus, and
+    `reportTake` measures a whole take: per reference note the mean and
+    spread of the error, the scoop, the onset delta against the sung note
+    that overlaps it most, and the held length; per take the in-tune rate
+    (share of the notes sung, those with at least 50 ms of voiced frames
+    inside, whose mean error is within 50 c), the timing bias (median onset
+    delta), the worst three phrases (mean absolute error over 25 c, at least
+    200 ms scored) and the song and sung ranges (p10 to p90). Frames on the
+    bus are already on song time with the latency taken off, so nothing here
+    shifts time.
+  - *Tips* are `src/coach/tips.ts`: one pure rule per tip over the report,
+    every threshold in `TIP_THRESHOLDS`, wording from COACHING.md, at most
+    three, strongest first (how far past its threshold), each with evidence
+    and a jump-to.
+  - *The session* (`session/scoring.ts`) gives the lane its frames (graded
+    in learning mode, ungraded otherwise), sets the mode (and the search chip
+    with it), and attaches `report` to a take as it is saved, when there is a
+    melody and the song is not a karaoke track. `TakeSummary.report` is
+    optional, so takes saved before W3 still load. `AppState` carries `mode`,
+    `reportTakeId` (the open card) and `pickedResult` (the search result that
+    became the song, whose Karaoke badge makes it a karaoke track; so does a
+    reference skipped for "No singing found").
+  - *The screen* is `src/app/learning.ts` (karaoke-track rule, the notice,
+    which card is open) and `src/app/report.ts` (the card's sentences), both
+    pure and tested; `panels/report.ts` draws them. The card's Jump seeks the
+    song, Replay plays the take from there (`playTake(id, fromS)`).
 - **Song search** (W2a: `src/search/`, `src/app/search.ts`,
   `src/app/session/search.ts`, `src/app/panels/search.ts`). The provider seam:
   a `SearchProvider` takes `{text, filter}` (`'karaoke'` or `'original'`) and
@@ -501,8 +547,8 @@ always skips.
   latency. Its scores are final. A heavier service re-analysis (crepe on
   the take, DTW) is Later; the cost of building it outweighed what it
   adds for this goal.
-- **A frame bus.** The tracker publishes `{ singer, frame }`; the lane, the
-  recorder, scoring and a second mic subscribe. New consumers never edit
+- **A frame bus.** The tracker publishes `{ singer, frame }`; the recorder,
+  the live scorer (which feeds the lane) and a second mic subscribe. New consumers never edit
   the session controllers.
 - **Duets without voice recognition (2026-10-27).** Two mics when there
   are two; on one mic the app assigns phrases to singers (`docs/DUET.md`).

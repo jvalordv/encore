@@ -13,20 +13,23 @@
  * describePrepare, and its button, the automatic-prepare checkbox and a window
  * regaining focus (the service may have been started meanwhile) are the only
  * things here that lead to the service from a link; a dropped file's karaoke
- * track has its own panel (panels/karaoke.ts), mounted here. Importing the
- * file touches no DOM; mountUI does.
+ * track has its own panel (panels/karaoke.ts), mounted here, as are the mode
+ * toggle (panels/mode.ts), the takes list (panels/takes.ts) and learning
+ * mode's notice and report card (panels/report.ts). Importing the file
+ * touches no DOM; mountUI does.
  */
 import { isRunning } from '../audio/transport';
 import { domEmbedHost } from '../audio/youtube-transport';
 import { parseYouTubeUrl } from '../audio/youtube-url';
 import { mountKaraokePanel } from './panels/karaoke';
+import { mountModePanel } from './panels/mode';
+import { mountReportPanel } from './panels/report';
 import { mountSearchPanel } from './panels/search';
+import { mountTakesPanel } from './panels/takes';
 import { describePrepare } from './prepare';
 import type { Session } from './session';
 import { describeHealth, describeMonitor, describePitch, formatClock, meterFraction } from './state';
 import type { AppState } from './state';
-import { takeClockOf } from './takes';
-import type { TakeSummary } from './takes';
 
 /** What mountUI hands back. */
 export interface UI {
@@ -47,8 +50,6 @@ const METER_CLIP = 0.98;
 const TUNER_HIT_CENTS = 25;
 /** The note readout lingers this long through a breath or a consonant. */
 const PITCH_HOLD_MS = 300;
-/** A first Delete press waits this long for a confirming second press. */
-const DELETE_ARM_MS = 3000;
 const AUDIO_NAME = /\.(mp3|wav|flac|ogg|oga|m4a|aac|opus|webm)$/i;
 
 function must<T extends HTMLElement>(root: ParentNode, id: string): T {
@@ -134,8 +135,6 @@ export function mountUI(session: Session, root: Document = document): UI {
   const calibrateButton = get<HTMLButtonElement>('calibrate-button');
   const clarityInput = get<HTMLInputElement>('clarity-input');
   const clarityValue = get('clarity-value');
-  const takeList = get('take-list');
-  const takeEmpty = get('take-empty');
   const pitchReadout = get('pitch-readout');
   const pitchNote = get('pitch-note');
   const pitchCents = get('pitch-cents');
@@ -264,64 +263,6 @@ export function mountUI(session: Session, root: Document = document): UI {
     setText(prepareNote, view.note);
   }
 
-  function takeRow(take: TakeSummary, number: number, state: AppState): HTMLLIElement {
-    const active = take.id === state.playingTakeId;
-    const busy = state.recording || state.calibrating;
-    const row = document.createElement('li');
-    row.className = 'take-item';
-    row.dataset.testid = 'take-item';
-    row.dataset.takeId = take.id;
-    row.dataset.active = String(active);
-
-    const time = new Date(take.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const label = document.createElement('span');
-    label.className = 'take-label';
-    label.textContent = `Take ${number} · ${formatClock(take.durationS)} · ${time}`;
-
-    const play = document.createElement('button');
-    play.type = 'button';
-    play.textContent = active ? 'Stop' : 'Play';
-    play.disabled = busy;
-    play.dataset.testid = 'take-play';
-    play.addEventListener('click', () => {
-      if (active) session.stopTake();
-      else void session.playTake(take.id);
-    });
-
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.textContent = 'Delete';
-    del.disabled = busy;
-    del.dataset.testid = 'take-delete';
-    let armed: ReturnType<typeof setTimeout> | undefined;
-    del.addEventListener('click', () => {
-      if (armed === undefined) {
-        // Takes cannot be recovered, so the first press only asks.
-        del.textContent = 'Sure?';
-        armed = setTimeout(() => {
-          armed = undefined;
-          del.textContent = 'Delete';
-        }, DELETE_ARM_MS);
-        return;
-      }
-      clearTimeout(armed);
-      void session.deleteTake(take.id);
-    });
-
-    row.append(label, play, del);
-    // A take timed against a YouTube video lines up only roughly: the embed's
-    // clock is not sample-accurate and its sound path is not calibrated.
-    if (takeClockOf(take) === 'embed') {
-      row.dataset.clock = 'embed';
-      const note = document.createElement('span');
-      note.className = 'take-note';
-      note.dataset.testid = 'take-note';
-      note.textContent = 'approximate timing';
-      row.append(note);
-    }
-    return row;
-  }
-
   function render(state: AppState, changed: ReadonlySet<keyof AppState>): void {
     const has = (...keys: Array<keyof AppState>): boolean => keys.some((k) => changed.has(k));
 
@@ -407,12 +348,6 @@ export function mountUI(session: Session, root: Document = document): UI {
 
     if (has('lastFrame')) renderPitch(state.lastFrame);
 
-    if (has('takes', 'playingTakeId', 'recording', 'calibrating')) {
-      const { takes } = state;
-      takeList.replaceChildren(...takes.map((t, i) => takeRow(t, takes.length - i, state)));
-      takeEmpty.hidden = takes.length > 0;
-    }
-
     if (has('status')) {
       setText(statusText, state.status.text);
       statusText.dataset.kind = state.status.kind;
@@ -433,6 +368,10 @@ export function mountUI(session: Session, root: Document = document): UI {
 
   // The song's karaoke track and its mix are a panel of their own.
   cleanups.push(mountKaraokePanel(get('karaoke'), { store, session }));
+  // The mode toggle, the takes list and learning mode's notice and report card.
+  cleanups.push(mountModePanel(get('mode'), { store, session }));
+  cleanups.push(mountTakesPanel(get('takes'), { store, session }));
+  cleanups.push(mountReportPanel(get('report'), { store, session }));
   // The song search is what the main area shows until a song is loaded.
   cleanups.push(
     mountSearchPanel(get('search'), { store, session, toggle: get<HTMLButtonElement>('search-toggle') }),

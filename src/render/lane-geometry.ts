@@ -6,6 +6,7 @@
  * (test/pitch-lane.test.ts); src/render/pitch-lane.ts re-exports it.
  */
 import { hzToMidi } from '../analysis/pitch';
+import type { Grade } from '../analysis/score';
 
 /** Lowest MIDI note shown by default (C2). */
 export const DEFAULT_LOW_MIDI = 36;
@@ -64,6 +65,11 @@ export interface LaneFrame {
   f0: number;
   /** Tracker confidence, 0 to 1; scales the ribbon's opacity. */
   clarity: number;
+  /**
+   * How the frame did against the melody. Present only in learning mode; its
+   * absence is what keeps karaoke mode free of hit colours.
+   */
+  grade?: Grade;
 }
 
 /** Lane geometry and range; every field is optional. */
@@ -223,11 +229,9 @@ export class FrameRing {
       this.head = (this.head + 1) % this.slots.length;
       this.size--;
     }
-    this.slots[(this.head + this.size) % this.slots.length] = {
-      t: f.t,
-      f0: f.f0,
-      clarity: f.clarity,
-    };
+    const copy: LaneFrame = { t: f.t, f0: f.f0, clarity: f.clarity };
+    if (f.grade !== undefined) copy.grade = f.grade;
+    this.slots[(this.head + this.size) % this.slots.length] = copy;
     this.size++;
   }
 
@@ -296,6 +300,38 @@ export function alphaRuns(segment: LaneFrame[], chunk = ALPHA_CHUNK): AlphaRun[]
     const last = runs[runs.length - 1];
     if (last && last.alpha === alpha) last.to = to;
     else runs.push({ from, to, alpha });
+  }
+  return runs;
+}
+
+/** A stretch of one ribbon with one grade; indices are inclusive. */
+export interface GradeRun {
+  from: number;
+  to: number;
+  grade: Grade;
+}
+
+/**
+ * Groups a ribbon into runs of one grade, for painting hit colours over it.
+ * A frame with no grade ends the run before it and starts nothing. A run ends
+ * on the first frame of the next graded run (a shared vertex, as in alphaRuns)
+ * so the line has no gap where the colour changes.
+ */
+export function gradeRuns(segment: LaneFrame[]): GradeRun[] {
+  const runs: GradeRun[] = [];
+  let open: GradeRun | null = null;
+  for (let i = 0; i < segment.length; i++) {
+    const grade = segment[i].grade;
+    if (grade === undefined) {
+      open = null;
+    } else if (open !== null && open.grade === grade) {
+      open.to = i;
+    } else {
+      // The new run starts on this frame; the one before it reaches here too.
+      if (open !== null) open.to = i;
+      open = { from: i, to: i, grade };
+      runs.push(open);
+    }
   }
   return runs;
 }

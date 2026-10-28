@@ -24,17 +24,17 @@ webcam or USB mic.
 
 ## Current state
 
-- **Last done:** **W2** (2026-10-28): YouTube search as the first screen
-  (`src/search/`, a provider seam, the owner's own key) and the karaoke core
-  (upload to the service, stems, the Original / Karaoke / guide mix, target
-  notes on the lane). Before it W1 (the reference step and the browser
-  seams); older work in `docs/HISTORY.md`.
+- **Last done:** **W3** (2026-10-28): learning mode (the header toggle,
+  live hit / okay / miss colours, a report card stored with each take, tips
+  on request, the karaoke-track notice). Before it W2 (search and the
+  karaoke core) and W1 (the reference step and the browser seams); older
+  work in `docs/HISTORY.md`.
 - **In progress:** none.
 - **Next:** the owner's test results (list below) if they have any: fix
-  what they show first, as `W0: <summary>`. Then **W3**. Search needs the
+  what they show first, as `W0: <summary>`. Then **W4**. Search needs the
   owner's YouTube Data API key (README, "Run it"; pasted into the app,
   never into chat).
-- **Blockers:** none for W3. YouTube now answers yt-dlp with "Sign in to
+- **Blockers:** none for W4. YouTube now answers yt-dlp with "Sign in to
   confirm you're not a bot" (2026-10-28, seven tries on Big Buck Bunny), so
   Prepare for links and W2's "Find the original" fail until a newer
   yt-dlp gets through (`uv lock --upgrade-package yt-dlp`, then sync as
@@ -110,6 +110,14 @@ webcam or USB mic.
     wrong key should say YouTube does not accept it. Open the mic with no
     song: the readout and lane work under the search. Check the three
     skins and a narrow window.
+  - Learning mode (W3): with the service up, drop a sung mp3 and wait for
+    the melody. Sing one take in Karaoke mode: no colours, no card. Switch
+    the header to Learning and sing another: the lane colours your line,
+    and the card opens when the take stops. Try Jump and Replay on a worst
+    phrase, then Tips. Report any tip that is plainly wrong for how you
+    sang. Pick a Karaoke-badged search result in Learning mode: the "on
+    your own" notice and Find the original should show. Check the header in
+    all three skins at a narrow width (it now wraps).
 
 ## Waves
 
@@ -288,7 +296,7 @@ Tracks inside a wave share no files and may run in parallel.
     result. The mode toggle should call
     `session.setSearchFilter(filterForMode(mode))`. Panels have no DOM unit
     tests (vitest runs in node); their view models are tested.
-- [ ] **W3: Learning mode** (was P2-T6, P2-T7, P3-T2, P3-T3; browser
+- [x] **W3: Learning mode** (was P2-T6, P2-T7, P3-T2, P3-T3; browser
   only). Owns `src/analysis/score.ts`, `src/coach/`, the mode and report
   panels, the lane's overlay layer.
   - A Karaoke / Learning toggle in the header, persisted, Karaoke by
@@ -321,6 +329,40 @@ Tracks inside a wave share no files and may run in parallel.
     nothing is aligned to the karaoke video.
   - Done when the checks are green and tests pin the scoring math and
     every rule. Owner test: one take in each mode.
+  - Done 2026-10-28. Checks: 1,449 unit tests, 74 e2e, 824 service tests
+    (service untouched). One worker, one reviewer, one fix. New:
+    `src/analysis/` `score.ts` (457), `take-notes.ts` (the service's
+    note rule ported) and `phrases.ts`; `src/coach/tips.ts`; `src/app/`
+    `learning.ts` and `report.ts` (view models); `session/scoring.ts` (the
+    lane's bus subscriber, now grading frames in learning mode only); panels
+    `mode.ts`, `report.ts`, and `takes.ts` (moved out of `ui.ts`, now 558).
+    The grade colours were already skin tokens. `playTake(id, fromS)`
+    replays from a 1 s lead-in. Defined here: a note is sung with at least
+    5 scored frames, in-tune rate is over sung notes, a phrase is ranked with
+    at least 200 ms scored and a mean error over 25 c. Review fix: a step
+    scoop of 80 c or more split the sung note and read as a late entry; a
+    piece under 150 ms at a reference onset now merges into the next.
+  - Follow-up: `docs/ARCHITECTURE.md` (Mic constraints) says speaker mode
+    gates scored frames by mic level above the noise floor; W3 does not,
+    so bleed can be graded as singing in speaker mode.
+  - Follow-up: a replayed take is drawn without hit colours; only live
+    frames are graded.
+  - Follow-up: a pasted link to a karaoke video has no badge, so the
+    karaoke-track notice shows only once the service skips the melody
+    ("No singing found").
+  - Follow-up: sung notes match reference notes by largest overlap (at
+    least 50 ms), so a legato run on one pitch gets an onset delta only on
+    its best-overlapping note.
+  - Follow-up: the lane's grade colours and the card's DOM are not checked
+    in a browser beyond visibility and Tips (e2e `learning.spec.ts`).
+  - Follow-up: the card and tips use Studio wording (`TIP_MESSAGES`);
+    per-skin copy is Later.
+  - Follow-up: `src/app/ui.ts` (558) and `src/audio/player.ts` (561) are
+    still over the 500-line guide.
+  - For W4: the phrase splitter already exists (`src/analysis/phrases.ts`,
+    0.6 s gap); reuse it, do not build another. Thresholds live in the
+    tables in `score.ts` and `src/coach/tips.ts`; the karaoke-track notice
+    is in `src/app/learning.ts`.
 - [ ] **W4: Strict and Open scoring** (owner asked, 2026-10-28). Learning
   mode gets two styles. **Strict** scores against the original's melody,
   as W3 builds it. **Open** is lenient the way rhythm games' vocals are
@@ -474,24 +516,26 @@ Not scheduled. Pull one in only when the owner asks.
   length cap, notes while a step runs, clearing crash leftovers, releasing
   GPU memory, and more. None block the goal.
 
-## Estimates (corrected 2026-10-28 after W2, light pipeline)
+## Estimates (corrected 2026-10-28 after W3, light pipeline)
 
 W1 measured about 1 hour of wall time (two workers in parallel, then
 one reviewer) and about 1.0 M subagent tokens. W2 measured 1 hour and
 0.94 M (two workers one after the other, one reviewer, one small fix)
-against an estimate of 2 hours and 1.1 M. Hours for the rest are scaled
-down by about a third; tokens slightly.
+against an estimate of 2 hours and 1.1 M. W3 measured about 0.7 hours
+and 0.53 M (one worker at 0.36 M, one reviewer at 0.17 M, a small fix)
+against 0.8 and 0.7 M: one track with a detailed brief costs about half
+of a two-track wave. The rest are left as they were.
 
 | Wave | Agent hours | Subagent tokens | Owner |
 |---|---|---|---|
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
-| W3 Learning mode | 0.8 (0.6-1.5) | about 0.7 M | 20 min |
+| W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |
 | W4 Strict and Open scoring | 1 (0.7-1.8) | about 0.8 M | 20 min |
 | W5 Two singers | 1 (0.7-1.8) | about 0.7 M | 30 min, a second person |
 | W6 Synced lyrics | 0.4 (0.3-0.8) | about 0.3 M | 5 min |
 | W7 Test and sweep | 0.8 (0.6-1.5) | about 0.6 M | 45 min |
-| **Total** | **about 6 (5-9.5)** | **about 5.0 M** | **about 2.5 h** |
+| **Total** | **about 6 (5-9)** | **about 4.9 M** | **about 2.5 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The
 orchestrator's own reading adds about 100 to 200 thousand tokens per wave
