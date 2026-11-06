@@ -79,9 +79,14 @@ export interface GateFrame {
  * True when a frame may be drawn and scored: voiced, clear enough, and loud
  * enough above the floor to be a voice rather than hiss or a faint echo.
  */
-export function isDrawable(frame: GateFrame, floorDb: number, clarityThreshold: number): boolean {
+export function isDrawable(
+  frame: GateFrame,
+  floorDb: number,
+  clarityThreshold: number,
+  drawMarginDb: number = DRAW_MARGIN_DB,
+): boolean {
   if (!(frame.f0 > 0) || !(frame.clarity >= clarityThreshold)) return false;
-  return rmsToDb(frame.rms) >= floorDb + DRAW_MARGIN_DB;
+  return rmsToDb(frame.rms) >= floorDb + drawMarginDb;
 }
 
 /** Tracks the noise floor, the recent peak and the state over a stream of frames. */

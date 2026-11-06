@@ -34,10 +34,27 @@ export const BLEED_MAX_MEDIAN_CENTS = 15;
 export const BLEED_RELEASE_MATCH = 0.4;
 /** ...or the median error passes this many cents. */
 export const BLEED_RELEASE_MEDIAN_CENTS = 22;
+/** The release thresholds keep these ratios to the tuned entering ones. */
+const RELEASE_MATCH_RATIO = BLEED_RELEASE_MATCH / BLEED_MIN_MATCH;
+const RELEASE_MEDIAN_RATIO = BLEED_RELEASE_MEDIAN_CENTS / BLEED_MAX_MEDIAN_CENTS;
 /** A seek or loop this far back in song time starts the window over. */
 const BACKWARD_RESET_S = 0.5;
 /** Frames between verdicts; the window changes slowly. */
 const EVALUATE_EVERY = 10;
+
+/** The three numbers of the verdict; the Mic check tunes them per device pair. */
+export interface BleedRules {
+  matchCents: number;
+  minMatch: number;
+  maxMedianCents: number;
+}
+
+/** The rules the app shipped with. */
+export const DEFAULT_BLEED_RULES: BleedRules = {
+  matchCents: BLEED_MATCH_CENTS,
+  minMatch: BLEED_MIN_MATCH,
+  maxMedianCents: BLEED_MAX_MEDIAN_CENTS,
+};
 
 /** The reference melody's pitch track, as the lane holds it. */
 export interface BleedContour {
@@ -98,6 +115,9 @@ export class BleedDetector {
   private sinceEvaluated = 0;
   private current: BleedState = 'unknown';
 
+  /** `rules` is read at each verdict, so a retuned pair applies at once. */
+  constructor(private readonly rules: () => BleedRules = () => DEFAULT_BLEED_RULES) {}
+
   /** The verdict: 'unknown' until enough frames have been compared. */
   get state(): BleedState {
     return this.current;
@@ -143,13 +163,16 @@ export class BleedDetector {
       return;
     }
     const cents = this.errors.map((e) => e.cents);
-    const matching = cents.filter((c) => c <= BLEED_MATCH_CENTS).length / cents.length;
+    const rules = this.rules();
+    const matching = cents.filter((c) => c <= rules.matchCents).length / cents.length;
     const typical = median(cents);
     if (this.current === 'suspected') {
-      const released = matching < BLEED_RELEASE_MATCH || typical > BLEED_RELEASE_MEDIAN_CENTS;
+      const released =
+        matching < rules.minMatch * RELEASE_MATCH_RATIO ||
+        typical > rules.maxMedianCents * RELEASE_MEDIAN_RATIO;
       this.current = released ? 'ok' : 'suspected';
     } else {
-      const tight = matching >= BLEED_MIN_MATCH && typical < BLEED_MAX_MEDIAN_CENTS;
+      const tight = matching >= rules.minMatch && typical < rules.maxMedianCents;
       this.current = tight ? 'suspected' : 'ok';
     }
   }

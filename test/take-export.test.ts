@@ -99,6 +99,7 @@ describe('takeExportJson', () => {
       sampleRate: 48000,
       startedAtSongS: 12.25,
       clock: 'engine',
+      kind: 'song',
     });
     expect(json.mic).toEqual(mic);
     expect(json.frames).toEqual(record().frames);

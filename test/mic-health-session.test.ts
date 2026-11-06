@@ -273,3 +273,33 @@ describe('the mic settings kept with a take', () => {
     expect(h.store.state.status.text).toBe('That take is gone.');
   });
 });
+
+describe('the gate reads the tuning of the current device pair', () => {
+  /** 10 dB over the hiss: a voice at the default 8 dB margin, not at 14. */
+  const MID = HISS * 10 ** (10 / 20);
+
+  it('gates a frame the default lets through once the pair is tuned stricter', async () => {
+    const { h, lane } = await ready();
+    listen(h);
+    frame(h, 220, MID);
+    expect(h.core.health.lastGate).toBeNull();
+    h.core.health.setTuning({ ...h.core.health.tuning(), drawMarginDb: 14 });
+    frame(h, 220, MID);
+    expect(h.core.health.lastGate).toBe('quiet');
+    expect(lane.pushFrame).toHaveBeenLastCalledWith(expect.objectContaining({ f0: 0 }));
+    h.core.health.setTuning(null);
+    frame(h, 220, MID);
+    expect(h.core.health.lastGate).toBeNull();
+  });
+
+  it('keeps one pair tuned without touching another', async () => {
+    const { h } = await ready();
+    h.core.health.setTuning({ ...h.core.health.tuning(), drawMarginDb: 14, clarityThreshold: 0.8 });
+    expect(h.tracker.clarityThreshold).toBe(0.8);
+    expect(loadSettings(h.settingsStore).micTuningByDevicePair[h.core.latency.pairKey()]?.drawMarginDb).toBe(14);
+    h.core.store.patchSection('output', { deviceId: 'other' });
+    h.core.latency.refreshLatency();
+    expect(h.core.health.tuning().drawMarginDb).toBe(8);
+    expect(h.tracker.clarityThreshold).toBe(0.9);
+  });
+});

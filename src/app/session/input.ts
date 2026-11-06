@@ -196,9 +196,9 @@ export class InputController {
   setClarity(v: number): void {
     if (!Number.isFinite(v)) return;
     const clarity = Math.min(1, Math.max(0, v));
-    if (this.core.parts) this.core.parts.tracker.clarityThreshold = clarity;
     this.core.current.clarityThreshold = clarity;
     this.core.persist();
+    this.core.health.noteClarity(clarity);
   }
 
   /** Stops the tracker and closes the mic, for the Session's dispose. */

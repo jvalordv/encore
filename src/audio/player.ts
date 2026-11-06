@@ -180,6 +180,22 @@ export async function hashBytes(
   return fnv1aHex(bytes);
 }
 
+/** A file decoded and named, not yet the song. */
+interface DecodedFile {
+  buffer: AudioBuffer;
+  hash: string;
+  label: string;
+}
+
+/** The song set aside while a transient one plays. */
+interface Shelf {
+  stems: Map<string, Stem>;
+  info: SongInfo | null;
+  state: PlayerState;
+  loop: LoopRegion | null;
+  pausedAtS: number;
+}
+
 /** One playable layer: a buffer, where it sits in song time, and its gain. */
 interface Stem {
   buffer: AudioBuffer;
@@ -207,6 +223,7 @@ export class Player implements Transport {
   // Bumped whenever sources are replaced so stale onended events are ignored.
   private runId = 0;
   private loadId = 0;
+  private shelved: Shelf | null = null;
 
   constructor(private readonly engine: AudioEngine) {}
 
@@ -245,18 +262,82 @@ export class Player implements Transport {
    */
   async load(file: File | Blob, name?: string, key?: string): Promise<SongInfo> {
     const loadId = ++this.loadId;
+    const decoded = await this.decodeFile(file, name, key);
+    if (loadId !== this.loadId) throw new Error(`Loading "${decoded.label}" was superseded`);
+    // A song loaded over a transient one replaces the song set aside too.
+    if (this.shelved) {
+      for (const stem of this.shelved.stems.values()) stem.gain.disconnect();
+      this.shelved = null;
+    }
+    return this.install(decoded);
+  }
+
+  /**
+   * Puts the loaded song aside and loads `file` in its place, for a short
+   * job that must not cost the singer their song (the Mic check's test
+   * track). `endTransient` brings the song back with its stems, levels, loop
+   * and position. Nothing is dropped, so a file that cannot be decoded leaves
+   * everything as it was. Stems added, removed or re-levelled meanwhile
+   * (karaoke arriving for the song set aside) go to that song, silently, so
+   * they are not heard over the transient one and are there when it returns.
+   */
+  async loadTransient(file: Blob, name: string, key: string): Promise<SongInfo> {
+    if (this.shelved) throw new Error('A transient song is already loaded');
+    const loadId = ++this.loadId;
+    const decoded = await this.decodeFile(file, name, key);
+    if (loadId !== this.loadId) throw new Error(`Loading "${name}" was superseded`);
+    this.haltSources();
+    this.shelved = {
+      stems: new Map(this.stems),
+      info: this.infoValue,
+      state: this.stateValue === 'playing' ? 'paused' : this.stateValue,
+      loop: this.loopValue,
+      pausedAtS: this.position(),
+    };
+    // Cleared without disconnecting: the shelved stems come back as they were.
+    this.stems.clear();
+    return this.install(decoded);
+  }
+
+  /** True while a transient song stands in for the one set aside. */
+  get transient(): boolean {
+    return this.shelved !== null;
+  }
+
+  /** Drops the transient song and restores the one set aside, paused. */
+  endTransient(): void {
+    const shelf = this.shelved;
+    if (!shelf) return;
+    this.shelved = null;
+    this.haltSources();
+    for (const stem of this.stems.values()) stem.gain.disconnect();
+    this.stems.clear();
+    for (const [id, stem] of shelf.stems) this.stems.set(id, stem);
+    const hadLoop = this.loopValue !== null;
+    this.infoValue = shelf.info;
+    this.stateValue = shelf.state;
+    this.loopValue = shelf.loop;
+    this.runLoop = null;
+    this.pausedAtS = shelf.pausedAtS;
+    this.emit('load');
+    this.emit('stems');
+    if (hadLoop || shelf.loop) this.emit('loop');
+  }
+
+  private async decodeFile(file: File | Blob, name?: string, key?: string): Promise<DecodedFile> {
     const label = name ?? (file as { name?: string }).name ?? 'untitled';
     const bytes = await file.arrayBuffer();
     // Hash before decoding: decodeAudioData may detach the buffer it is given.
     const hash = key ?? (await hashBytes(new Uint8Array(bytes)));
-    let buffer: AudioBuffer;
     try {
-      buffer = await this.engine.context.decodeAudioData(bytes);
+      return { buffer: await this.engine.context.decodeAudioData(bytes), hash, label };
     } catch (cause) {
       throw new Error(`Could not read "${label}" as audio this browser can decode`, { cause });
     }
-    if (loadId !== this.loadId) throw new Error(`Loading "${label}" was superseded`);
+  }
 
+  /** Makes a decoded file the song, dropping the stems, loop and playback. */
+  private install({ buffer, hash, label }: DecodedFile): SongInfo {
     this.haltSources();
     for (const stem of this.stems.values()) stem.gain.disconnect();
     this.stems.clear();
@@ -292,9 +373,13 @@ export class Player implements Transport {
    * the reserved id 'original' (use `load`).
    */
   addStem(id: string, buffer: AudioBuffer, offsetS = 0, level?: number): void {
-    if (this.stateValue === 'empty') throw new Error('Load a song before adding stems');
+    const held = this.shelved?.stems;
+    // Nothing set aside to give a stem to: the song it was for is gone.
+    if (this.shelved?.state === 'empty') return;
+    if (!held && this.stateValue === 'empty') throw new Error('Load a song before adding stems');
     if (id === ORIGINAL) throw new Error("The 'original' stem is set by load()");
-    let stem = this.stems.get(id);
+    const map = held ?? this.stems;
+    let stem = map.get(id);
     if (stem) {
       this.retire(stem, this.engine.now());
       stem.buffer = buffer;
@@ -303,9 +388,9 @@ export class Player implements Transport {
       if (level !== undefined) this.applyLevel(stem, level, 0);
     } else {
       stem = this.makeStem(buffer, offsetS, level);
-      this.stems.set(id, stem);
+      map.set(id, stem);
     }
-    if (this.stateValue === 'playing') {
+    if (!held && this.stateValue === 'playing') {
       const when = this.engine.now() + START_LEAD_S;
       stem.source = this.makeSource(stem, this.positionAt(when), when);
     }
@@ -314,11 +399,12 @@ export class Player implements Transport {
 
   /** Removes a stem. The 'original' stem can only be replaced by `load`. */
   removeStem(id: string): void {
-    const stem = this.stems.get(id);
+    const map = this.shelved?.stems ?? this.stems;
+    const stem = map.get(id);
     if (!stem || id === ORIGINAL) return;
     this.retire(stem, this.engine.now());
     stem.gain.disconnect();
-    this.stems.delete(id);
+    map.delete(id);
     this.emit('stems');
   }
 
@@ -327,7 +413,7 @@ export class Player implements Transport {
    * `delayS` the change begins that many seconds from now.
    */
   setStemGain(id: string, gain: number, delayS = 0): void {
-    const stem = this.stems.get(id);
+    const stem = (this.shelved?.stems ?? this.stems).get(id);
     if (!stem || Number.isNaN(gain)) return;
     this.applyLevel(stem, gain, delayS);
     this.emit('stems');
@@ -335,7 +421,7 @@ export class Player implements Transport {
 
   /** A stem's current level (0..1), or null if there is no such stem. */
   stemGain(id: string): number | null {
-    return this.stems.get(id)?.level ?? null;
+    return (this.shelved?.stems ?? this.stems).get(id)?.level ?? null;
   }
 
   /** Ids of all stems, 'original' first; empty before a song is loaded. */

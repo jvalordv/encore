@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from encore_service.take_analysis.constants import MIN_SPAN_S
 from encore_service.take_analysis.results import SectionKind
-from encore_service.take_analysis.schema import Event
+from encore_service.take_analysis.schema import Event, TraceSection
 
 SPAN_KINDS = frozenset({"player", "seek", "mix", "monitor", "input"})
 _MARK = re.compile(
@@ -93,3 +93,22 @@ def _spans(
         if end - start >= MIN_SPAN_S:
             specs.append(SectionSpec("span", f"after {what}", start, end))
     return specs
+
+
+def trace_marks(
+    sections: list[TraceSection], origin: float
+) -> list[tuple[str, TraceSection]]:
+    """`--section` strings for the sections the app labelled in the trace.
+
+    The trace is in song time and marks are in take time, so the first frame's
+    song time comes off. A section that ends before the frames begin, or has no
+    length, is dropped; one that starts before them is cut to start at 0.
+    """
+    out: list[tuple[str, TraceSection]] = []
+    for sec in sections:
+        start, end = max(0.0, sec.startS - origin), sec.endS - origin
+        if end <= start:
+            continue
+        suffix = f":{sec.kind}" if sec.kind in ("silent", "sing") else ""
+        out.append((f"{start:.3f}-{end:.3f}{suffix}", sec))
+    return out

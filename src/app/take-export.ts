@@ -16,7 +16,7 @@ export type TakeFileKind = 'wav' | 'json';
 
 /** The format name and version the JSON carries, for whoever reads it later. */
 export const TAKE_EXPORT_FORMAT = 'encore-take';
-export const TAKE_EXPORT_VERSION = 2;
+export const TAKE_EXPORT_VERSION = 3;
 
 /** Longest song name used in a file name. */
 const MAX_NAME_CHARS = 60;
@@ -71,11 +71,13 @@ export function takeExportJson(record: TakeRecord): Record<string, unknown> {
       sampleRate: record.sampleRate,
       startedAtSongS: record.startedAtSongS ?? null,
       clock: record.clock ?? 'engine',
+      kind: record.kind ?? 'song',
     },
     mic: record.mic ?? null,
     report: record.report ?? null,
-    // Version 2 adds `trace` and the per-frame `rawF0` and `gate`; a take
-    // saved before then has neither and reads as before.
+    // Version 2 adds `trace` and the per-frame `rawF0` and `gate`; version 3
+    // adds `take.kind`, `trace.sections` and `trace.environment.tuning`. A
+    // take saved before then lacks them and reads as before.
     trace: record.trace ?? null,
     frames: record.frames.map((f) => ({
       t: f.t,

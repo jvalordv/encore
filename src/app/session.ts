@@ -48,6 +48,8 @@
  * and re-exported here. Importing this file touches no browser API.
  */
 import type { Span } from '../analysis/free-phrases';
+import type { MicTuning } from '../analysis/mic-tuning';
+import type { MelodyRange } from '../analysis/test-melody';
 import type { MonitorMode } from '../audio/mic';
 import type { Transport } from '../audio/transport';
 import type { EmbedHost } from '../audio/youtube-transport';
@@ -345,6 +347,36 @@ export class Session {
   /** Measures round-trip latency with chirps and stores it for this pair. */
   calibrate(): Promise<void> {
     return this.core.latency.calibrate();
+  }
+
+  /** The gate and bleed rules in force for the current mic and output. */
+  get micTuning(): MicTuning {
+    return this.core.health.tuning();
+  }
+
+  /** Runs the guided Mic check with the test melody in the chosen range. */
+  startMicCheck(range: MelodyRange): Promise<void> {
+    return this.core.micCheck.start(range);
+  }
+
+  /** Stops the Mic check, or the wait for its analysis. */
+  cancelMicCheck(): void {
+    this.core.micCheck.cancel();
+  }
+
+  /** Closes the Mic check's result card. */
+  closeMicCheck(): void {
+    this.core.micCheck.close();
+  }
+
+  /** Stores the Mic check's recommended values for this mic and output. */
+  applyMicCheck(): void {
+    this.core.micCheck.applySettings();
+  }
+
+  /** Returns this mic and output's tuning to the defaults. */
+  resetMicTuning(): void {
+    this.core.micCheck.resetSettings();
   }
 
   /** Sets, or with null clears, the latency for the current device pair. */

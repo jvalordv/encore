@@ -10,6 +10,7 @@
  */
 import type { BleedState } from '../analysis/bleed';
 import { DRAW_MARGIN_DB, rmsToDb } from '../analysis/mic-level';
+import type { MicTuning } from '../analysis/mic-tuning';
 import type { MicState } from '../analysis/mic-level';
 import type { PitchFrame } from '../analysis/pitch';
 import type { TrialResult } from '../audio/latency';
@@ -76,6 +77,18 @@ export interface TakeEnvironment {
   trackSettings: Record<string, unknown> | null;
   audio: { sampleRate: number; baseLatencyS: number | null; outputLatencyS: number | null } | null;
   analysis: { clarityThreshold: number; octaveInvariant: boolean; scoring: string; mode: string };
+  /** The gate and bleed rules in force; absent on takes saved before v3. */
+  tuning?: MicTuning;
+}
+
+/** One labelled stretch of a Mic check take, on song time. */
+export interface TraceSection {
+  /** quiet, speakers, sing-along or sing-alone. */
+  label: string;
+  /** 'silent' when the singer should be quiet, 'sing' when singing. */
+  kind: 'silent' | 'sing';
+  startS: number;
+  endS: number;
 }
 
 /** The reference melody over the take's span. */
@@ -103,6 +116,8 @@ export interface TakeTrace {
   reference?: TraceReference;
   key?: KeyMap;
   calibration?: TraceCalibration;
+  /** The Mic check's labelled stretches; absent on an ordinary take. */
+  sections?: TraceSection[];
 }
 
 /** Seconds of song time between health samples (about 4 a second). */
@@ -119,10 +134,11 @@ export function gateReasonOf(
   frame: { f0: number; clarity: number; rms: number },
   floorDb: number,
   clarityThreshold: number,
+  drawMarginDb: number = DRAW_MARGIN_DB,
 ): GateReason | null {
   if (!(frame.f0 > 0)) return 'unvoiced';
   if (!(frame.clarity >= clarityThreshold)) return 'unclear';
-  return rmsToDb(frame.rms) >= floorDb + DRAW_MARGIN_DB ? null : 'quiet';
+  return rmsToDb(frame.rms) >= floorDb + drawMarginDb ? null : 'quiet';
 }
 
 /** A frame to store: the scored fields as published, plus the raw reading. */
@@ -144,6 +160,7 @@ export interface EnvironmentSource {
   context: { sampleRate: number; baseLatency?: number; outputLatency?: number } | null;
   clarityThreshold: number;
   octaveInvariant: boolean;
+  tuning?: MicTuning;
 }
 
 /** The environment record for a take about to start. */
@@ -168,6 +185,7 @@ export function captureEnvironment(src: EnvironmentSource, state: Pick<AppState,
       scoring: state.scoring,
       mode: state.mode,
     },
+    ...(src.tuning ? { tuning: { ...src.tuning } } : {}),
   };
 }
 

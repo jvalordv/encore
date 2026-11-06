@@ -169,6 +169,26 @@ export class PrepareController {
   }
 
   /**
+   * Stops the follower while the audio player is borrowed. The returned call
+   * starts a new one, after moving the video to the player's position; it does
+   * nothing if the video was replaced meanwhile. A no-op without a follower.
+   */
+  suspendFollowing(): () => void {
+    const { follower } = this;
+    const embed = this.core.songs.embed;
+    const parts = this.core.parts;
+    if (!follower || !embed || !parts) return () => {};
+    follower.stop();
+    this.follower = null;
+    return () => {
+      if (this.core.songs.embed !== embed || this.follower) return;
+      embed.seek(parts.player.positionS);
+      this.follower = new EmbedFollower({ engine: parts.player, embed, hooks: this.followerHooks(embed) });
+      this.follower.start();
+    };
+  }
+
+  /**
    * Asks the service whether it runs and shows Prepare accordingly. With the
    * automatic setting on, a service that answers is sent the link at once.
    */

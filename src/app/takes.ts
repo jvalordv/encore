@@ -74,7 +74,12 @@ export interface TakeSummary {
   report?: TakeReport;
   /** Absent on takes saved before settings were kept. */
   mic?: TakeMicSettings;
+  /** 'mic-check' for a Mic check take; absent (a song take) otherwise. */
+  kind?: TakeKind;
 }
+
+/** What a take is: a song sung over, or the Mic check's test track. */
+export type TakeKind = 'song' | 'mic-check';
 
 /** The clock of a take; takes saved without one came from the engine. */
 export function takeClockOf(take: Pick<TakeSummary, 'clock'>): TakeClock {
@@ -151,6 +156,7 @@ function toSummary(record: TakeRecord): TakeSummary {
   if (record.clock !== undefined) summary.clock = record.clock;
   if (record.report !== undefined) summary.report = record.report;
   if (record.mic !== undefined) summary.mic = record.mic;
+  if (record.kind !== undefined) summary.kind = record.kind;
   return summary;
 }
 

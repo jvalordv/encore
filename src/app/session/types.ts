@@ -25,6 +25,8 @@ export type LaneSink = Pick<
   | 'setNotice'
   | 'setReference'
   | 'fitRangeToReference'
+  | 'getRange'
+  | 'setRange'
   | 'setFreePhrases'
   | 'setPhraseClick'
 >;

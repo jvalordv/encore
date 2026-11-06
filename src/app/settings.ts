@@ -2,9 +2,9 @@
  * Persistent user settings: the devices last chosen, how the singer monitors
  * the song, the service address, whether a pasted YouTube link is sent to the
  * service by itself, the voicing threshold, the round-trip latency measured for
- * each device pair, the extra offset applied while a YouTube video supplies
- * the song, the level of the vocal guide in the karaoke mix, whether the
- * karaoke note guide is on and the practice
+ * each device pair, the mic tuning for each pair, the extra offset applied
+ * while a YouTube video supplies the song, the level of the vocal guide in the
+ * karaoke mix, whether the karaoke note guide is on and the practice
  * mode (karaoke, or the opt-in learning mode) and learning mode's scoring style
  * (Strict, or Open).
  * One object under one storage key, behind the KeyValueStore interface, so a
@@ -15,6 +15,8 @@
  * here; it lives under `encore.skin` because index.html reads it before any
  * script runs.
  */
+import { sanitizeTuning } from '../analysis/mic-tuning';
+import type { MicTuning } from '../analysis/mic-tuning';
 import type { ScoringStyle } from '../analysis/score';
 import type { MonitorMode } from '../audio/mic';
 import { normalizeApiKey } from '../search/key';
@@ -53,6 +55,11 @@ export interface Settings {
   octaveInvariant: boolean;
   /** Round-trip latency in seconds, keyed by `latencyKey(output, input)`. */
   latencyByDevicePair: Record<string, number>;
+  /**
+   * The gate and bleed rules the Mic check tuned, keyed like the latency. A
+   * pair with no entry uses the defaults (and `clarityThreshold` above).
+   */
+  micTuningByDevicePair: Record<string, MicTuning>;
   /**
    * Seconds added to the latency while a YouTube video is the song, for the
    * path calibration cannot measure (the embed's own audio output), within
@@ -104,6 +111,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   clarityThreshold: 0.9,
   octaveInvariant: false,
   latencyByDevicePair: Object.freeze({}) as Record<string, number>,
+  micTuningByDevicePair: Object.freeze({}) as Record<string, MicTuning>,
   embedOffsetS: 0,
   mode: 'karaoke',
   scoring: 'strict',
@@ -197,6 +205,15 @@ function latencies(value: unknown): Record<string, number> {
   return Object.fromEntries(kept);
 }
 
+/** Keeps each pair's tuning, sanitised value by value; drops non-objects. */
+function tunings(value: unknown): Record<string, MicTuning> {
+  if (!isRecord(value)) return {};
+  const kept = Object.entries(value)
+    .filter((entry) => isRecord(entry[1]))
+    .map((entry): [string, MicTuning] => [entry[0], sanitizeTuning(entry[1])]);
+  return Object.fromEntries(kept);
+}
+
 /**
  * Turns anything (parsed JSON, a half-filled object) into a valid Settings.
  * Each field is judged alone; the result never shares objects with the input
@@ -219,6 +236,7 @@ export function sanitizeSettings(value: unknown): Settings {
         ? raw.octaveInvariant
         : DEFAULT_SETTINGS.octaveInvariant,
     latencyByDevicePair: latencies(raw.latencyByDevicePair),
+    micTuningByDevicePair: tunings(raw.micTuningByDevicePair),
     embedOffsetS: embedOffset(raw.embedOffsetS),
     mode: practiceMode(raw.mode),
     scoring: scoringStyle(raw.scoring),

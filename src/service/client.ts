@@ -5,8 +5,8 @@
  * running), `createSongFromUrl` (add a YouTube link), `uploadSong` (add a
  * file, with progress), `getSong` (one status), `fetchSongAudio` (the stored
  * audio), `fetchStem` (the vocal or the backing, with the gain they were
- * scaled by), `fetchReference` (the melody), `fetchKey` (the song's key) and
- * `pollSong` (a status loop that
+ * scaled by), `fetchReference` (the melody), `fetchKey` (the song's key),
+ * `analyseTake` (a Mic check take) and `pollSong` (a status loop that
  * ends when the audio is fetched, when a chosen step has settled, or when a
  * step has failed). Nothing here decides to talk to the service: the caller
  * does, and a client is built from the `serviceUrl` setting each time, so a
@@ -23,9 +23,18 @@
  * network.
  */
 import { STEP_NAMES } from './types';
-import type { KeyMap, Reference, SongLinkRequest, SongStatus, StemName, StepName, StepState } from './types';
+import type {
+  KeyMap,
+  Reference,
+  SongLinkRequest,
+  SongStatus,
+  StemName,
+  StepName,
+  StepState,
+  TakeAnalysis,
+} from './types';
 import { postFile } from './upload';
-import { isKeyMap, isReference, parseStemGain, STEM_GAIN_HEADER } from './wire';
+import { isKeyMap, isReference, isTakeAnalysis, parseStemGain, STEM_GAIN_HEADER } from './wire';
 import type { StemDownload } from './wire';
 
 /** Longest GET /health may take before the service counts as not running. */
@@ -431,6 +440,24 @@ export class ServiceClient {
     const limits = { timeoutMs: this.requestTimeoutMs, signal };
     const body = await this.call(path, { method: 'GET' }, limits, readJson);
     if (!isKeyMap(body)) throw new ServiceError('unexpected', BAD_BODY_MESSAGE);
+    return body;
+  }
+
+  /**
+   * Has the service analyse a Mic check take: the take's export JSON and its
+   * WAV go up as one form, with the pitch model asked for (the service says
+   * in `notes` when it could not run it). A 422 is the service's plain
+   * reason; no answer reads as 'unreachable'. Takes the audio timeout, since
+   * the pitch model can be slow.
+   */
+  async analyseTake(take: Blob, wav: Blob, signal?: AbortSignal): Promise<TakeAnalysis> {
+    const form = new FormData();
+    form.append('take', new Blob([take], { type: 'application/json' }), 'take.json');
+    form.append('wav', wav, 'take.wav');
+    form.append('crepe', 'true');
+    const limits = { timeoutMs: this.audioTimeoutMs, signal };
+    const body = await this.call('/takes/analyse', { method: 'POST', body: form }, limits, readJson);
+    if (!isTakeAnalysis(body)) throw new ServiceError('unexpected', BAD_BODY_MESSAGE);
     return body;
   }
 

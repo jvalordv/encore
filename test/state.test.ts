@@ -7,6 +7,7 @@
  * degrades; its audio paths need a browser and belong to the end-to-end run.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { initialMicCheck } from '../src/app/mic-check';
 import {
   DEFAULT_LOOP_S,
   FRAME_JITTER_S,
@@ -107,6 +108,7 @@ describe('initialState', () => {
       output: { deviceId: null, label: '', selectable: false },
       latencyS: null,
       calibrating: false,
+      micCheck: initialMicCheck(),
       tracker: 'idle',
       framesPerSecond: 0,
       lastFrame: null,
@@ -747,6 +749,8 @@ describe('Session without Web Audio', () => {
       setNotice: vi.fn(),
       setReference: vi.fn(),
       fitRangeToReference: vi.fn(),
+      getRange: vi.fn(() => ({ midiLow: 48, midiHigh: 72 })),
+      setRange: vi.fn(),
       setFreePhrases: vi.fn(),
       setPhraseClick: vi.fn(),
     };

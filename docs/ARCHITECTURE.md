@@ -55,6 +55,19 @@ so learning mode when it is up. Scoring and tips run in the browser.
   the room and the check is off, and with no melody it says it cannot check.
   Phase 3 may add our own cancellation in the worklet from the known song
   signal and latency.
+  The gate and bleed numbers are per-pair settings (`MicTuning` in
+  `src/analysis/mic-tuning.ts`: draw margin, clarity, the bleed match window,
+  share and median limit), stored as `micTuningByDevicePair` under the same
+  key as the latency, clamped on load, and read by the gate
+  (`isDrawable`), the take trace's gate reason and the bleed detector; a pair
+  with no entry uses today's constants. The Mic check
+  (`src/app/session/mic-check.ts`) is how they get tuned: it shelves the song
+  in the audio player (`Player.loadTransient`), plays a synthesised 40 s
+  track (`src/analysis/test-melody.ts`, whose f0 contour is the exact
+  reference), records a take with `kind: 'mic-check'` and labelled sections in
+  its trace (export version 3), restores the song, and posts the take to
+  `POST /takes/analyse`. The service's recommended values are applied only on
+  the singer's press of Use these settings.
 - **Clock.** Song time is the master clock. Every mic frame is stamped with
   `context.currentTime` (the centre of its analysis window) and shifted by the
   calibrated round-trip latency so that what the singer heard at time *t* and

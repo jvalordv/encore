@@ -26,7 +26,11 @@ from encore_service.take_analysis.processing.run import run_processing
 from encore_service.take_analysis.processing.tracker import Tracker
 from encore_service.take_analysis.results import SectionResult, TakeAnalysis
 from encore_service.take_analysis.schema import TakeFile
-from encore_service.take_analysis.sections import SectionSpec, build_specs
+from encore_service.take_analysis.sections import (
+    SectionSpec,
+    build_specs,
+    trace_marks,
+)
 
 
 def missing_notes(take: TakeFile, fa: FrameArrays) -> list[str]:
@@ -97,9 +101,15 @@ def analyse_take(
     tracker: Tracker | None = None,
     tracker_note: str | None = None,
 ) -> TakeAnalysis:
-    """Analyse a parsed take; raises `SectionError` for a bad mark or window."""
+    """Analyse a parsed take; raises `SectionError` for a bad mark or window.
+
+    With no `marks`, the sections the app labelled in the trace (a Mic check)
+    are used, already marked silent or sing.
+    """
     fa = build_frames(take)
     trace = take.trace
+    if not marks and trace and trace.sections:
+        marks = [m for m, _ in trace_marks(trace.sections, fa.origin)]
     ref = PreparedRef.of(trace.reference) if trace and trace.reference else None
     health = trace.health if trace else []
     duration = float(fa.take_t.max()) + 0.01

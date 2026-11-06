@@ -24,7 +24,12 @@ webcam or USB mic.
 
 ## Current state
 
-- **Last done:** **W0c** (2026-11-05): `take_analysis` in the service
+- **Last done:** **W0d** (2026-11-05): a Mic check beside Calibrate. It
+  runs four guided steps over a synthesised test melody, labels them,
+  gets W0c's analysis from the service (`POST /takes/analyse`), and offers
+  "Use these settings" for the gate, the bleed rule and the latency per
+  device pair. It works over a loaded file or a YouTube video. Before it
+  **W0c** (2026-11-05): `take_analysis` in the service
   reads a saved take and reports sections, verdicts and processing
   feedback for development: a decision audit, a crepe tracker check, a
   latency check, a what-if sweep of the constants, and measured findings.
@@ -39,8 +44,9 @@ webcam or USB mic.
   and W1 (the reference step and the browser seams); older work in
   `docs/HISTORY.md`.
 - **In progress:** none.
-- **Next:** **W0d** (the Mic check in the app, which replaces the
-  hand-run W0c protocol), then the owner's W0, W0b and W0d tests. Then
+- **Next:** the owner's tests for W0, W0b and W0d (under each wave): Mic
+  check in speaker and headphone modes. The card's findings set the next
+  tuning wave. Then
   **W5** (needs a second person for its owner
   test). Search needs the owner's YouTube Data API key
   (README, "Run it"; pasted into the app, never into chat).
@@ -373,7 +379,7 @@ Tracks inside a wave share no files and may run in parallel.
   - Follow-up: `--crepe` has run only on synthetic sines, not on a real
     take.
 
-- [ ] **W0d: Mic check in the app** (owner, 2026-11-05: "build that into a
+- [x] **W0d: Mic check in the app** (owner, 2026-11-05: "build that into a
   calibration setting"; running the command by hand "seems imprecise").
   The app runs W0c's protocol itself, labels the sections, gets the
   analysis from the service, and offers the tuned settings. Two tracks:
@@ -418,6 +424,42 @@ Tracks inside a wave share no files and may run in parallel.
   - Done when every check is green. Owner test: run the Mic check in
     speaker mode, then in headphones mode, and report the card and whether
     the ribbon behaves better after "Use these settings".
+  - Built (2026-11-05), service and browser tracks in parallel in one
+    checkout, one review, one fresh fixer.
+    - **Service:** `POST /takes/analyse` in
+      `service/encore_service/routes/takes.py`, with
+      `take_analysis/{mic_check,tuning}.py`. A value is advised only when
+      it changes and the evidence meets the minimums: 100 sung frames, 90 %
+      of them kept for the gate; a bleed rule that flags no sung section
+      and keeps every silent one the current rule flags; for latency, 150
+      frames at a match share of 0.7 or more and a move of at least 5 ms.
+      Values are clamped to the same bounds as `TUNING_RANGES`.
+    - **Browser:** `src/analysis/{mic-tuning,test-melody}.ts`,
+      `src/app/mic-check.ts` (the step machine), and
+      `src/app/{session,panels}/mic-check.ts`. Tuning is kept as
+      `micTuningByDevicePair` and read by the gate, the bleed detector, the
+      tracker clarity and the trace. The check plays its 40 s melody as a
+      transient song (`Player.loadTransient`). Stems that arrive meanwhile
+      go to the shelved song. A YouTube video is parked, paused at its
+      position, and a prepared song's follower is suspended. The take is
+      stored under the song key `mic-check`, and the card offers Save WAV
+      and Save JSON. Use these settings refuses when the device pair
+      changed since the check.
+    - The e2e test seam is `?micCheckScale` (8 s instead of 40). Review
+      fixes: stems arriving mid-check, the device pair, the lane range,
+      and YouTube support.
+  - Follow-up: during a check over an unprepared YouTube video, a click on
+    the video would still play it aloud; guard it with the parked state.
+  - Follow-up: "Use the loaded song" is not built; it needs a melody for
+    any song.
+  - Follow-up: the section verdicts in `measure.py` and `match.py` still use
+    the mirrored constants, not the take's tuning; only the sweep and the
+    advice use the tuning.
+  - Follow-up: `src/app/session/takes.ts` (520 lines) and
+    `src/audio/player.ts` (640) are over the size rule; split them in a
+    quiet wave.
+  - Follow-up: the three skins and the narrow window were not looked at
+    in a browser.
 
 - [x] **W1: Seams and the reference melody.** Two tracks, one commit.
   - **W1a, service: reference melody** (was P2-T3). New `reference` step
@@ -873,6 +915,7 @@ were.
 | W0 Guide and mic diagnostics (measured) | 0.75 | 0.85 M | 20 min |
 | W0b Embed controls and take trace (measured) | 0.6 | 0.42 M | 15 min |
 | W0c Take analysis (measured) | 0.4 | 0.44 M | 10 min |
+| W0d Mic check in the app (measured) | 1 | 0.75 M | 15 min |
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |
@@ -880,7 +923,7 @@ were.
 | W5 Two singers | 1 (0.7-1.8) | about 0.7 M | 30 min, a second person |
 | W6 Synced lyrics | 0.4 (0.3-0.8) | about 0.3 M | 5 min |
 | W7 Test and sweep | 0.8 (0.6-1.5) | about 0.6 M | 45 min |
-| **Total** | **about 8 (7-11)** | **about 6.6 M** | **about 3.2 h** |
+| **Total** | **about 9 (8-12)** | **about 7.4 M** | **about 3.5 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The
 orchestrator's own reading adds about 100 to 200 thousand tokens per wave

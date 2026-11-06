@@ -760,6 +760,35 @@ describe('Player stems', () => {
   });
 });
 
+describe('Player stems during a transient song', () => {
+  it('keeps a stem that arrives meanwhile for the song set aside, unheard', async () => {
+    const { player, ctx } = await loaded();
+    await player.loadTransient(new Blob([new TextEncoder().encode('t')]), 'Mic check', 'mic-check');
+    player.play();
+    const playing = ctx.sources.length;
+    player.addStem('no_vocals', stemBuffer(30), 0, 0);
+    player.setStemGain('no_vocals', 0.8);
+    // Nothing started beside the test track, and it is not in its stems.
+    expect(ctx.sources).toHaveLength(playing);
+    expect(player.stemIds()).toEqual(['original']);
+    player.endTransient();
+    expect(player.stemIds()).toEqual(['original', 'no_vocals']);
+    expect(player.stemGain('no_vocals')).toBe(0.8);
+    player.removeStem('no_vocals');
+    expect(player.stemIds()).toEqual(['original']);
+  });
+
+  it('applies a removal made meanwhile to the song set aside', async () => {
+    const { player } = await loaded();
+    player.addStem('vocals', stemBuffer(30));
+    await player.loadTransient(new Blob([new TextEncoder().encode('t')]), 'Mic check', 'mic-check');
+    player.removeStem('vocals');
+    expect(player.stemIds()).toEqual(['original']);
+    player.endTransient();
+    expect(player.stemIds()).toEqual(['original']);
+  });
+});
+
 describe('Player as a Transport', () => {
   it('can be used wherever a Transport is wanted', async () => {
     const { player } = await loaded();

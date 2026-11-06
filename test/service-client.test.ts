@@ -575,3 +575,61 @@ describe('ServiceClient.pollSong', () => {
     expect(calls).toHaveLength(1);
   });
 });
+
+describe('analyseTake', () => {
+  const analysis = {
+    report_text: 'r',
+    findings: ['a'],
+    sections: [{ label: 'quiet', kind: 'silent', verdict: 'silence', start_s: 0, end_s: 5 }],
+    current: {
+      draw_margin_db: 8,
+      clarity_threshold: 0.9,
+      bleed_match_cents: 30,
+      bleed_min_match: 0.6,
+      bleed_max_median_cents: 15,
+      latency_s: null,
+    },
+    recommended: {
+      draw_margin_db: 11,
+      clarity_threshold: null,
+      bleed_match_cents: null,
+      bleed_min_match: null,
+      bleed_max_median_cents: null,
+      latency_s: 0.1,
+    },
+    notes: [],
+  };
+  const take = new Blob(['{}'], { type: 'application/json' });
+  const wav = new Blob([new Uint8Array(4)], { type: 'audio/wav' });
+
+  it('posts the take, the audio and the pitch-model request as one form', async () => {
+    const { client, calls } = clientFor(() => json(analysis));
+    const got = await client.analyseTake(take, wav);
+    expect(got.recommended.draw_margin_db).toBe(11);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe(`${BASE}/takes/analyse`);
+    expect(calls[0]!.init.method).toBe('POST');
+    const form = calls[0]!.init.body as FormData;
+    expect([...form.keys()].sort()).toEqual(['crepe', 'take', 'wav']);
+    expect(form.get('crepe')).toBe('true');
+    expect((form.get('take') as File).name).toBe('take.json');
+  });
+
+  it('gives the service plain reason for a 422', async () => {
+    const { client } = clientFor(() => json({ detail: 'That is not a Mic check take.' }, 422));
+    const error = await failureOf(client.analyseTake(take, wav));
+    expect(error).toMatchObject({ kind: 'rejected', message: 'That is not a Mic check take.' });
+  });
+
+  it('reads no answer as unreachable, never a crash', async () => {
+    const { client } = clientFor(() => {
+      throw new TypeError('Failed to fetch');
+    });
+    expect(await failureOf(client.analyseTake(take, wav))).toMatchObject({ kind: 'unreachable' });
+  });
+
+  it('turns away an answer that is not an analysis', async () => {
+    const { client } = clientFor(() => json({ report_text: 'x' }));
+    expect(await failureOf(client.analyseTake(take, wav))).toMatchObject({ kind: 'unexpected' });
+  });
+});

@@ -50,7 +50,9 @@ def run_processing(
     else:
         why = tracker_note or "not run: pass --wav and --crepe to compare trackers"
         comparison = TrackerComparison(available=False, note=why)
-    findings = build_findings(audit, sweep, latency, comparison, fa.clarity_threshold)
+    findings = build_findings(
+        audit, sweep, latency, comparison, fa.clarity_threshold, fa.tuning
+    )
     return ProcessingResult(
         audit=audit,
         tracker=comparison,

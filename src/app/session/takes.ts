@@ -8,13 +8,13 @@
  */
 import type { PitchFrame } from '../../analysis/pitch';
 import type { TakeRecording } from '../../audio/recorder';
-import type { ClockKind, TrackInfo } from '../../audio/transport';
+import type { ClockKind, TrackInfo, Transport } from '../../audio/transport';
 import { decodeWav, encodeWavBlob, songTimeOfSample } from '../../audio/wav';
 import { formatClock } from '../state';
 import { captureMicSettings, takeExportJson, takeFileName } from '../take-export';
 import type { TakeFileKind } from '../take-export';
 import { captureEnvironment, keyForSpan, sliceReference, TakeTraceRecorder, toTakeFrame } from '../take-trace';
-import type { TakeEnvironment, TakeFrame, TakeTrace } from '../take-trace';
+import type { TakeEnvironment, TakeFrame, TakeTrace, TraceSection } from '../take-trace';
 import type { TakeMicSettings, TakeRecord } from '../takes';
 import type { SessionCore } from './core';
 import { firstFrameIndex, messageOf, sleep } from './helpers';
@@ -68,6 +68,8 @@ interface Recording {
   mic: TakeMicSettings;
   /** The browser, audio and analysis settings as the take began. */
   environment: TakeEnvironment;
+  /** The Mic check's labelled stretches; absent on a take over a song. */
+  sections?: TraceSection[];
 }
 
 /** Records, saves, replays and deletes takes. */
@@ -76,6 +78,8 @@ export class TakeController {
   startingRecord = false;
   /** The take being replayed by itself over a video, or null. */
   solo: SoloTake | null = null;
+  /** The id of the take saved last, for the Mic check's result card. */
+  lastSavedId: string | null = null;
   private recording: Recording | null = null;
   private takeFrames: TakeFrame[] | null = null;
   private finishing: Promise<void> | null = null;
@@ -101,6 +105,10 @@ export class TakeController {
    * stops and saves the take in progress.
    */
   async toggleRecord(): Promise<void> {
+    if (this.core.micCheck.active) {
+      this.core.store.setStatus('The Mic check is running. Press Cancel in its panel to stop it.', 'warn');
+      return;
+    }
     if (this.core.store.state.recording) {
       const started = this.recording?.startedPlayback ?? false;
       const done = this.finishRecording();
@@ -292,25 +300,7 @@ export class TakeController {
         await sleep(RECORD_LEAD_MS);
       }
       if (transport !== songs.active || transport.state !== 'playing') return;
-      await parts.recorder.start(
-        transport.positionS,
-        this.core.latency.latencyOrZero() + songs.embedOffsetNow(),
-      );
-      const { clarityThreshold } = this.core.current;
-      const mic = captureMicSettings(store.state, clarityThreshold, this.core.health.floorDb);
-      const environment = captureEnvironment(
-        {
-          trackSettings: parts.mic.settings,
-          context: parts.engine.context,
-          clarityThreshold,
-          octaveInvariant: this.core.current.octaveInvariant,
-        },
-        store.state,
-      );
-      this.recording = { song, startedPlayback, clock: transport.clock, mic, environment };
-      this.takeFrames = [];
-      this.trace.start(store.state);
-      store.patch({ recording: true });
+      await this.arm(transport, song, startedPlayback);
       const approximate = embed ? ' Timing over a YouTube video is approximate.' : '';
       if (store.state.latencyS === null) {
         store.setStatus(
@@ -327,6 +317,64 @@ export class TakeController {
     } finally {
       this.startingRecord = false;
       this.core.prepare.kickSwitch();
+    }
+  }
+
+  /**
+   * Starts the recorder at the transport's position and begins the take's
+   * records: mic and mix settings, environment, event log. `sections` marks
+   * the take as a Mic check.
+   */
+  private async arm(
+    transport: Transport,
+    song: TrackInfo,
+    startedPlayback: boolean,
+    sections?: TraceSection[],
+  ): Promise<void> {
+    const { parts, store, songs } = this.core;
+    if (!parts) return;
+    await parts.recorder.start(transport.positionS, this.core.latency.latencyOrZero() + songs.embedOffsetNow());
+    const tuning = this.core.health.tuning();
+    const mic = captureMicSettings(store.state, tuning.clarityThreshold, this.core.health.floorDb);
+    const environment = captureEnvironment(
+      {
+        trackSettings: parts.mic.settings,
+        context: parts.engine.context,
+        clarityThreshold: tuning.clarityThreshold,
+        octaveInvariant: this.core.current.octaveInvariant,
+        tuning,
+      },
+      store.state,
+    );
+    this.recording = { song, startedPlayback, clock: transport.clock, mic, environment, sections };
+    this.takeFrames = [];
+    this.trace.start(store.state);
+    store.patch({ recording: true });
+  }
+
+  /**
+   * Begins the Mic check's take on the song in the player (its test track,
+   * already playing). False, with the reason on the status line, when it
+   * could not start.
+   */
+  async beginMicCheckTake(sections: TraceSection[]): Promise<boolean> {
+    const { parts, store, songs } = this.core;
+    const transport = songs.active;
+    const song = transport?.info;
+    if (!parts || !transport || !song || this.startingRecord || store.state.recording) return false;
+    this.startingRecord = true;
+    try {
+      if (store.state.tracker !== 'running') {
+        store.setStatus('The Mic check needs AudioWorklet, which is unavailable here.', 'error');
+        return false;
+      }
+      await this.arm(transport, song, false, sections);
+      return true;
+    } catch (error) {
+      store.setStatus(`Could not start the Mic check: ${messageOf(error)}`, 'error');
+      return false;
+    } finally {
+      this.startingRecord = false;
     }
   }
 
@@ -363,8 +411,10 @@ export class TakeController {
     const trace: TakeTrace = { ...tracks, environment: meta.environment };
     const reference = sliceReference(this.core.stems.contour(), fromS, toS);
     if (reference) trace.reference = reference;
-    const key = keyForSpan(this.core.scoring.keyMap(), fromS, toS);
+    // The previous song's key says nothing about the test track.
+    const key = meta.sections ? undefined : keyForSpan(this.core.scoring.keyMap(), fromS, toS);
     if (key) trace.key = key;
+    if (meta.sections) trace.sections = meta.sections.map((section) => ({ ...section }));
     const calibration = this.core.latency.lastCalibration;
     if (calibration && calibration.delayS === this.core.store.state.latencyS) trace.calibration = calibration;
     return trace;
@@ -398,11 +448,13 @@ export class TakeController {
       startedAtSongS: rec.startedAtSongS,
       clock,
       mic,
+      ...(meta.sections ? { kind: 'mic-check' as const } : {}),
       // Frames are on song time with the latency already taken off.
       frames,
       wav: encodeWavBlob(rec.pcm, rec.sampleRate, 16),
       ...(report ? { report } : {}),
     });
+    this.lastSavedId = id;
     await this.refreshTakes();
     if (report) this.core.scoring.showReport(id);
     this.core.store.setStatus(`Take saved (${rec.durationS.toFixed(1)} s).`);

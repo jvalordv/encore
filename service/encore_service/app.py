@@ -19,7 +19,7 @@ from encore_service import __version__
 from encore_service.config import Settings
 from encore_service.jobs import JobQueue
 from encore_service.pipeline import queue_preparation
-from encore_service.routes import analyze, duet, gpu, health, songs
+from encore_service.routes import analyze, duet, gpu, health, songs, takes
 from encore_service.store import SongStore
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # listed here, besides the few every response is allowed to show.
         expose_headers=[songs.STEM_GAIN_HEADER],
     )
-    for module in (health, gpu, songs, analyze, duet):
+    for module in (health, gpu, songs, analyze, duet, takes):
         app.include_router(module.router)
     return app
 

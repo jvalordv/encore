@@ -221,7 +221,7 @@ describe('a recorded take', () => {
     expect(take.trace?.health.length).toBeGreaterThan(0);
     const json = takeExportJson(take);
     expect(json.version).toBe(TAKE_EXPORT_VERSION);
-    expect(TAKE_EXPORT_VERSION).toBe(2);
+    expect(TAKE_EXPORT_VERSION).toBe(3);
     expect(json.trace).toEqual(take.trace);
     expect((json.frames as Array<Record<string, unknown>>)[0]).toMatchObject({ rawF0: 220, gate: 'quiet' });
   });

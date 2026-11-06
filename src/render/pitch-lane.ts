@@ -222,6 +222,11 @@ export class PitchLane {
     this.onPhraseClick = handler;
   }
 
+  /** The visible MIDI rows, inclusive. */
+  getRange(): { midiLow: number; midiHigh: number } {
+    return { midiLow: this.midiLow, midiHigh: this.midiHigh };
+  }
+
   /** Sets the visible MIDI rows, inclusive; whole notes, at least two rows. */
   setRange(midiLow: number, midiHigh: number): void {
     this.applyRange(midiLow, midiHigh);

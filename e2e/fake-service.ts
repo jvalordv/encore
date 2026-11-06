@@ -5,7 +5,8 @@
  * reaches a port nothing listens on (which the browser would log as an error).
  * The stand-in answers the routes the app uses: `GET /health`, `POST /songs`
  * (a dropped file) and `POST /songs/url` (a link), `GET /songs/{id}`, and
- * `GET /songs/{id}/audio`, `/stems/{vocals|no_vocals}`, `/reference` and `/key`. What
+ * `GET /songs/{id}/audio`, `/stems/{vocals|no_vocals}`, `/reference` and `/key`,
+ * and `POST /takes/analyse` (the Mic check's advice). What
  * each answers is a field of the returned object, which a test changes at its
  * own pace, so a test can hold a song at "running 45%" for as long as it likes
  * and move it on when it has looked; the health checks and the upload can be
@@ -20,7 +21,7 @@
  */
 import { readFileSync } from 'node:fs';
 import type { BrowserContext, Request } from '@playwright/test';
-import type { KeyMap, Reference, SongStatus, StepState, StepStatus } from '../src/service/types';
+import type { KeyMap, Reference, SongStatus, StepState, StepStatus, TakeAnalysis } from '../src/service/types';
 import { NO_VOCALS_FILE, SONG_FILE, VOCALS_FILE } from './fixtures';
 
 /** The default `serviceUrl` setting. */
@@ -79,6 +80,49 @@ export const KEY_FIXTURE: KeyMap = {
   segments: [{ start_s: 0, end_s: 4, tonic: 9, mode: 'minor', confidence: 0.8 }],
 };
 
+/** The advice the stand-in gives for a Mic check take: a few new values. */
+export const ANALYSIS_FIXTURE: TakeAnalysis = {
+  report_text: 'Mic check report',
+  findings: ['Your room is quiet.', 'Little of the melody reached the mic.'],
+  sections: [
+    { label: 'quiet', kind: 'silent', verdict: 'silence', start_s: 0, end_s: 0.5 },
+    { label: 'speakers', kind: 'silent', verdict: 'silence', start_s: 0.5, end_s: 1.5 },
+    { label: 'sing-along', kind: 'sing', verdict: 'singer', start_s: 1.5, end_s: 3 },
+    { label: 'sing-alone', kind: 'sing', verdict: 'singer', start_s: 3, end_s: 4 },
+  ],
+  current: {
+    draw_margin_db: 8,
+    clarity_threshold: 0.9,
+    bleed_match_cents: 30,
+    bleed_min_match: 0.6,
+    bleed_max_median_cents: 15,
+    latency_s: null,
+  },
+  recommended: {
+    draw_margin_db: 11,
+    clarity_threshold: 0.85,
+    bleed_match_cents: null,
+    bleed_min_match: null,
+    bleed_max_median_cents: null,
+    latency_s: 0.12,
+  },
+  notes: ['Run the check again after moving the mic.'],
+};
+
+/** The JSON of the `take` part of a multipart body, or undefined if absent. */
+function takePartOf(request: Request): unknown {
+  const raw = request.postDataBuffer()?.toString('latin1') ?? '';
+  const start = raw.indexOf('name="take"');
+  if (start < 0) return undefined;
+  const bodyAt = raw.indexOf('\r\n\r\n', start) + 4;
+  const end = raw.indexOf('\r\n--', bodyAt);
+  try {
+    return JSON.parse(raw.slice(bodyAt, end));
+  } catch {
+    return undefined;
+  }
+}
+
 /** The stand-in's behaviour, all of it open to change by the test. */
 export interface FakeService {
   /** Every request received, in order, health checks included. */
@@ -101,6 +145,10 @@ export interface FakeService {
   reference: Reference | 409 | 404;
   /** The answer to `GET /songs/{id}/key`: the key map, or an error status. */
   key: KeyMap | 409 | 404;
+  /** The answer to `POST /takes/analyse`: the advice, or a refusal. */
+  analysis: TakeAnalysis | Refusal;
+  /** The `take` JSON of the last `POST /takes/analyse`, as received. */
+  analysedTake: unknown;
   /** The requests that are not health checks. */
   songRequests(): ServiceRequest[];
   /** How many requests had this method and exactly this path. */
@@ -230,6 +278,8 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
     stemGain: STEM_GAIN,
     reference: REFERENCE_FIXTURE,
     key: KEY_FIXTURE,
+    analysis: ANALYSIS_FIXTURE,
+    analysedTake: undefined,
     songRequests: () => service.requests.filter((r) => !(r.method === 'GET' && r.path === '/health')),
     count: (method, path) => service.requests.filter((r) => r.method === method && r.path === path).length,
     reset(id) {
@@ -244,6 +294,8 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
       service.stemGain = STEM_GAIN;
       service.reference = REFERENCE_FIXTURE;
       service.key = KEY_FIXTURE;
+      service.analysis = ANALYSIS_FIXTURE;
+      service.analysedTake = undefined;
       service.requests.length = 0;
     },
     holdHealth() {
@@ -295,6 +347,10 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
       } catch {
         // An upload the page gave up on while it was held has nothing to answer.
       }
+    } else if (method === 'POST' && path === '/takes/analyse') {
+      service.analysedTake = takePartOf(request);
+      const what = service.analysis;
+      await ('detail' in what ? json(what.status, { detail: what.detail }) : json(200, what));
     } else if (method === 'POST' && path === '/songs/url') {
       await answer(service.create);
     } else if (method === 'GET' && /^\/songs\/[^/]+\/stems\/(vocals|no_vocals)$/.test(path)) {

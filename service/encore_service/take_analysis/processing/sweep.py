@@ -24,11 +24,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from encore_service.take_analysis.constants import (
-    BLEED_MATCH_CENTS,
-    BLEED_MAX_MEDIAN_CENTS,
     BLEED_MIN_FRAMES,
-    BLEED_MIN_MATCH,
-    DRAW_MARGIN_DB,
     FLOOR_CEILING_DB,
 )
 from encore_service.take_analysis.frames import FrameArrays
@@ -65,12 +61,15 @@ def gate_pass(fa: FrameArrays, margin: float, clarity: float, ceiling: float) ->
 def _gate_rows(
     fa: FrameArrays, silent: Mask | None, singing: Mask | None
 ) -> list[GateSetting]:
-    now = gate_pass(fa, DRAW_MARGIN_DB, fa.clarity_threshold, FLOOR_CEILING_DB)
+    now = gate_pass(
+        fa, fa.tuning.draw_margin_db, fa.clarity_threshold, FLOOR_CEILING_DB
+    )
     silent_now = int(np.sum(now & silent)) if silent is not None else 0
     singing_now = int(np.sum(now & singing)) if singing is not None else 0
     clarities = tuple(dict.fromkeys((fa.clarity_threshold, *CLARITIES)))
     rows: list[GateSetting] = []
-    for margin in MARGINS_DB:
+    # The value in force is always a row, even off the grid.
+    for margin in dict.fromkeys((fa.tuning.draw_margin_db, *MARGINS_DB)):
         for clarity in clarities:
             for ceiling in CEILINGS_DB:
                 new = gate_pass(fa, margin, clarity, ceiling)
@@ -105,7 +104,7 @@ def _gate_rows(
 def is_current(row: GateSetting, fa: FrameArrays) -> bool:
     """True for the setting the app ran with."""
     return (
-        row.draw_margin_db == DRAW_MARGIN_DB
+        row.draw_margin_db == fa.tuning.draw_margin_db
         and row.clarity == fa.clarity_threshold
         and row.ceiling_db == FLOOR_CEILING_DB
     )
@@ -129,14 +128,17 @@ def _bleed_rows(
         cents = np.abs(compare_at(fa.t[mask], fa.pitch[mask], ref, float(lag)).cents)
         steady = sec.match.lag_steady if sec.match else None
         data.append((section_class(sec), cents, steady))
+    tn = fa.tuning
     base = [
-        _bleed_flag(c, st, BLEED_MATCH_CENTS, BLEED_MIN_MATCH, BLEED_MAX_MEDIAN_CENTS)
+        _bleed_flag(
+            c, st, tn.bleed_match_cents, tn.bleed_min_match, tn.bleed_max_median_cents
+        )
         for _, c, st in data
     ]
     rows: list[BleedSetting] = []
-    for mc in MATCH_CENTS:
-        for mm in MIN_MATCHES:
-            for md in MAX_MEDIANS:
+    for mc in dict.fromkeys((tn.bleed_match_cents, *MATCH_CENTS)):
+        for mm in dict.fromkeys((tn.bleed_min_match, *MIN_MATCHES)):
+            for md in dict.fromkeys((tn.bleed_max_median_cents, *MAX_MEDIANS)):
                 flags = [_bleed_flag(c, st, mc, mm, md) for _, c, st in data]
                 rows.append(
                     BleedSetting(

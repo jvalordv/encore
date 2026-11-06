@@ -19,6 +19,7 @@ import { FrameBus } from './frame-bus';
 import { InputController } from './input';
 import { LatencyController } from './latency';
 import { TickLoop } from './loop';
+import { MicCheckController } from './mic-check';
 import { MicHealthController } from './mic-health';
 import { MixController } from './mix';
 import { PlaybackController } from './playback';
@@ -70,6 +71,7 @@ export class SessionCore {
   readonly prepare: PrepareController;
   readonly input: InputController;
   readonly health: MicHealthController;
+  readonly micCheck: MicCheckController;
   readonly devices: DeviceController;
   readonly latency: LatencyController;
   readonly mix: MixController;
@@ -94,6 +96,7 @@ export class SessionCore {
     this.playback = new PlaybackController(this);
     this.prepare = new PrepareController(this);
     this.health = new MicHealthController(this);
+    this.micCheck = new MicCheckController(this);
     this.input = new InputController(this);
     this.devices = new DeviceController(this);
     this.latency = new LatencyController(this);

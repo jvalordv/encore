@@ -154,6 +154,8 @@ export class ScoringController {
   /** True while the singing is being scored: learning mode, with something to score against. */
   private isScoring(): boolean {
     const { core } = this;
+    // The Mic check measures the mic and never grades the singing.
+    if (core.micCheck.active) return false;
     if (core.current.mode !== 'learning') return false;
     return core.current.scoring === 'open' || this.activeReference() !== null;
   }

@@ -126,6 +126,7 @@
             <input id="latency-input" data-testid="latency-input" type="number" min="0" max="2000" step="1" inputmode="numeric" placeholder="ms" aria-label="Latency in milliseconds" />
             <span class="unit">ms</span>
             <button type="button" id="calibrate-button" data-testid="calibrate" title="Play chirps and time the echo">Calibrate</button>
+            <button type="button" id="mic-check-button" data-testid="mic-check" aria-controls="mic-check" aria-expanded="false" title="A 40 second guided check of your room and mic">Mic check</button>
           </div>
           <div id="embed-offset" class="embed-offset" data-testid="embed-offset" hidden>
             <label class="field" for="embed-offset-input">YouTube video offset</label>
@@ -137,6 +138,10 @@
           <label class="field" for="clarity-input">Voicing threshold <output id="clarity-value" class="song-meta"></output></label>
           <input id="clarity-input" data-testid="clarity-input" type="range" min="0.5" max="0.99" step="0.01" />
         </section>
+
+        <!-- The guided Mic check: steps, countdown, result card. Built by
+             src/app/panels/mic-check.ts; hidden until the button opens it. -->
+        <section id="mic-check" class="panel-group mic-check" data-testid="mic-check-panel" aria-label="Mic check" hidden></section>
 
         <section id="takes" class="panel-group" aria-label="Takes">
           <h3 class="group-title">Takes</h3>

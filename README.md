@@ -27,6 +27,21 @@ hearing you; in speaker mode it also says if the mic seems to be hearing the
 song through the speakers. Each take has Save WAV and Save JSON buttons for
 handing a take over for analysis.
 
+### Mic check
+
+Under Latency, **Mic check** runs a 40-second guided check of your room and
+mic: 5 s of quiet, 10 s of a test melody through your speakers while you stay
+silent, 15 s singing along, and 10 s singing alone. It records like a take
+(it is saved, with Save WAV and Save JSON) and then asks the service to
+analyse it, so start the service first (`cd service && uv run uvicorn
+encore_service.app:app --port 8765`; see `service/README.md`). The result card
+lists what it found and the values it would change; **Use these settings**
+stores them for the current microphone and output pair, and **Reset to
+defaults** takes them back. Without the service the steps still run and the
+recording is kept. It talks about the mic and the room only, never your
+singing, and works in karaoke mode. To watch it quickly in a test build, open
+the page with `?micCheckScale=0.2` to shorten every step to a fifth.
+
 ### End-to-end run
 
 `npm run e2e` builds the app, serves the production bundle and drives it in

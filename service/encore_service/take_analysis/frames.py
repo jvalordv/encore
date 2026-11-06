@@ -13,13 +13,14 @@ when the song played straight through; a pause or seek makes the two differ,
 which is why every section prints both.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from numpy.typing import NDArray
 
 from encore_service.take_analysis.constants import DEFAULT_CLARITY, SILENCE_DB
 from encore_service.take_analysis.schema import TakeFile
+from encore_service.take_analysis.tuning import TuningValues, tuning_of
 
 Floats = NDArray[np.float64]
 
@@ -40,6 +41,8 @@ class FrameArrays:
     app_bleed: NDArray[np.str_]
     has_gate: bool
     clarity_threshold: float
+    # The values in force; the sweep's "now" row.
+    tuning: TuningValues = field(default_factory=TuningValues)
 
     @property
     def usable(self) -> NDArray[np.bool_]:
@@ -55,6 +58,9 @@ def rms_to_db(rms: Floats) -> Floats:
 
 def clarity_threshold_of(take: TakeFile) -> float:
     """The app's clarity threshold for the take, or the app's default."""
+    tuned = take.trace.environment.tuning if take.trace else None
+    if tuned is not None and tuned.clarityThreshold is not None:
+        return tuned.clarityThreshold
     if take.mic and take.mic.clarityThreshold is not None:
         return take.mic.clarityThreshold
     analysis = take.trace.environment.analysis if take.trace else None
@@ -91,6 +97,7 @@ def build_frames(take: TakeFile) -> FrameArrays:
         floor = np.full(len(frames), np.nan if start is None else start)
         bleed = np.full(len(frames), "", dtype=np.str_)
     origin = float(t[0])
+    clarity_threshold = clarity_threshold_of(take)
     return FrameArrays(
         origin=origin,
         t=t,
@@ -103,5 +110,6 @@ def build_frames(take: TakeFile) -> FrameArrays:
         gate=gate,
         app_bleed=np.asarray(bleed, dtype=np.str_),
         has_gate=take.version >= 2,
-        clarity_threshold=clarity_threshold_of(take),
+        clarity_threshold=clarity_threshold,
+        tuning=tuning_of(take, clarity_threshold),
     )

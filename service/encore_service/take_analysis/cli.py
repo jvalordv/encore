@@ -30,7 +30,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="A-B[:silent|:sing]",
-        help="seconds of take time (from the first frame); repeat for more",
+        help="seconds of take time (from the first frame); repeat for more; "
+        "a Mic check take uses the sections in its trace when none are given",
     )
     p.add_argument(
         "--window",

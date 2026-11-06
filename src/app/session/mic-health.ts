@@ -11,6 +11,8 @@
  */
 import { bleedCheck, BleedDetector, vocalInOutput } from '../../analysis/bleed';
 import { isDrawable, MicLevel, SILENCE_DB } from '../../analysis/mic-level';
+import { tuningForPair } from '../../analysis/mic-tuning';
+import type { MicTuning } from '../../analysis/mic-tuning';
 import { NoteGuide } from '../../analysis/note-guide';
 import type { GuideNote } from '../../analysis/note-guide';
 import type { PitchFrame } from '../../analysis/pitch';
@@ -29,7 +31,11 @@ const roundDb = (db: number): number => Math.round(db / DB_STEP) * DB_STEP;
 export class MicHealthController {
   private readonly level = new MicLevel();
   private readonly guide = new NoteGuide();
-  private readonly bleed = new BleedDetector();
+  private readonly bleed = new BleedDetector(() => {
+    const t = this.tuning();
+    return { matchCents: t.bleedMatchCents, minMatch: t.bleedMinMatch, maxMedianCents: t.bleedMaxMedianCents };
+  });
+  private tuned: MicTuning | null = null;
   private lastPublishT = Number.NEGATIVE_INFINITY;
   private reading: GuideNote | null = null;
   /** Why the frame last observed failed the gate; null if it passed. */
@@ -54,9 +60,9 @@ export class MicHealthController {
    */
   observe(frame: PitchFrame, positionS: number): boolean {
     this.level.push(frame.rms);
-    const clarity = this.core.parts?.tracker.clarityThreshold ?? this.core.current.clarityThreshold;
-    const drawable = isDrawable(frame, this.level.floorDb, clarity);
-    this.lastGate = drawable ? null : gateReasonOf(frame, this.level.floorDb, clarity);
+    const { clarityThreshold: clarity, drawMarginDb } = this.tuning();
+    const drawable = isDrawable(frame, this.level.floorDb, clarity, drawMarginDb);
+    this.lastGate = drawable ? null : gateReasonOf(frame, this.level.floorDb, clarity, drawMarginDb);
     if (this.guideOn()) {
       if (drawable) this.guide.push(frame.t, positionS, frame.f0, this.core.scoring.keyMap());
     } else {
@@ -80,6 +86,46 @@ export class MicHealthController {
     const contour = stems.contour();
     if (contour === null || !this.vocalOut()) return;
     this.bleed.push(songT, frame.f0, contour);
+  }
+
+  /** The gate and bleed rules for the current device pair. */
+  tuning(): MicTuning {
+    this.tuned ??= tuningForPair(
+      this.core.current.micTuningByDevicePair,
+      this.core.latency.pairKey(),
+      this.core.current.clarityThreshold,
+    );
+    return this.tuned;
+  }
+
+  /**
+   * Reads the rules for the current pair again, as after the pair or the
+   * tuning changed, and points the tracker at the clarity they name.
+   */
+  syncTuning(): void {
+    this.tuned = null;
+    const clarity = this.tuning().clarityThreshold;
+    if (this.core.parts) this.core.parts.tracker.clarityThreshold = clarity;
+  }
+
+  /** Stores the rules for the current pair; null returns it to the defaults. */
+  setTuning(tuning: MicTuning | null): void {
+    const { current } = this.core;
+    const key = this.core.latency.pairKey();
+    const map = { ...current.micTuningByDevicePair };
+    if (tuning === null) delete map[key];
+    else map[key] = { ...tuning };
+    current.micTuningByDevicePair = map;
+    this.core.persist();
+    this.syncTuning();
+  }
+
+  /** A clarity chosen by hand also moves a tuned pair's, so it still counts. */
+  noteClarity(clarity: number): void {
+    const key = this.core.latency.pairKey();
+    const stored = this.core.current.micTuningByDevicePair[key];
+    if (stored) this.setTuning({ ...stored, clarityThreshold: clarity });
+    else this.syncTuning();
   }
 
   /** Turns the note guide on or off, remembering the choice. */
@@ -110,6 +156,8 @@ export class MicHealthController {
 
   private vocalOut(): boolean {
     const { clock, mix } = this.core.store.state;
+    // The Mic check's own melody is always in the room.
+    if (this.core.micCheck.active) return true;
     return vocalInOutput({ clock, choice: mix.choice, guideLevel: mix.guideLevel });
   }
 

@@ -107,3 +107,38 @@ export interface KeyMap {
   /** In time order, contiguous from 0 to the song's end. */
   segments: KeySegment[];
 }
+
+/** What a stretch of a Mic check take turned out to hold. */
+export type SectionVerdict = 'silence' | 'singer' | 'likely_bleed' | 'unclear';
+
+/** The analysis of one labelled stretch of the Mic check. */
+export interface AnalysedSection {
+  label: string;
+  kind: 'silent' | 'sing';
+  verdict: SectionVerdict;
+  start_s: number;
+  end_s: number;
+}
+
+/** The tuned values in force, plus the latency (null when none is set). */
+export interface TuningValues {
+  draw_margin_db: number;
+  clarity_threshold: number;
+  bleed_match_cents: number;
+  bleed_min_match: number;
+  bleed_max_median_cents: number;
+  latency_s: number | null;
+}
+
+/** The same keys, each a value to use or null to keep the current one. */
+export type TuningOffer = { [K in keyof TuningValues]: number | null };
+
+/** What `POST /takes/analyse` sends back for a Mic check take. */
+export interface TakeAnalysis {
+  report_text: string;
+  findings: string[];
+  sections: AnalysedSection[];
+  current: TuningValues;
+  recommended: TuningOffer;
+  notes: string[];
+}

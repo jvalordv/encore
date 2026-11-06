@@ -95,10 +95,16 @@ def build_take(
     wav_seconds: float | None = None,
     name: str = "take",
     copies: int = 1,
+    sections: bool = False,
+    tuning: dict[str, float] | None = None,
+    kind: str | None = None,
 ) -> Synth:
     """Write `<name>.json` and `<name>.wav` into `folder`.
 
-    `copies` repeats the 40 s pattern back to back for a long take.
+    `copies` repeats the 40 s pattern back to back for a long take. From
+    version 3, `sections` labels the three parts the way a Mic check does
+    (`speakers`, `sing-along`, `quiet`), `tuning` records the values in force
+    and `kind` sets `take.kind`.
     """
     rng = np.random.default_rng(7)
     f = _frames(rng, copies)
@@ -152,6 +158,8 @@ def build_take(
         "report": None,
         "frames": frames,
     }
+    if kind is not None:
+        doc["take"]["kind"] = kind  # type: ignore[index]
     if version >= 2:
         tau = np.arange(0, seconds_total, 0.25)
         phase = tau % 40.0
@@ -201,6 +209,17 @@ def build_take(
                 "t0S": REF_T0,
                 "f0Hz": [round(float(v), 2) for v in ref_hz(times)],
             }
+        if sections:
+            trace["sections"] = [
+                {"label": label, "kind": k, "startS": FIRST_T + a, "endS": FIRST_T + b}
+                for label, k, a, b in (
+                    ("speakers", "silent", 0.0, 10.0),
+                    ("sing-along", "sing", 10.0, 30.0),
+                    ("quiet", "silent", 30.0, 40.0),
+                )
+            ]
+        if tuning is not None:
+            trace["environment"]["tuning"] = tuning  # type: ignore[index]
         doc["trace"] = trace
     json_path = folder / f"{name}.json"
     json_path.write_text(json.dumps(doc), encoding="utf-8")

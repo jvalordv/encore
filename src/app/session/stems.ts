@@ -62,6 +62,10 @@ export class StemsController {
   // The file whose upload found no service, kept to send once one answers.
   private heldFile: File | null = null;
   private laneReference: LaneReference | null = null;
+  // The Mic check's own melody, shown and compared in place of the song's.
+  private transientReference: LaneReference | null = null;
+  // The lane's rows before the Mic check fitted them to its melody.
+  private savedRange: { midiLow: number; midiHigh: number } | null = null;
 
   constructor(private readonly core: SessionCore) {}
 
@@ -111,13 +115,30 @@ export class StemsController {
 
   /** The reference melody's pitch track, for the bleed check; null without one. */
   contour(): LaneReference | null {
-    return this.laneReference;
+    return this.transientReference ?? this.laneReference;
+  }
+
+  /**
+   * Puts the Mic check's melody on the lane and the bleed check in place of
+   * the song's; null gives the song's back.
+   */
+  showTransient(reference: LaneReference | null): void {
+    const lane = this.core.lane;
+    if (reference && !this.transientReference) this.savedRange = lane?.getRange() ?? null;
+    this.transientReference = reference;
+    this.syncLane();
+    // A song with no melody of its own would keep the rows fitted to the test's.
+    if (!reference && this.savedRange) {
+      if (!this.laneReference) lane?.setRange(this.savedRange.midiLow, this.savedRange.midiHigh);
+      this.savedRange = null;
+    }
   }
 
   /** Gives a lane attached after the melody arrived the melody it missed. */
   syncLane(): void {
-    this.core.lane?.setReference(this.laneReference);
-    if (this.laneReference) this.core.lane?.fitRangeToReference();
+    const shown = this.contour();
+    this.core.lane?.setReference(shown);
+    if (shown) this.core.lane?.fitRangeToReference();
   }
 
   /** The address is read each time, so a changed setting needs no restart. */

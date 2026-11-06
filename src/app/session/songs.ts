@@ -309,6 +309,29 @@ export class SongController {
   }
 
   /**
+   * Sets the video aside for a job that borrows the audio player (the Mic
+   * check): the follower of a prepared song stops, the video and the sound
+   * pause, and what the job leaves is not copied to the video. Returns the
+   * call that brings the video back, paused where it was and followed or
+   * active as before; null when there is no video.
+   */
+  parkEmbed(): (() => void) | null {
+    const embed = this.embed;
+    if (!embed) return null;
+    const wasActive = this.active === embed;
+    const positionS = embed.positionS;
+    const resumeFollow = this.core.prepare.suspendFollowing();
+    embed.pause();
+    this.core.parts?.player.pause();
+    return () => {
+      if (this.embed !== embed) return;
+      if (Math.abs(embed.positionS - positionS) > 0.5) embed.seek(positionS);
+      if (wasActive) this.activate(embed);
+      resumeFollow();
+    };
+  }
+
+  /**
    * Closes the YouTube player that is the song and hands the song back to the
    * audio player: the Player is always there to take it, whether the video was
    * the active transport or, once prepared, only following the Player.

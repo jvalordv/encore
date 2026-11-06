@@ -5,7 +5,7 @@
  * tested against plain values (test/service-client.test.ts) and a body the app
  * cannot use is turned away at the door instead of failing further in.
  */
-import type { KeyMap, Reference } from './types';
+import type { KeyMap, Reference, TakeAnalysis } from './types';
 
 /** The header that carries the factor the stems were scaled by. */
 export const STEM_GAIN_HEADER = 'X-Stem-Gain';
@@ -57,5 +57,39 @@ export function isKeyMap(value: unknown): value is KeyMap {
     if (tonic === null) return mode === null;
     const tonicOk = typeof tonic === 'number' && Number.isInteger(tonic) && tonic >= 0 && tonic <= 11;
     return tonicOk && (mode === 'major' || mode === 'minor');
+  });
+}
+
+const VALUE_KEYS = [
+  'draw_margin_db',
+  'clarity_threshold',
+  'bleed_match_cents',
+  'bleed_min_match',
+  'bleed_max_median_cents',
+  'latency_s',
+] as const;
+
+function strings(list: unknown): boolean {
+  return Array.isArray(list) && list.every((s) => typeof s === 'string');
+}
+
+/** True when `value` is a take analysis this app can show and apply. */
+export function isTakeAnalysis(value: unknown): value is TakeAnalysis {
+  if (!isRecord(value) || typeof value.report_text !== 'string') return false;
+  if (!strings(value.findings) || !strings(value.notes) || !Array.isArray(value.sections)) return false;
+  const sectionOk = (s: unknown): boolean =>
+    isRecord(s) &&
+    typeof s.label === 'string' &&
+    (s.kind === 'silent' || s.kind === 'sing') &&
+    typeof s.verdict === 'string' &&
+    numbers([s.start_s, s.end_s]);
+  if (!value.sections.every(sectionOk)) return false;
+  const { current, recommended } = value;
+  if (!isRecord(current) || !isRecord(recommended)) return false;
+  return VALUE_KEYS.every((key) => {
+    const c = current[key];
+    const r = recommended[key];
+    const cOk = key === 'latency_s' ? c === null || typeof c === 'number' : typeof c === 'number';
+    return cOk && (r === null || (typeof r === 'number' && Number.isFinite(r)));
   });
 }

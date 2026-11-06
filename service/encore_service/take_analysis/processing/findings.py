@@ -4,13 +4,7 @@ Each line names the constant or step and the number behind it. Where the take
 cannot say, the line says "not enough data" rather than guessing.
 """
 
-from encore_service.take_analysis.constants import (
-    BLEED_MATCH_CENTS,
-    BLEED_MAX_MEDIAN_CENTS,
-    BLEED_MIN_MATCH,
-    DRAW_MARGIN_DB,
-    FLOOR_CEILING_DB,
-)
+from encore_service.take_analysis.constants import FLOOR_CEILING_DB
 from encore_service.take_analysis.processing.models import (
     AuditResult,
     BleedSetting,
@@ -19,6 +13,7 @@ from encore_service.take_analysis.processing.models import (
     SweepResult,
     TrackerComparison,
 )
+from encore_service.take_analysis.tuning import TuningValues
 
 # A jitter ratio above this is called out.
 JITTER_RATIO = 1.5
@@ -28,10 +23,10 @@ def _pct(x: float) -> str:
     return f"{x * 100:.0f} %"
 
 
-def _changes(row: GateSetting, clarity_now: float) -> str:
+def _changes(row: GateSetting, clarity_now: float, margin_now: float) -> str:
     parts = []
-    if row.draw_margin_db != DRAW_MARGIN_DB:
-        parts.append(f"DRAW_MARGIN_DB {DRAW_MARGIN_DB:g} -> {row.draw_margin_db:g}")
+    if row.draw_margin_db != margin_now:
+        parts.append(f"DRAW_MARGIN_DB {margin_now:g} -> {row.draw_margin_db:g}")
     if row.clarity != clarity_now:
         parts.append(f"clarity threshold {clarity_now:g} -> {row.clarity:g}")
     if row.ceiling_db != FLOOR_CEILING_DB:
@@ -76,14 +71,17 @@ def _gate_lines(audit: AuditResult) -> list[str]:
     return out
 
 
-def _sweep_lines(sweep: SweepResult, clarity_now: float) -> list[str]:
+def _sweep_lines(
+    sweep: SweepResult, clarity_now: float, margin_now: float
+) -> list[str]:
     cur = sweep.current
     if cur is None:
         return ["Gate sweep: not enough data."]
     if sweep.best_gate is not None and sweep.best_gate.silent_dropped is not None:
         b = sweep.best_gate
         return [
-            f"{_changes(b, clarity_now)} would drop {_pct(b.silent_dropped)} of the "
+            f"{_changes(b, clarity_now, margin_now)} would drop "
+            f"{_pct(b.silent_dropped)} of the "
             f"frames that pass in the silent sections and keep "
             f"{_pct(b.singing_kept or 0.0)} of those that pass in the singing ones "
             f"({cur.silent_pass} and {cur.singing_pass} frames now)."
@@ -102,12 +100,12 @@ def _sweep_lines(sweep: SweepResult, clarity_now: float) -> list[str]:
         ]
     return [
         f"Gate sweep: no setting separates the silent from the singing sections "
-        f"better than DRAW_MARGIN_DB {DRAW_MARGIN_DB:g}, clarity {clarity_now:g} "
+        f"better than DRAW_MARGIN_DB {margin_now:g}, clarity {clarity_now:g} "
         f"({cur.silent_pass} silent frames pass now)."
     ]
 
 
-def _bleed_lines(sweep: SweepResult) -> list[str]:
+def _bleed_lines(sweep: SweepResult, tn: TuningValues) -> list[str]:
     b: BleedSetting | None = sweep.best_bleed
     if b is None:
         return [
@@ -118,16 +116,16 @@ def _bleed_lines(sweep: SweepResult) -> list[str]:
             r
             for r in sweep.bleed
             if (r.match_cents, r.min_match, r.max_median_cents)
-            == (BLEED_MATCH_CENTS, BLEED_MIN_MATCH, BLEED_MAX_MEDIAN_CENTS)
+            == (tn.bleed_match_cents, tn.bleed_min_match, tn.bleed_max_median_cents)
         ),
         None,
     )
     if now is not None and now.singing_flagged == 0:
         return [
             f"Bleed rule: flags no singing section at BLEED_MATCH_CENTS "
-            f"{BLEED_MATCH_CENTS}, BLEED_MIN_MATCH {BLEED_MIN_MATCH:g}, "
-            f"BLEED_MAX_MEDIAN_CENTS {BLEED_MAX_MEDIAN_CENTS}; {now.silent_flagged} "
-            f"silent section(s) flagged."
+            f"{tn.bleed_match_cents:g}, BLEED_MIN_MATCH {tn.bleed_min_match:g}, "
+            f"BLEED_MAX_MEDIAN_CENTS {tn.bleed_max_median_cents:g}; "
+            f"{now.silent_flagged} silent section(s) flagged."
         ]
     count = now.singing_flagged if now else 0
     return [
@@ -196,12 +194,14 @@ def build_findings(
     latency: LatencyCheck,
     tracker: TrackerComparison,
     clarity_now: float,
+    tuning: TuningValues | None = None,
 ) -> list[str]:
     """The findings, in the order a developer would act on them."""
+    tn = tuning or TuningValues(clarity_threshold=clarity_now)
     return [
         *_gate_lines(audit),
-        *_sweep_lines(sweep, clarity_now),
-        *_bleed_lines(sweep),
+        *_sweep_lines(sweep, clarity_now, tn.draw_margin_db),
+        *_bleed_lines(sweep, tn),
         _latency_line(latency),
         _tracker_line(tracker),
     ]

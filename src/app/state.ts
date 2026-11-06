@@ -23,6 +23,8 @@ import { initialKaraoke } from './karaoke';
 import { initialKey } from './key-state';
 import type { KeyState } from './key-state';
 import type { KaraokeState } from './karaoke';
+import { initialMicCheck } from './mic-check';
+import type { MicCheckState } from './mic-check';
 import { initialMix } from './mix';
 import type { MixState } from './mix';
 import { initialPrepare } from './prepare';
@@ -138,6 +140,8 @@ export interface AppState {
   /** Round-trip latency for the current device pair; null when not set. */
   latencyS: number | null;
   calibrating: boolean;
+  /** The Mic check: its step, the countdown and, later, the advice. */
+  micCheck: MicCheckState;
   tracker: 'unsupported' | 'idle' | 'running';
   framesPerSecond: number;
   lastFrame: PitchFrame | null;
@@ -193,6 +197,7 @@ export function initialState(): AppState {
     output: { deviceId: null, label: '', selectable: false },
     latencyS: null,
     calibrating: false,
+    micCheck: initialMicCheck(),
     tracker: 'idle',
     framesPerSecond: 0,
     lastFrame: null,

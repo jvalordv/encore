@@ -1,9 +1,10 @@
-"""The take export as Pydantic models, versions 1 and 2.
+"""The take export as Pydantic models, versions 1 to 3.
 
 Mirrors `takeExportJson` in `src/app/take-export.ts` and the trace types in
 `src/app/take-trace.ts`. Every model ignores fields it does not know, and
-everything a version 1 file lacks (the trace, per-frame `rawF0` and `gate`)
-has a default, so one reader serves both versions.
+everything an older file lacks (the trace, per-frame `rawF0` and `gate`, a
+version 3 file's `kind`, `sections` and `tuning`) has a default, so one reader
+serves all versions.
 """
 
 from typing import Any
@@ -27,6 +28,7 @@ class TakeInfo(_Lenient):
     sampleRate: int = 0
     startedAtSongS: float | None = None
     clock: str = "engine"
+    kind: str = "song"
 
 
 class Processing(_Lenient):
@@ -89,6 +91,25 @@ class Event(_Lenient):
     value: str | float | bool | None = None
 
 
+class TraceSection(_Lenient):
+    """A stretch the Mic check labelled; times are song time like frame `t`."""
+
+    label: str
+    kind: str
+    startS: float
+    endS: float
+
+
+class TuningIn(_Lenient):
+    """The tunable values in force as the take was recorded (version 3)."""
+
+    drawMarginDb: float | None = None
+    clarityThreshold: float | None = None
+    bleedMatchCents: float | None = None
+    bleedMinMatch: float | None = None
+    bleedMaxMedianCents: float | None = None
+
+
 class Environment(_Lenient):
     """What the browser and the app were running on."""
 
@@ -98,6 +119,7 @@ class Environment(_Lenient):
     trackSettings: dict[str, Any] | None = None
     audio: dict[str, Any] | None = None
     analysis: dict[str, Any] | None = None
+    tuning: TuningIn | None = None
 
 
 class Reference(_Lenient):
@@ -126,6 +148,7 @@ class Trace(_Lenient):
     reference: Reference | None = None
     key: dict[str, Any] | None = None
     calibration: Calibration | None = None
+    sections: list[TraceSection] = []
 
 
 class TakeFile(_Lenient):

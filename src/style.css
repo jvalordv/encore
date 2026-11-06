@@ -408,6 +408,15 @@ input[type='range'] {
   gap: 8px;
 }
 
+/* Calibrate and Mic check share the row; on a narrow window they wrap. */
+.latency-row {
+  flex-wrap: wrap;
+}
+
+.latency-row input {
+  flex-basis: 3.5rem;
+}
+
 .button-row button {
   flex: 1;
   min-width: 0;
@@ -903,4 +912,77 @@ button[aria-pressed='true'] {
   min-width: 0;
   padding: 3px 8px;
   font-size: 0.8rem;
+}
+
+/* The Mic check panel: prompt, countdown, live meter, then the result card.
+   Neutral colours only: it talks about the mic, never grades the singing. */
+.mic-check {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mic-check[hidden] {
+  display: none;
+}
+
+.mic-check p,
+.mic-check h4 {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.mic-check .mic-check-prompt {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.mic-check-countdown {
+  font-family: var(--font-mono);
+  font-size: 1.6rem;
+  color: var(--color-accent);
+}
+
+.mic-check .button-row {
+  flex-wrap: wrap;
+}
+
+.mic-check button {
+  min-width: 0;
+  padding: 3px 10px;
+  font-size: 0.8rem;
+}
+
+.mic-check-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 16px;
+  font-size: 0.85rem;
+}
+
+.mic-check-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.mic-check-table th,
+.mic-check-table td {
+  padding: 3px 0;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-accent-2);
+}
+
+.mic-check-table td {
+  padding-left: 8px;
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.mic-check-table th {
+  font-weight: 400;
+  color: var(--color-text-muted);
 }

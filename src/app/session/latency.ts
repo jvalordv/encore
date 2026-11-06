@@ -34,6 +34,7 @@ export class LatencyController {
     const { parts, store, takes, songs } = this.core;
     const state = store.state;
     if (!parts || state.calibrating || state.recording || takes.startingRecord) return;
+    if (this.core.micCheck.active) return;
     if (!(await this.core.input.ensureInput())) return;
     // The song, whether a file or a YouTube video, would drown the chirps; a
     // take playing by itself would too, and is simply stopped.
@@ -145,7 +146,8 @@ export class LatencyController {
     }
   }
 
-  private pairKey(): string {
+  /** The storage key of the current output and input pair. */
+  pairKey(): string {
     const { input, output } = this.core.store.state;
     return latencyKey(output.deviceId, input.deviceId);
   }
@@ -153,6 +155,8 @@ export class LatencyController {
   /** Copies the stored latency for the current device pair into the state. */
   refreshLatency(): void {
     this.core.store.patch({ latencyS: this.core.current.latencyByDevicePair[this.pairKey()] ?? null });
+    // The same pair keys the mic tuning, so a new pair brings its own rules.
+    this.core.health.syncTuning();
   }
 
   /** The latency in force, or zero when none is set. */
