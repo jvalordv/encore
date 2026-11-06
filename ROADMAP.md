@@ -24,17 +24,18 @@ webcam or USB mic.
 
 ## Current state
 
-- **Last done:** **W0** (2026-11-05): the karaoke note guide (opt-in),
-  the mic level meter with a noise floor and one state line, the level gate
-  (lane gaps in both modes, unvoiced scored frames in speaker mode), the
-  speaker-bleed warning, and Save take (WAV and JSON). Before it W4 (Strict
+- **Last done:** **W0b** (2026-11-05): YouTube's controls hidden so
+  Encore's are the only ones, held-down Play, Loop and Record, an oEmbed
+  check that tells a blocked video from a missing one, the no-key Search
+  line, and a full analysis trace with every take (raw frames with gate
+  reasons, health at 4 Hz, an event log, environment, reference and key,
+  calibration). Before it **W0** (the note guide, the mic meter and level
+  gate, the bleed warning, Save take), W4 (Strict
   and Open scoring), W3 (learning mode), W2 (search and the karaoke core)
   and W1 (the reference step and the browser seams); older work in
   `docs/HISTORY.md`.
 - **In progress:** none.
-- **Next:** **W0b** (links that will not embed, Encore's controls only,
-  pressed buttons, full take metadata; decided), then the owner's W0 test
-  (under the wave), then **W5** (needs a second person for its owner
+- **Next:** the owner's W0 and W0b tests (under each wave), then **W5** (needs a second person for its owner
   test). Search needs the owner's YouTube Data API key
   (README, "Run it"; pasted into the app, never into chat).
 - **Blockers:** none for W5. YouTube now answers yt-dlp with "Sign in to
@@ -199,7 +200,7 @@ Tracks inside a wave share no files and may run in parallel.
     JSON; hand both files to a session to see how much of the song reached
     the mic.
 
-- [ ] **W0b: Links that will not embed, and one set of controls** (owner
+- [x] **W0b: Links that will not embed, and one set of controls** (owner
   test, 2026-11-05; browser only). The owner has no search key, so Search
   opens YouTube's own results in a new tab and the pasted link is not
   filtered for embedding (`videoEmbeddable` in `src/search/youtube.ts`
@@ -259,6 +260,28 @@ Tracks inside a wave share no files and may run in parallel.
     link that failed and one that plays. Click the video to pause and
     resume and check Encore's Play button follows it. Press each control
     and check its pressed look in each skin.
+  - Built (2026-11-05), two tracks in parallel (controls in the main
+    checkout, metadata in a worktree), one review, one fresh fixer. oEmbed
+    allows CORS from localhost, so the browser checks it directly
+    (`src/audio/youtube-oembed.ts`, 4 s timeout, any failure means
+    "unknown" and the load goes on); it runs alongside the API load. No
+    click layer: YouTube's rules forbid covering the embed, and the
+    transport already follows YouTube's own pause. The trace lives in
+    `src/app/take-trace.ts`. Stored frames are `TakeFrame` (the old f0,
+    clarity and rms unchanged, plus optional `rawF0` and `gate`), so
+    scoring and replay behave as before. The event log comes from diffing
+    the store, holds at most 2000 events, and ends with a `truncated`
+    marker when full. A loop wrap is not logged as a seek. The export is
+    version 2, and the build stamps `__APP_VERSION__` from git.
+  - Follow-up: confirm that a click on the video still pauses with
+    `controls: 0`. If it does not, the owner decides whether a click
+    layer is acceptable.
+  - Follow-up: the calibration trials are kept in memory from the last
+    successful calibration only, and are dropped when the latency is
+    edited by hand or the page reloads.
+  - Follow-up: the reference and key slices are unit-tested only; no
+    recorded-take test covers them on the fake harness. Loop and Record's
+    pressed look is checked by CSS only.
 
 - [x] **W1: Seams and the reference melody.** Two tracks, one commit.
   - **W1a, service: reference melody** (was P2-T3). New `reference` step
@@ -703,11 +726,16 @@ W0 (added 2026-11-05, unestimated) measured about 0.75 hours and 0.85 M:
 worker 0.33 M, reviewer 0.11 M, and the two-item fix sent back to the
 warm worker 0.41 M, more than the build. A resumed worker re-reads its whole
 context on every turn, so a small fix in a fresh agent with a pointed brief
-may cost less. The rest are left as they were.
+may cost less. W0b tried that: two parallel workers (0.11 M and
+0.14 M), reviewer 0.09 M, and a fresh fixer with a pointed brief 0.08 M,
+for 0.42 M and about 0.6 hours. That is half of W0 for a similar size,
+so small fixes go to a fresh agent from now on. The rest are left as they
+were.
 
 | Wave | Agent hours | Subagent tokens | Owner |
 |---|---|---|---|
 | W0 Guide and mic diagnostics (measured) | 0.75 | 0.85 M | 20 min |
+| W0b Embed controls and take trace (measured) | 0.6 | 0.42 M | 15 min |
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |
@@ -715,7 +743,7 @@ may cost less. The rest are left as they were.
 | W5 Two singers | 1 (0.7-1.8) | about 0.7 M | 30 min, a second person |
 | W6 Synced lyrics | 0.4 (0.3-0.8) | about 0.3 M | 5 min |
 | W7 Test and sweep | 0.8 (0.6-1.5) | about 0.6 M | 45 min |
-| **Total** | **about 7 (6-10)** | **about 5.8 M** | **about 2.8 h** |
+| **Total** | **about 7.5 (6.5-10.5)** | **about 6.2 M** | **about 3 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The
 orchestrator's own reading adds about 100 to 200 thousand tokens per wave

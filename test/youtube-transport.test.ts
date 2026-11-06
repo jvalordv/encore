@@ -247,7 +247,7 @@ describe('YouTubeTransport.load', () => {
       origin: 'http://localhost:4173',
       playsinline: 1,
       rel: 0,
-      controls: 1,
+      controls: 0,
     });
     // Never autoplay, and nothing called on the player while loading.
     expect(t.player.options.playerVars).not.toHaveProperty('autoplay');

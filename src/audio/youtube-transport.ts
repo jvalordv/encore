@@ -330,7 +330,9 @@ export class YouTubeTransport implements Transport {
         ...(this.origin !== '' && this.origin !== 'null' ? { origin: this.origin } : {}),
         playsinline: 1,
         rel: 0,
-        controls: 1,
+        // Encore's buttons are the only controls; a click on the video still
+        // toggles play, which wantPlay follows.
+        controls: 0,
         ...(startS !== undefined && startS > 0 ? { start: Math.floor(startS) } : {}),
       };
       this.readyTimer = this.timers.setTimeout(() => this.failLoad(API_UNREACHABLE), READY_TIMEOUT_MS);

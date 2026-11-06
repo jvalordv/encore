@@ -23,7 +23,7 @@ import type { BrowserContext, Page } from '@playwright/test';
 import type { AppState } from '../src/app/state';
 import { fileStatus, linkStatus, skippedStep, stepStatus, stubService } from './fake-service';
 import type { FakeService } from './fake-service';
-import { FAKE_IFRAME_API, pasteInto, readAppState } from './fake-youtube';
+import { FAKE_IFRAME_API, pasteInto, readAppState, stubOembed } from './fake-youtube';
 import { PORT, SONG_FILE } from './fixtures';
 
 test.describe.configure({ mode: 'serial' });
@@ -54,6 +54,7 @@ test.beforeAll(async ({ browser }) => {
     strayRequests.push(route.request().url());
     return route.abort();
   });
+  await stubOembed(context);
   await context.route('https://www.youtube.com/iframe_api', (route) => {
     const config = JSON.stringify({ title: TITLE, durationS: 213, readyDelayMs: 30, blockedIds: [] });
     return route.fulfill({

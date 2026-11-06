@@ -6,13 +6,16 @@
  * draw and score, and publishes what the panels show (throttled, since the
  * tracker runs at 100 frames a second). All the arithmetic is in
  * src/analysis (mic-level, bleed, note-guide); this file only wires it to the
- * state. Nothing here is stored with a take.
+ * state. The gate's verdict on each frame is stored with a take by the take
+ * controller; the floor and states are sampled from the state store.
  */
 import { bleedCheck, BleedDetector, vocalInOutput } from '../../analysis/bleed';
 import { isDrawable, MicLevel, SILENCE_DB } from '../../analysis/mic-level';
 import { NoteGuide } from '../../analysis/note-guide';
 import type { GuideNote } from '../../analysis/note-guide';
 import type { PitchFrame } from '../../analysis/pitch';
+import { gateReasonOf } from '../take-trace';
+import type { GateReason } from '../take-trace';
 import type { SessionCore } from './core';
 
 /** Seconds of tracker time between publications to the state. */
@@ -29,6 +32,8 @@ export class MicHealthController {
   private readonly bleed = new BleedDetector();
   private lastPublishT = Number.NEGATIVE_INFINITY;
   private reading: GuideNote | null = null;
+  /** Why the frame last observed failed the gate; null if it passed. */
+  lastGate: GateReason | null = null;
 
   constructor(private readonly core: SessionCore) {
     // A bleed verdict belongs to the song it was heard over.
@@ -51,6 +56,7 @@ export class MicHealthController {
     this.level.push(frame.rms);
     const clarity = this.core.parts?.tracker.clarityThreshold ?? this.core.current.clarityThreshold;
     const drawable = isDrawable(frame, this.level.floorDb, clarity);
+    this.lastGate = drawable ? null : gateReasonOf(frame, this.level.floorDb, clarity);
     if (this.guideOn()) {
       if (drawable) this.guide.push(frame.t, positionS, frame.f0, this.core.scoring.keyMap());
     } else {

@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
 import { stubService } from './fake-service';
-import { FAKE_IFRAME_API, readAppState, readFakeHandle } from './fake-youtube';
+import { FAKE_IFRAME_API, readAppState, readFakeHandle, stubOembed } from './fake-youtube';
 import { PORT } from './fixtures';
 
 test.describe.configure({ mode: 'serial' });
@@ -85,6 +85,7 @@ test.beforeAll(async ({ browser }) => {
     resultsOpened.push(route.request().url());
     return route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>results</title>' });
   });
+  await stubOembed(context);
   await context.route('https://www.youtube.com/iframe_api', (route) => {
     const config = JSON.stringify({ title: 'Fake Video Title', durationS: 213, readyDelayMs: 30, blockedIds: [] });
     return route.fulfill({
@@ -214,6 +215,7 @@ test('with no key a search opens YouTube in a new tab and asks the API nothing',
   await freshPage();
   await expect(page.getByTestId('search-hint')).toContainText("opens YouTube's own search");
   await expect(page.getByTestId('search-go')).toHaveText('Search on YouTube');
+  await expect(page.getByTestId('search-keyless')).toContainText('will not play here');
   const before = queries.length;
   const opened = context.waitForEvent('page');
   await runSearch('adele hello');

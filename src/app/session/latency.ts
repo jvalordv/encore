@@ -9,6 +9,7 @@ import { CalibrationError, describeLatency, latencyKey, measureLatency } from '.
 import type { LatencyResult } from '../../audio/latency';
 import { isRunning } from '../../audio/transport';
 import { clampEmbedOffsetS, MAX_EMBED_OFFSET_S, MAX_LATENCY_S } from '../settings';
+import type { TraceCalibration } from '../take-trace';
 import type { SessionCore } from './core';
 import { messageOf } from './helpers';
 import type { SessionParts } from './types';
@@ -18,6 +19,9 @@ const LOW_CONFIDENCE = 0.6;
 
 /** Calibrates, and stores latency and the embed offset. */
 export class LatencyController {
+  /** The newest successful calibration, kept so a take can carry its trials. */
+  lastCalibration: TraceCalibration | null = null;
+
   constructor(private readonly core: SessionCore) {}
 
   /**
@@ -76,6 +80,12 @@ export class LatencyController {
   }
 
   private reportCalibration(result: LatencyResult): void {
+    this.lastCalibration = {
+      delayS: result.delayS,
+      confidence: result.confidence,
+      spreadS: result.spreadS,
+      trials: result.trials.map((t) => ({ ...t })),
+    };
     this.setLatency(result.delayS);
     // A mic that would not reopen has put its own reason on the status line.
     if (!this.core.store.state.input.open) return;

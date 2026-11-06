@@ -7,6 +7,7 @@
  * order they joined.
  */
 import type { PitchFrame } from '../../analysis/pitch';
+import type { GateReason } from '../take-trace';
 
 /** One pitch frame on song time, tagged with the singer it came from. */
 export interface SingerFrame {
@@ -18,6 +19,10 @@ export interface SingerFrame {
    * mode; the lane draws a gap for it either way.
    */
   gated?: boolean;
+  /** Why the gate failed it; set exactly when `gated` is. */
+  gateReason?: GateReason;
+  /** The tracker's own f0, which `frame.f0` replaces with 0 when gated. */
+  rawF0?: number;
 }
 
 /** Fan-out of singer frames to subscribers, in subscription order. */

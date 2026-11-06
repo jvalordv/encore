@@ -11,6 +11,7 @@ import { isRunning } from '../../audio/transport';
 import type { TrackInfo, Transport, TransportEvent, TransportState } from '../../audio/transport';
 import { loadYouTubeApi } from '../../audio/youtube-api';
 import type { YouTubeApi } from '../../audio/youtube-api';
+import { checkEmbeddable, describeVerdict } from '../../audio/youtube-oembed';
 import { EmbedClosedError, YouTubeTransport } from '../../audio/youtube-transport';
 import type { EmbedHost } from '../../audio/youtube-transport';
 import { parseYouTubeUrl } from '../../audio/youtube-url';
@@ -134,14 +135,26 @@ export class SongController {
     prepare.cancelAttempt();
     if (store.state.recording) await takes.finishRecording();
     store.setStatus('Loading the YouTube video…');
-    let api: YouTubeApi;
-    try {
-      api = await this.loadApi();
-    } catch (error) {
-      this.reportLoadFailure(token, error);
+    // The player's own error cannot tell a blocked video from a missing one,
+    // so ask first; a failed check says nothing and the load goes on.
+    // Both start at once so a slow check does not delay the player script.
+    const apiLoad = this.loadApi().then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    const refusal = describeVerdict(await checkEmbeddable(link.videoId));
+    if (token !== this.loadToken) return;
+    if (refusal !== null) {
+      this.reportLoadFailure(token, new Error(refusal));
       return;
     }
+    const loaded = await apiLoad;
     if (token !== this.loadToken) return;
+    if ('error' in loaded) {
+      this.reportLoadFailure(token, loaded.error);
+      return;
+    }
+    const api: YouTubeApi = loaded.value;
 
     // The new player is built behind the one in use (the pane keeps it out of
     // reach), so the song carries on until this one is ready.

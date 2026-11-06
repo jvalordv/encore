@@ -244,6 +244,8 @@ export class InputController {
       singer: 0,
       frame: { t, f0, clarity: frame.clarity, rms: frame.rms },
       gated: !drawable,
+      ...(health.lastGate ? { gateReason: health.lastGate } : {}),
+      rawF0: frame.f0,
     });
   }
 

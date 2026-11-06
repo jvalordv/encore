@@ -34,6 +34,8 @@ import { stubService } from './fake-service';
 import type { FakeService } from './fake-service';
 import {
   FAKE_IFRAME_API,
+  OEMBED_BLOCKED,
+  OEMBED_MISSING,
   callFake,
   countFakePlayers,
   pasteInto,
@@ -41,6 +43,7 @@ import {
   readFakeHandle,
   readStoredTakes,
   setReadyDelay,
+  stubOembed,
 } from './fake-youtube';
 import type { FakeHandle } from './fake-youtube';
 import { PORT, SONG_FILE } from './fixtures';
@@ -90,6 +93,7 @@ test.beforeAll(async ({ browser }) => {
     strayRequests.push(route.request().url());
     return route.abort();
   });
+  await stubOembed(context);
   await context.route('https://www.youtube.com/iframe_api', (route) => {
     apiAttempts.push(route.request().url());
     if (failApi) return route.abort();
@@ -296,7 +300,7 @@ test('3. pasting a link anywhere loads it: the title, the length, a cued player 
     origin: `http://localhost:${PORT}`,
     playsinline: 1,
     rel: 0,
-    controls: 1,
+    controls: 0,
   });
   // Cued, never played: the app does not rely on autoplay.
   expect(fake.calls).toEqual([]);
@@ -1028,4 +1032,29 @@ test('17. with nothing loaded, a video that cannot be embedded says only why', a
   expect(state.embed).toBeNull();
   await expect(page.getByTestId('embed-region')).toBeHidden();
   expect(await page.locator('iframe').count()).toBe(0);
+});
+
+test('oEmbed tells a blocked video from a missing one before any player is built', async () => {
+  await pasteText(`https://youtu.be/${OEMBED_BLOCKED}`);
+  await expect(page.getByTestId('status-text')).toContainText('blocks playing it outside YouTube');
+  await expect(page.getByTestId('status-text')).toContainText('karaoke channels');
+  await pasteText(`https://youtu.be/${OEMBED_MISSING}`);
+  await expect(page.getByTestId('status-text')).toContainText('does not exist');
+  expect((await appState()).status.kind).toBe('error');
+  expect(await page.locator('iframe').count()).toBe(0);
+  // The browser itself logs a refused fetch; that is the answer, not a fault.
+  const refused = pageErrors.filter((e) => /status of (401|404)/.test(e));
+  expect(refused).toHaveLength(2);
+  pageErrors.splice(0, pageErrors.length, ...pageErrors.filter((e) => !refused.includes(e)));
+});
+
+test('Play, Loop and Record show when they are on', async () => {
+  await pasteText(LINK);
+  await page.waitForFunction(() => window.encore!.store.state.embed !== null && window.encore!.store.state.player === 'ready');
+  const play = page.getByTestId('play');
+  await expect(play).toHaveAttribute('aria-pressed', 'false');
+  await play.click();
+  await expect(play).toHaveAttribute('aria-pressed', 'true');
+  await play.click();
+  await expect(play).toHaveAttribute('aria-pressed', 'false');
 });

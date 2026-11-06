@@ -11,10 +11,10 @@
  * (private windows, blocked site data) the app keeps working on a memory store
  * and takes last until the page closes.
  */
-import type { PitchFrame } from '../analysis/pitch';
 import type { TakeReport } from '../analysis/score';
 import type { MonitorMode } from '../audio/mic';
 import type { MixChoice } from './mix';
+import type { TakeFrame, TakeTrace } from './take-trace';
 
 /**
  * The clock a take's song time came from: the audio engine's sample-accurate
@@ -83,8 +83,13 @@ export function takeClockOf(take: Pick<TakeSummary, 'clock'>): TakeClock {
 
 /** A stored take with its payloads. */
 export interface TakeRecord extends TakeSummary {
-  frames: PitchFrame[];
+  frames: TakeFrame[];
   wav: Blob;
+  /**
+   * Everything kept for analysis (raw readings live on the frames; this holds
+   * the rest). Absent on takes saved before it existed.
+   */
+  trace?: TakeTrace;
   /** Service analysis, shaped by the service client; opaque here. */
   analysis?: unknown;
 }

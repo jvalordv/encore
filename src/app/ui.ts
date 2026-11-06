@@ -294,6 +294,7 @@ export function mountUI(session: Session, root: Document = document): UI {
       playButton.disabled = !song || state.calibrating;
       // Buffering and an ad both mean "going", so the button offers Pause.
       setText(playButton, isRunning(state.player) ? 'Pause' : 'Play');
+      playButton.setAttribute('aria-pressed', String(isRunning(state.player)));
       recordButton.disabled = !song || state.calibrating || state.tracker === 'unsupported';
       setText(recordButton, state.recording ? 'Stop take' : 'Record');
       recordButton.classList.toggle('is-recording', state.recording);

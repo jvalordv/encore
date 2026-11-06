@@ -41,7 +41,9 @@ CI yet. It needs Playwright's Chromium (`npx playwright install chromium`, once)
 The app opens on a search for the song to sing. To search inside the app you
 need your own YouTube Data API key; without one, Search opens YouTube's own
 results in a new tab and you paste the link of what you pick into the link box
-(a pasted link always works).
+(a pasted link always works, unless the video's owner blocks playing it
+outside YouTube; Encore checks first and says so). YouTube's own results
+include such videos; a key makes Search show only videos that play here.
 
 1. In the [Google Cloud console](https://console.cloud.google.com/) create or
    pick a project and enable **YouTube Data API v3** for it (APIs & Services,

@@ -7,7 +7,7 @@
  * start an ad or raise an error. The functions below read it, drive it and the
  * page, each taking the Page they act on so more than one spec can use them.
  */
-import type { Page } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
 import type { AppState } from '../src/app/state';
 
 /** What the fake player records about itself, as the page exposes it. */
@@ -267,5 +267,24 @@ export async function readStoredTakes(page: Page): Promise<StoredTake[]> {
       startedAtSongS: r.startedAtSongS as number,
       frames: r.frames as Array<{ t: number; f0: number }>,
     }));
+  });
+}
+
+/** An id the oEmbed stand-in reports as embed-blocked (401). */
+export const OEMBED_BLOCKED = 'oEmBlockd_1';
+/** An id the oEmbed stand-in reports as not existing (404). */
+export const OEMBED_MISSING = 'oEmMissng_1';
+
+/** Answers YouTube's oEmbed check: 401 for the blocked id, 404 for the missing one, else 200. */
+export async function stubOembed(context: BrowserContext): Promise<void> {
+  await context.route('https://www.youtube.com/oembed**', (route) => {
+    const watch = new URL(route.request().url()).searchParams.get('url') ?? '';
+    const status = watch.includes(OEMBED_BLOCKED) ? 401 : watch.includes(OEMBED_MISSING) ? 404 : 200;
+    return route.fulfill({
+      status,
+      contentType: 'application/json',
+      headers: { 'access-control-allow-origin': '*' },
+      body: '{}',
+    });
   });
 }

@@ -48,6 +48,7 @@ import {
   readAppState,
   readFakeHandle,
   readStoredTakes,
+  stubOembed,
 } from './fake-youtube';
 import type { FakeHandle } from './fake-youtube';
 import { PORT, SONG_FILE, SONG_SECONDS } from './fixtures';
@@ -87,6 +88,7 @@ test.beforeAll(async ({ browser }) => {
     strayRequests.push(route.request().url());
     return route.abort();
   });
+  await stubOembed(context);
   await context.route('https://www.youtube.com/iframe_api', (route) => {
     const config = JSON.stringify({ title: TITLE, durationS: VIDEO_S, readyDelayMs: 30, blockedIds: [] });
     return route.fulfill({

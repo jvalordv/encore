@@ -13,6 +13,8 @@ import { decodeWav, encodeWavBlob, songTimeOfSample } from '../../audio/wav';
 import { formatClock } from '../state';
 import { captureMicSettings, takeExportJson, takeFileName } from '../take-export';
 import type { TakeFileKind } from '../take-export';
+import { captureEnvironment, keyForSpan, sliceReference, TakeTraceRecorder, toTakeFrame } from '../take-trace';
+import type { TakeEnvironment, TakeFrame, TakeTrace } from '../take-trace';
 import type { TakeMicSettings, TakeRecord } from '../takes';
 import type { SessionCore } from './core';
 import { firstFrameIndex, messageOf, sleep } from './helpers';
@@ -64,6 +66,8 @@ interface Recording {
   clock: ClockKind;
   /** The mic and mix settings as the take began. */
   mic: TakeMicSettings;
+  /** The browser, audio and analysis settings as the take began. */
+  environment: TakeEnvironment;
 }
 
 /** Records, saves, replays and deletes takes. */
@@ -73,14 +77,22 @@ export class TakeController {
   /** The take being replayed by itself over a video, or null. */
   solo: SoloTake | null = null;
   private recording: Recording | null = null;
-  private takeFrames: PitchFrame[] | null = null;
+  private takeFrames: TakeFrame[] | null = null;
   private finishing: Promise<void> | null = null;
   private replay: Replay | null = null;
+  private readonly trace = new TakeTraceRecorder(() => performance.now());
 
   constructor(private readonly core: SessionCore) {
-    // The recorder's half of the frame bus: every frame goes into the take.
-    core.bus.subscribe(({ frame }) => {
-      this.takeFrames?.push({ t: frame.t, f0: frame.f0, clarity: frame.clarity, rms: frame.rms });
+    // The recorder's half of the frame bus: every frame goes into the take,
+    // with the raw reading and the gate's verdict beside the scored fields.
+    core.bus.subscribe(({ frame, rawF0, gateReason }) => {
+      if (!this.takeFrames) return;
+      this.takeFrames.push(toTakeFrame(frame, rawF0, gateReason));
+      this.trace.sampleHealth(frame.t, core.store.state);
+    });
+    // The event log is the state's changes while a take is being recorded.
+    core.store.subscribe((state, changed) => {
+      if (this.takeFrames) this.trace.onState(state, changed);
     });
   }
 
@@ -286,8 +298,18 @@ export class TakeController {
       );
       const { clarityThreshold } = this.core.current;
       const mic = captureMicSettings(store.state, clarityThreshold, this.core.health.floorDb);
-      this.recording = { song, startedPlayback, clock: transport.clock, mic };
+      const environment = captureEnvironment(
+        {
+          trackSettings: parts.mic.settings,
+          context: parts.engine.context,
+          clarityThreshold,
+          octaveInvariant: this.core.current.octaveInvariant,
+        },
+        store.state,
+      );
+      this.recording = { song, startedPlayback, clock: transport.clock, mic, environment };
       this.takeFrames = [];
+      this.trace.start(store.state);
       store.patch({ recording: true });
       const approximate = embed ? ' Timing over a YouTube video is approximate.' : '';
       if (store.state.latencyS === null) {
@@ -316,10 +338,12 @@ export class TakeController {
     if (!parts || !meta || !store.state.recording) return Promise.resolve();
     const frames = this.takeFrames ?? [];
     this.takeFrames = null;
+    // Copied now: the log stops here, but the next take reuses the recorder.
+    const tracks = { events: [...this.trace.events], health: [...this.trace.health] };
     store.setStatus('Saving take…');
     this.finishing = (async () => {
       try {
-        await this.saveTake(await parts.recorder.stop(), frames, meta.song, meta.clock, meta.mic);
+        await this.saveTake(await parts.recorder.stop(), frames, meta, tracks);
       } catch (error) {
         store.setStatus(`Could not save the take: ${messageOf(error)}`, 'error');
       } finally {
@@ -332,13 +356,27 @@ export class TakeController {
     return this.finishing;
   }
 
+  /** The analysis track: the logs, the environment, melody, key, calibration. */
+  private buildTrace(rec: TakeRecording, meta: Recording, tracks: Pick<TakeTrace, 'events' | 'health'>): TakeTrace {
+    const fromS = rec.startedAtSongS;
+    const toS = fromS + rec.durationS;
+    const trace: TakeTrace = { ...tracks, environment: meta.environment };
+    const reference = sliceReference(this.core.stems.contour(), fromS, toS);
+    if (reference) trace.reference = reference;
+    const key = keyForSpan(this.core.scoring.keyMap(), fromS, toS);
+    if (key) trace.key = key;
+    const calibration = this.core.latency.lastCalibration;
+    if (calibration && calibration.delayS === this.core.store.state.latencyS) trace.calibration = calibration;
+    return trace;
+  }
+
   private async saveTake(
     rec: TakeRecording,
-    frames: PitchFrame[],
-    song: TrackInfo,
-    clock: ClockKind,
-    mic: TakeMicSettings,
+    frames: TakeFrame[],
+    meta: Recording,
+    tracks: Pick<TakeTrace, 'events' | 'health'>,
   ): Promise<void> {
+    const { song, clock, mic } = meta;
     if (rec.pcm.length === 0) {
       this.core.store.setStatus('Nothing was recorded.', 'warn');
       return;
@@ -346,7 +384,9 @@ export class TakeController {
     const takes = await this.core.takesReady;
     // Learning mode's measurements; none in karaoke mode or without a melody.
     const report = this.core.scoring.reportFor(frames);
+    const trace = this.buildTrace(rec, meta, tracks);
     const id = await takes.save({
+      trace,
       songHash: song.hash,
       songName: song.name,
       createdAt: Date.now(),

@@ -44,6 +44,9 @@ export const HINT_WITHOUT_KEY =
   "No API key is set, so Search opens YouTube's own search in a new tab: copy the link of the video you " +
   'pick into the link box. Paste a key below to search here.';
 
+/** Shown beside the button while no key is set, whatever else is said. */
+export const KEYLESS_WARNING = "YouTube's own results include videos that will not play here.";
+
 function element<K extends keyof HTMLElementTagNameMap>(
   doc: Document,
   tag: K,
@@ -102,7 +105,9 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
   close.textContent = 'Close';
   close.title = 'Back to the song';
   listen(close, 'click', () => session.setSearchOpen(false));
-  form.append(input, chips, go, close);
+  const keyless = element(doc, 'p', 'search-keyless', 'search-keyless song-meta');
+  keyless.textContent = KEYLESS_WARNING;
+  form.append(input, chips, go, close, keyless);
   listen(form, 'submit', (ev) => {
     ev.preventDefault();
     // Straight from the submit, so the new tab a keyless search opens is allowed.
@@ -223,6 +228,7 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
     );
     form.dataset.phase = search.phase;
     go.textContent = searchesExternally(search) ? 'Search on YouTube' : 'Search';
+    keyless.hidden = !searchesExternally(search);
 
     const idle = search.phase === 'idle' && search.message === '';
     setText(hint, idle ? (searchesExternally(search) ? HINT_WITHOUT_KEY : HINT_WITH_KEY) : '');

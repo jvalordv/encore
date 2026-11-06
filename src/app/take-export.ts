@@ -16,7 +16,7 @@ export type TakeFileKind = 'wav' | 'json';
 
 /** The format name and version the JSON carries, for whoever reads it later. */
 export const TAKE_EXPORT_FORMAT = 'encore-take';
-export const TAKE_EXPORT_VERSION = 1;
+export const TAKE_EXPORT_VERSION = 2;
 
 /** Longest song name used in a file name. */
 const MAX_NAME_CHARS = 60;
@@ -52,7 +52,11 @@ export function captureMicSettings(
   };
 }
 
-/** The JSON document for a take: format, summary, mic settings and frames. */
+/**
+ * The JSON document for a take: format, summary, mic settings, the analysis
+ * trace (event log, health over time, environment, melody, key, calibration)
+ * and frames.
+ */
 export function takeExportJson(record: TakeRecord): Record<string, unknown> {
   return {
     format: TAKE_EXPORT_FORMAT,
@@ -70,7 +74,17 @@ export function takeExportJson(record: TakeRecord): Record<string, unknown> {
     },
     mic: record.mic ?? null,
     report: record.report ?? null,
-    frames: record.frames.map((f) => ({ t: f.t, f0: f.f0, clarity: f.clarity, rms: f.rms })),
+    // Version 2 adds `trace` and the per-frame `rawF0` and `gate`; a take
+    // saved before then has neither and reads as before.
+    trace: record.trace ?? null,
+    frames: record.frames.map((f) => ({
+      t: f.t,
+      f0: f.f0,
+      clarity: f.clarity,
+      rms: f.rms,
+      ...(f.rawF0 !== undefined ? { rawF0: f.rawF0 } : {}),
+      ...(f.gate !== undefined ? { gate: f.gate } : {}),
+    })),
   };
 }
 

@@ -789,6 +789,16 @@ button[aria-pressed='true'] {
   background: var(--color-surface);
 }
 
+/* Transport buttons look held down while on, like hardware controls. */
+#play-button[aria-pressed='true'],
+#record-button[aria-pressed='true'],
+#loop-clear[aria-pressed='true'] {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-bg);
+  box-shadow: inset 0 3px 6px color-mix(in srgb, var(--color-bg) 55%, transparent);
+}
+
 #record-button.is-recording {
   border-color: var(--color-miss);
 }
