@@ -31,8 +31,7 @@ webcam or USB mic.
   core) and W1 (the reference step and the browser seams); older work in
   `docs/HISTORY.md`.
 - **In progress:** none.
-- **Next:** the owner's test results (list below) if they have any: fix
-  what they show first, as `W0: <summary>`. Then **W5** (needs a second
+- **Next:** **W0** below (from the owner's test, 2026-11-05), then **W5** (needs a second
   person for its owner test). Search needs the owner's YouTube Data API key
   (README, "Run it"; pasted into the app, never into chat).
 - **Blockers:** none for W5. YouTube now answers yt-dlp with "Sign in to
@@ -134,6 +133,35 @@ webcam or USB mic.
 
 Each wave lists what to build, the files it owns, and when it is done.
 Tracks inside a wave share no files and may run in parallel.
+
+- [ ] **W0: Karaoke guide and mic diagnostics** (owner test, 2026-11-05;
+  browser only). On a karaoke YouTube video in speaker mode the ribbon
+  "fluctuates a lot, and it's unclear if the mic is getting my voice,
+  feedback from the speakers, if I'm on or off". Claude Desktop's browser
+  pane blocks the mic; the owner tests in a normal browser (say so in the
+  README, "Run it").
+  - **Guide (owner decision, 2026-11-05):** karaoke mode gets an opt-in
+    guide, off by default, for minimal feedback "if they want it": a steady
+    readout of the nearest note and how many cents off, against the song's
+    key when a `KeyMap` exists (W4) and chromatic otherwise, smoothed so it
+    does not jump. No colours, scores, misses or tips, and nothing stored
+    with the take. Update the "Two modes" decision in
+    `docs/ARCHITECTURE.md` and CLAUDE.md's purpose 1 to match: karaoke mode
+    judges nothing unless the singer turns the guide on.
+  - **Mic diagnostics, both modes:** a level meter against the measured
+    noise floor with one plain state (hearing you, too quiet, nothing); a
+    steadier ribbon (frames under the level and clarity gates are not
+    drawn, instead of drawing jitter). In speaker mode, warn when the mic's
+    pitch follows the song's melody rather than the singer, where the
+    browser has the melody (uploads, prepared songs); for an unprepared
+    YouTube video it cannot compare, and says so. This also closes W3's
+    follow-up on gating scored frames by level in speaker mode.
+  - **Save take** (proposed, owner did not answer yet): download a take's
+    audio (WAV) and its frames and mic settings (JSON), so the owner can
+    hand a take to a session for analysis (how much of the video reached
+    the mic).
+  - Done when the checks and e2e are green. Owner test: the same karaoke
+    video in speaker mode with the guide on, and one take saved.
 
 - [x] **W1: Seams and the reference melody.** Two tracks, one commit.
   - **W1a, service: reference melody** (was P2-T3). New `reference` step
