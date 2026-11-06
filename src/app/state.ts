@@ -8,7 +8,12 @@
  * docs/ARCHITECTURE.md). The selectors at the bottom turn state into the
  * strings the status bar and readouts show, so those can be tested too.
  */
+import { BLEED_OFF } from '../analysis/bleed';
+import type { BleedCheck } from '../analysis/bleed';
 import type { Span } from '../analysis/free-phrases';
+import { SILENCE_DB } from '../analysis/mic-level';
+import type { MicState } from '../analysis/mic-level';
+import type { GuideNote } from '../analysis/note-guide';
 import { hzToMidi } from '../analysis/pitch';
 import type { PitchFrame } from '../analysis/pitch';
 import type { MonitorMode } from '../audio/mic';
@@ -50,6 +55,14 @@ export interface InputState {
    * `processing.aec` to see whether the browser honoured the request.
    */
   requestedAec: boolean;
+  /** Loudest recent frame level in dB (RMS); SILENCE_DB with no mic. */
+  levelDb: number;
+  /** The measured noise floor in dB; SILENCE_DB until it is known. */
+  floorDb: number;
+  /** Whether the mic is hearing a voice, something quiet, or nothing. */
+  micState: MicState;
+  /** Whether the mic seems to hear the song through the speakers. */
+  bleed: BleedCheck;
 }
 
 /** One singer: today just the mic; scoring and a second mic hang off this. */
@@ -97,6 +110,10 @@ export interface AppState {
   mode: PracticeMode;
   /** Learning mode's style (Strict or Open). Mirrors `settings.scoring`. */
   scoring: ScoringStyle;
+  /** Whether karaoke mode's note guide is on. Mirrors `settings.noteGuide`. */
+  noteGuide: boolean;
+  /** What the note guide reads now; null with the guide off or no voice. */
+  guideReading: GuideNote | null;
   /** What the song panel knows about the song's key, which Open scores against. */
   key: KeyState;
   /** The phrases of the loaded song marked free, as [start, end] spans. */
@@ -144,6 +161,10 @@ export function initialState(): AppState {
     processing: { aec: null, ns: null, agc: null },
     monitor: 'headphones',
     requestedAec: false,
+    levelDb: SILENCE_DB,
+    floorDb: SILENCE_DB,
+    micState: 'nothing',
+    bleed: BLEED_OFF,
   };
   return {
     song: null,
@@ -158,6 +179,8 @@ export function initialState(): AppState {
     search: initialSearch('karaoke', false),
     mode: 'karaoke',
     scoring: 'strict',
+    noteGuide: false,
+    guideReading: null,
     key: initialKey(),
     freePhrases: [],
     pickedResult: null,
@@ -266,7 +289,7 @@ export class StateStore {
 }
 
 /** Floor of the level meter: anything quieter reads as empty. */
-const METER_FLOOR_DB = -60;
+export const METER_FLOOR_DB = -60;
 
 /** Mic peak (0..1) as a 0..1 meter fill on a decibel scale, -60 dB to 0 dB. */
 export function meterFraction(level: number): number {
@@ -349,6 +372,14 @@ export function describeMonitor(input: AppState['input']): MonitorReport | null 
     };
   }
   return { text: 'Speaker mode: echo cancellation on, NS/AGC off', kind: 'info' };
+}
+
+/**
+ * Whether the lane's note-and-tuner readout shows. Only learning mode has it;
+ * karaoke mode's one readout is the opt-in note guide, which is not graded.
+ */
+export function showsTunerReadout(mode: PracticeMode): boolean {
+  return mode === 'learning';
 }
 
 /** What the singer is hitting right now: nearest note and cents off it. */

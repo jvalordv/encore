@@ -109,6 +109,11 @@ export class StemsController {
     if (file && this.core.store.state.karaoke.phase === 'unavailable') void this.runFile(file);
   }
 
+  /** The reference melody's pitch track, for the bleed check; null without one. */
+  contour(): LaneReference | null {
+    return this.laneReference;
+  }
+
   /** Gives a lane attached after the melody arrived the melody it missed. */
   syncLane(): void {
     this.core.lane?.setReference(this.laneReference);

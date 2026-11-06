@@ -41,10 +41,20 @@ so learning mode when it is up. Scoring and tips run in the browser.
   (`describeMonitor` in `src/app/state.ts`). Switching reopens the mic and is
   refused while recording. Calibration always measures on a raw mic, since
   the canceller would remove the chirp too, and restores speaker mode
-  afterwards. In speaker mode learning-mode scoring (W3) gates frames by mic
-  level above the noise floor measured at mic open, so residual bleed is not
-  scored as singing, and Phase 3 may add our own cancellation in the
-  worklet from the known song signal and latency.
+  afterwards. Every frame is also gated by level (W0): a running noise
+  floor (a low percentile of the last five seconds, falling at once and
+  rising slowly, never above -35 dB) and a frame must be voiced, clear and
+  8 dB above it to count (`src/analysis/mic-level.ts`). The lane draws a gap
+  for a frame that fails in either mode; in speaker mode such a frame is
+  also made unvoiced before the take and the scorer see it, so residual
+  bleed is not scored as singing. Headphone scoring is unchanged. In speaker
+  mode, where the browser has the reference melody (a prepared song), it also
+  compares the mic's pitch with the melody over five seconds and warns when
+  it follows the song far more tightly than a singer does
+  (`src/analysis/bleed.ts`); with the Karaoke stem alone the melody is not in
+  the room and the check is off, and with no melody it says it cannot check.
+  Phase 3 may add our own cancellation in the worklet from the known song
+  signal and latency.
 - **Clock.** Song time is the master clock. Every mic frame is stamped with
   `context.currentTime` (the centre of its analysis window) and shifted by the
   calibrated round-trip latency so that what the singer heard at time *t* and
@@ -553,8 +563,13 @@ always skips.
     `service/README.md`, and the embedded path never depends on it.
     Shipping both in one distributed app is a decision for the owner; for
     personal use on their own machine they are the owner's to make.
-- **Two modes (owner, 2026-10-27).** Karaoke mode is the default and shows
-  no scores, misses or tips. Learning mode is opt-in, scores against the
+- **Two modes (owner, 2026-10-27; note guide added 2026-11-05).** Karaoke
+  mode is the default and shows no scores, misses or tips; it judges nothing
+  unless the singer turns the note guide on. The note guide is an opt-in,
+  neutral readout (the nearest note and how many cents sharp or flat, against
+  the song's key where there is one, chromatic otherwise, smoothed): no
+  colour, no grade, nothing stored with a take
+  (`src/analysis/note-guide.ts`). Learning mode is opt-in, scores against the
   reference and is direct about misses; tips appear on request. Scoring may
   run in both modes, but nothing from it renders in karaoke mode.
 - **One tracker for scoring (2026-10-27, replaces "two trackers").** The

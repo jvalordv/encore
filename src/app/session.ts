@@ -60,6 +60,7 @@ import { loadSettings } from './settings';
 import type { PracticeMode, ScoringStyle, Settings } from './settings';
 import { StateStore } from './state';
 import { localStorageStore } from './storage';
+import type { TakeFileKind } from './take-export';
 import { memoryTakeStore, openTakeStore } from './takes';
 
 export {
@@ -209,6 +210,11 @@ export class Session {
   /** Sets, and remembers, the original vocal's level in the guide mix (0..1). */
   setGuideLevel(level: number): void {
     this.core.mix.setGuideLevel(level);
+  }
+
+  /** Turns karaoke mode's note guide (a neutral nearest-note readout) on or off. */
+  setNoteGuide(on: boolean): void {
+    this.core.health.setNoteGuide(on);
   }
 
   // ---- Learning mode ------------------------------------------------------
@@ -369,6 +375,11 @@ export class Session {
    */
   playTake(id: string, fromS?: number): Promise<void> {
     return this.core.takes.playTake(id, fromS);
+  }
+
+  /** A take as a WAV or JSON file to download; null if it cannot be read. */
+  exportTake(id: string, kind: TakeFileKind): Promise<{ blob: Blob; name: string } | null> {
+    return this.core.takes.exportFile(id, kind);
   }
 
   /** Stops the take, restores the song's level and pauses. */

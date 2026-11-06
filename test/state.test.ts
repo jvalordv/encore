@@ -26,6 +26,7 @@ import {
   formatLatency,
   initialState,
   meterFraction,
+  showsTunerReadout,
   StateStore,
 } from '../src/app/state';
 import type { AppState } from '../src/app/state';
@@ -63,6 +64,8 @@ describe('initialState', () => {
       },
       mode: 'karaoke',
       scoring: 'strict',
+      noteGuide: false,
+      guideReading: null,
       key: { phase: 'none', message: '' },
       freePhrases: [],
       pickedResult: null,
@@ -78,6 +81,10 @@ describe('initialState', () => {
         processing: { aec: null, ns: null, agc: null },
         monitor: 'headphones',
         requestedAec: false,
+        levelDb: -120,
+        floorDb: -120,
+        micState: 'nothing',
+        bleed: { state: 'unknown', reason: 'off' },
       },
       singers: [
         {
@@ -90,6 +97,10 @@ describe('initialState', () => {
             processing: { aec: null, ns: null, agc: null },
             monitor: 'headphones',
             requestedAec: false,
+            levelDb: -120,
+            floorDb: -120,
+            micState: 'nothing',
+            bleed: { state: 'unknown', reason: 'off' },
           },
         },
       ],
@@ -235,6 +246,13 @@ describe('StateStore.subscribe', () => {
   });
 });
 
+describe('showsTunerReadout', () => {
+  it('is for learning mode only', () => {
+    expect(showsTunerReadout('learning')).toBe(true);
+    expect(showsTunerReadout('karaoke')).toBe(false);
+  });
+});
+
 describe('StateStore.patchSection', () => {
   it('merges fields into input and keeps the rest', () => {
     const store = new StateStore();
@@ -247,6 +265,10 @@ describe('StateStore.patchSection', () => {
       processing: { aec: null, ns: null, agc: null },
       monitor: 'headphones',
       requestedAec: false,
+      levelDb: -120,
+      floorDb: -120,
+      micState: 'nothing',
+      bleed: { state: 'unknown', reason: 'off' },
     });
   });
 

@@ -22,13 +22,22 @@ import { isRunning } from '../audio/transport';
 import { domEmbedHost } from '../audio/youtube-transport';
 import { parseYouTubeUrl } from '../audio/youtube-url';
 import { mountKaraokePanel } from './panels/karaoke';
+import { mountMicHealthPanel } from './panels/mic-health';
 import { mountModePanel } from './panels/mode';
+import { mountNoteGuidePanel } from './panels/note-guide';
 import { mountReportPanel } from './panels/report';
 import { mountSearchPanel } from './panels/search';
 import { mountTakesPanel } from './panels/takes';
 import { describePrepare } from './prepare';
 import type { Session } from './session';
-import { describeHealth, describeMonitor, describePitch, formatClock, meterFraction } from './state';
+import {
+  describeHealth,
+  describeMonitor,
+  describePitch,
+  formatClock,
+  meterFraction,
+  showsTunerReadout,
+} from './state';
 import type { AppState } from './state';
 
 /** What mountUI hands back. */
@@ -221,9 +230,13 @@ export function mountUI(session: Session, root: Document = document): UI {
     pitchReadout.hidden = true;
   }
 
-  function renderPitch(frame: AppState['lastFrame']): void {
-    const reading = describePitch(frame);
+  function renderPitch(state: AppState): void {
+    const reading = showsTunerReadout(state.mode) ? describePitch(state.lastFrame) : null;
     clearTimeout(hideTimer);
+    if (!showsTunerReadout(state.mode)) {
+      hidePitch();
+      return;
+    }
     if (reading) {
       lastVoicedAt = performance.now();
       pitchReadout.hidden = false;
@@ -346,7 +359,7 @@ export function mountUI(session: Session, root: Document = document): UI {
     }
     if (has('prepare')) renderPrepare(state.prepare);
 
-    if (has('lastFrame')) renderPitch(state.lastFrame);
+    if (has('lastFrame', 'mode')) renderPitch(state);
 
     if (has('status')) {
       setText(statusText, state.status.text);
@@ -370,6 +383,11 @@ export function mountUI(session: Session, root: Document = document): UI {
   cleanups.push(mountKaraokePanel(get('karaoke'), { store, session }));
   // The mode toggle, the takes list and learning mode's notice and report card.
   cleanups.push(mountModePanel(get('mode'), { store, session }));
+  // The mic's noise floor and state under the meter, and karaoke's note guide.
+  cleanups.push(mountMicHealthPanel(get('mic-health'), { store, meter }));
+  cleanups.push(
+    mountNoteGuidePanel(get('note-guide'), { store, session, readoutHost: get('pitch-lane') }),
+  );
   cleanups.push(mountTakesPanel(get('takes'), { store, session }));
   cleanups.push(mountReportPanel(get('report'), { store, session }));
   // The song search is what the main area shows until a song is loaded.

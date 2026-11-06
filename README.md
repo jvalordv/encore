@@ -17,6 +17,16 @@ npm run e2e            Playwright smoke in headless Chromium (builds first; see 
 cd service && uv sync  install service (CPU deps); see service/README.md for GPU
 ```
 
+### Testing the mic
+
+Claude Desktop's built-in browser pane blocks the microphone. To try the mic,
+the level meter or the note guide, run `npm run dev` and open
+`http://localhost:5173` in a normal browser (Chrome or Edge). Under the Devices
+panel the meter shows where the room's noise floor sits and whether the mic is
+hearing you; in speaker mode it also says if the mic seems to be hearing the
+song through the speakers. Each take has Save WAV and Save JSON buttons for
+handing a take over for analysis.
+
 ### End-to-end run
 
 `npm run e2e` builds the app, serves the production bundle and drives it in

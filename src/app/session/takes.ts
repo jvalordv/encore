@@ -11,7 +11,9 @@ import type { TakeRecording } from '../../audio/recorder';
 import type { ClockKind, TrackInfo } from '../../audio/transport';
 import { decodeWav, encodeWavBlob, songTimeOfSample } from '../../audio/wav';
 import { formatClock } from '../state';
-import type { TakeRecord } from '../takes';
+import { captureMicSettings, takeExportJson, takeFileName } from '../take-export';
+import type { TakeFileKind } from '../take-export';
+import type { TakeMicSettings, TakeRecord } from '../takes';
 import type { SessionCore } from './core';
 import { firstFrameIndex, messageOf, sleep } from './helpers';
 import type { SessionParts } from './types';
@@ -60,6 +62,8 @@ interface Recording {
   startedPlayback: boolean;
   /** The clock the song time came from, kept with the take. */
   clock: ClockKind;
+  /** The mic and mix settings as the take began. */
+  mic: TakeMicSettings;
 }
 
 /** Records, saves, replays and deletes takes. */
@@ -280,7 +284,9 @@ export class TakeController {
         transport.positionS,
         this.core.latency.latencyOrZero() + songs.embedOffsetNow(),
       );
-      this.recording = { song, startedPlayback, clock: transport.clock };
+      const { clarityThreshold } = this.core.current;
+      const mic = captureMicSettings(store.state, clarityThreshold, this.core.health.floorDb);
+      this.recording = { song, startedPlayback, clock: transport.clock, mic };
       this.takeFrames = [];
       store.patch({ recording: true });
       const approximate = embed ? ' Timing over a YouTube video is approximate.' : '';
@@ -313,7 +319,7 @@ export class TakeController {
     store.setStatus('Saving take…');
     this.finishing = (async () => {
       try {
-        await this.saveTake(await parts.recorder.stop(), frames, meta.song, meta.clock);
+        await this.saveTake(await parts.recorder.stop(), frames, meta.song, meta.clock, meta.mic);
       } catch (error) {
         store.setStatus(`Could not save the take: ${messageOf(error)}`, 'error');
       } finally {
@@ -331,6 +337,7 @@ export class TakeController {
     frames: PitchFrame[],
     song: TrackInfo,
     clock: ClockKind,
+    mic: TakeMicSettings,
   ): Promise<void> {
     if (rec.pcm.length === 0) {
       this.core.store.setStatus('Nothing was recorded.', 'warn');
@@ -350,6 +357,7 @@ export class TakeController {
       sampleRate: rec.sampleRate,
       startedAtSongS: rec.startedAtSongS,
       clock,
+      mic,
       // Frames are on song time with the latency already taken off.
       frames,
       wav: encodeWavBlob(rec.pcm, rec.sampleRate, 16),
@@ -358,6 +366,29 @@ export class TakeController {
     await this.refreshTakes();
     if (report) this.core.scoring.showReport(id);
     this.core.store.setStatus(`Take saved (${rec.durationS.toFixed(1)} s).`);
+  }
+
+  /**
+   * A take as a file to download: its WAV, or a JSON of its frames and mic
+   * settings. Null, with the reason on the status line, when it cannot be read.
+   */
+  async exportFile(id: string, kind: TakeFileKind): Promise<{ blob: Blob; name: string } | null> {
+    const { store } = this.core;
+    try {
+      const take = await (await this.core.takesReady).get(id);
+      if (!take) {
+        store.setStatus('That take is gone.', 'warn');
+        await this.refreshTakes();
+        return null;
+      }
+      const name = takeFileName(take.songName, take.createdAt, kind);
+      if (kind === 'wav') return { blob: take.wav, name };
+      const text = JSON.stringify(takeExportJson(take));
+      return { blob: new Blob([text], { type: 'application/json' }), name };
+    } catch (error) {
+      store.setStatus(`Could not save the take: ${messageOf(error)}`, 'error');
+      return null;
+    }
   }
 
   /** Reads the saved takes of the loaded song into the state. */

@@ -24,15 +24,16 @@ webcam or USB mic.
 
 ## Current state
 
-- **Last done:** **W4** (2026-10-28): Strict and Open scoring (the
-  service's `key` step and `GET /songs/{id}/key`, the Strict / Open
-  selector, key fit, freestyle, free phrases, the `off_key` tip, Open on
-  karaoke tracks). Before it W3 (learning mode), W2 (search and the karaoke
-  core) and W1 (the reference step and the browser seams); older work in
+- **Last done:** **W0** (2026-11-05): the karaoke note guide (opt-in),
+  the mic level meter with a noise floor and one state line, the level gate
+  (lane gaps in both modes, unvoiced scored frames in speaker mode), the
+  speaker-bleed warning, and Save take (WAV and JSON). Before it W4 (Strict
+  and Open scoring), W3 (learning mode), W2 (search and the karaoke core)
+  and W1 (the reference step and the browser seams); older work in
   `docs/HISTORY.md`.
 - **In progress:** none.
-- **Next:** **W0** below (from the owner's test, 2026-11-05), then **W5** (needs a second
-  person for its owner test). Search needs the owner's YouTube Data API key
+- **Next:** the owner's W0 test (under the wave), then **W5** (needs a
+  second person for its owner test). Search needs the owner's YouTube Data API key
   (README, "Run it"; pasted into the app, never into chat).
 - **Blockers:** none for W5. YouTube now answers yt-dlp with "Sign in to
   confirm you're not a bot" (2026-10-28, seven tries on Big Buck Bunny), so
@@ -134,7 +135,7 @@ webcam or USB mic.
 Each wave lists what to build, the files it owns, and when it is done.
 Tracks inside a wave share no files and may run in parallel.
 
-- [ ] **W0: Karaoke guide and mic diagnostics** (owner test, 2026-11-05;
+- [x] **W0: Karaoke guide and mic diagnostics** (owner test, 2026-11-05;
   browser only). On a karaoke YouTube video in speaker mode the ribbon
   "fluctuates a lot, and it's unclear if the mic is getting my voice,
   feedback from the speakers, if I'm on or off". Claude Desktop's browser
@@ -156,12 +157,45 @@ Tracks inside a wave share no files and may run in parallel.
     browser has the melody (uploads, prepared songs); for an unprepared
     YouTube video it cannot compare, and says so. This also closes W3's
     follow-up on gating scored frames by level in speaker mode.
-  - **Save take** (proposed, owner did not answer yet): download a take's
+  - **Save take** (owner confirmed, 2026-11-05): download a take's
     audio (WAV) and its frames and mic settings (JSON), so the owner can
     hand a take to a session for analysis (how much of the video reached
     the mic).
   - Done when the checks and e2e are green. Owner test: the same karaoke
     video in speaker mode with the guide on, and one take saved.
+  - Built (2026-11-05): `src/analysis/{mic-level,note-guide,bleed}.ts`,
+    `src/app/session/mic-health.ts`, `src/app/panels/{mic-health,note-guide}.ts`,
+    `src/app/take-export.ts`. Floor: 10th percentile of 5 s, falls at once,
+    rises at most 1.5 dB/s, capped at -35 dBFS. Draw and speaker-mode score
+    gate: voiced, clear, 8 dB over the floor. State on the 1.5 s peak:
+    hearing at 12 dB over (drops below 9), nothing under 4 (leaves above 6).
+    Guide: 0.3 s median, holds a note until 65 c away, 0.5 s hold, "in tune"
+    within 5 c. Bleed compares with the reference contour (not note
+    medians): 5 s window, 150 frames, suspected at 60 % within 30 c and a
+    median under 15 c; arms for the embed clock, the Original mix or a vocal
+    guide above 0. Takes carry an optional `mic` field. The old
+    hit-coloured tuner readout now shows in learning mode only. Review fix:
+    mic health resets when the mic or monitor mode switches while open.
+  - Follow-up: the bleed thresholds are untested on a human singer; tune
+    them from the owner's saved take.
+  - Follow-up: the floor mark sits 3 dB high to compare RMS with the
+    peak-based meter bar; an RMS bar would remove that offset.
+  - Follow-up: the state line reads "Nothing from the mic" in any pause over
+    1.5 s; consider a softer word between phrases.
+  - Follow-up: no e2e covers the speaker-mode bleed warning or the
+    cannot-check line, or the learning-mode tuner readout still showing.
+  - Follow-up: in the solo-loop e2e, "frame times strictly increase" failed
+    once by 0.7 ms in an isolated rerun; the worker moved the clock read
+    ahead of the level work and the full suite passed. Watch for it.
+  - Owner test (W0): in a normal browser (not Claude Desktop's pane), the
+    same karaoke YouTube video in speaker mode. The meter's state line
+    should say Hearing you only while you sing; the ribbon should gap
+    instead of jitter when you stop. Turn on Note guide (karaoke mode):
+    report whether the readout is steady enough. On a prepared or uploaded
+    sung song with Original playing aloud, stay silent for a few seconds:
+    does the bleed warning show? Record one take and press Save WAV and Save
+    JSON; hand both files to a session to see how much of the song reached
+    the mic.
 
 - [x] **W1: Seams and the reference melody.** Two tracks, one commit.
   - **W1a, service: reference melody** (was P2-T3). New `reference` step
@@ -591,7 +625,7 @@ Not scheduled. Pull one in only when the owner asks.
   length cap, notes while a step runs, clearing crash leftovers, releasing
   GPU memory, and more. None block the goal.
 
-## Estimates (corrected 2026-10-28 after W4, light pipeline)
+## Estimates (corrected 2026-11-05 after W0, light pipeline)
 
 W1 measured about 1 hour of wall time (two workers in parallel, then
 one reviewer) and about 1.0 M subagent tokens. W2 measured 1 hour and
@@ -601,11 +635,16 @@ and 0.53 M (one worker at 0.36 M, one reviewer at 0.17 M, a small fix)
 against 0.8 and 0.7 M: one track with a detailed brief costs about half
 of a two-track wave. W4 measured about 1 hour and 0.83 M (service
 worker 0.20 M with its fix, browser worker 0.45 M, reviewer 0.18 M)
-against 1 hour and 0.8 M; the browser track alone cost nearly all of W3. The
-rest are left as they were.
+against 1 hour and 0.8 M; the browser track alone cost nearly all of W3.
+W0 (added 2026-11-05, unestimated) measured about 0.75 hours and 0.85 M:
+worker 0.33 M, reviewer 0.11 M, and the two-item fix sent back to the
+warm worker 0.41 M, more than the build. A resumed worker re-reads its whole
+context on every turn, so a small fix in a fresh agent with a pointed brief
+may cost less. The rest are left as they were.
 
 | Wave | Agent hours | Subagent tokens | Owner |
 |---|---|---|---|
+| W0 Guide and mic diagnostics (measured) | 0.75 | 0.85 M | 20 min |
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |
@@ -613,7 +652,7 @@ rest are left as they were.
 | W5 Two singers | 1 (0.7-1.8) | about 0.7 M | 30 min, a second person |
 | W6 Synced lyrics | 0.4 (0.3-0.8) | about 0.3 M | 5 min |
 | W7 Test and sweep | 0.8 (0.6-1.5) | about 0.6 M | 45 min |
-| **Total** | **about 6 (5-9)** | **about 4.9 M** | **about 2.5 h** |
+| **Total** | **about 7 (6-10)** | **about 5.8 M** | **about 2.8 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The
 orchestrator's own reading adds about 100 to 200 thousand tokens per wave

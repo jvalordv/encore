@@ -40,6 +40,7 @@ describe('DEFAULT_SETTINGS', () => {
       mode: 'karaoke',
       scoring: 'strict',
       guideLevel: 0.5,
+      noteGuide: false,
       searchProvider: 'youtube',
       youtubeApiKey: '',
     });
@@ -103,6 +104,7 @@ describe('loadSettings', () => {
       mode: 'karaoke',
       scoring: 'strict',
       guideLevel: 0.5,
+      noteGuide: false,
       searchProvider: 'youtube',
       youtubeApiKey: '',
     });
@@ -248,6 +250,7 @@ describe('saveSettings', () => {
     mode: 'learning',
     scoring: 'open',
     guideLevel: 0.25,
+    noteGuide: true,
     searchProvider: 'youtube',
     youtubeApiKey: 'AIzaSyExample_key-123',
   };
@@ -435,5 +438,15 @@ describe('song search settings', () => {
     const store = memoryStore();
     saveSettings(store, { ...DEFAULT_SETTINGS, youtubeApiKey: 'not a key' });
     expect(JSON.parse(store.get('settings') ?? 'null').youtubeApiKey).toBe('');
+  });
+});
+
+describe('the note guide setting', () => {
+  it('is off by default and keeps only a real boolean', () => {
+    expect(DEFAULT_SETTINGS.noteGuide).toBe(false);
+    expect(sanitizeSettings({ noteGuide: true }).noteGuide).toBe(true);
+    for (const bad of ['yes', 1, null, {}]) {
+      expect(sanitizeSettings({ noteGuide: bad }).noteGuide, String(bad)).toBe(false);
+    }
   });
 });

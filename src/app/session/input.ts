@@ -5,6 +5,8 @@
  * let a newer choice overtake a slow permission prompt, the level meter's
  * smoothed value and the latest frame the readout shows.
  */
+import { BLEED_OFF } from '../../analysis/bleed';
+import { SILENCE_DB } from '../../analysis/mic-level';
 import type { PitchFrame } from '../../analysis/pitch';
 import { classifyMicError } from '../../audio/mic';
 import type { MonitorMode } from '../../audio/mic';
@@ -132,12 +134,19 @@ export class InputController {
       ns: settings?.noiseSuppression ?? null,
       agc: settings?.autoGainControl ?? null,
     };
+    // A new open is a new signal path: the old floor, guide samples and bleed
+    // window belong to the one before it.
+    this.core.health.reset();
     store.patchSection('input', {
       deviceId,
       label: parts.mic.label,
       open: true,
       processing,
       requestedAec: mode === 'speakers',
+      levelDb: SILENCE_DB,
+      floorDb: SILENCE_DB,
+      micState: 'nothing',
+      bleed: BLEED_OFF,
     });
     store.patch({ tracker: tracking });
     this.core.current.inputDeviceId = deviceId;
@@ -200,25 +209,42 @@ export class InputController {
 
   private onFrame(parts: SessionParts, frame: PitchFrame): void {
     this.latestFrame = frame;
+    const { health, store } = this.core;
     const transport = this.core.songs.active;
-    if (!transport) return;
     // Read before the state: for an embed the position is what notices an ad
     // that began since the last poll, so the state is true only after it.
-    const positionS = transport.positionS;
+    const positionS = transport ? transport.positionS : 0;
     // Off the song clock there is no song time to put the frame at (paused,
     // buffering, or an ad in the video); the readout still follows lastFrame.
-    if (transport.state !== 'playing') return;
-    let t = frameToSongTime(
-      frame.t,
-      parts.engine.now(),
-      positionS,
-      this.core.latency.latencyOrZero(),
-      transport.loop,
-      this.core.songs.embedOffsetNow(),
-    );
+    const playing = transport !== null && transport.state === 'playing';
+    // Stamped before the level work below, which would otherwise add its own
+    // jitter to the age the stamp is taken from.
+    let t = playing
+      ? frameToSongTime(
+          frame.t,
+          parts.engine.now(),
+          positionS,
+          this.core.latency.latencyOrZero(),
+          transport.loop,
+          this.core.songs.embedOffsetNow(),
+        )
+      : 0;
+    // The floor tracks every frame, song or not, so the meter works before play.
+    const drawable = health.observe(frame, positionS);
+    if (!playing) return;
     if (transport.clock === 'embed') t = orderedFrameTime(t, this.lastFrameT);
     this.lastFrameT = t;
-    this.core.bus.publish({ singer: 0, frame: { t, f0: frame.f0, clarity: frame.clarity, rms: frame.rms } });
+    // With speakers the song is in the room, so a frame too quiet to be the
+    // voice is dropped before the take and the scorer see it. With headphones
+    // scoring is untouched and only the lane skips such a frame.
+    const speakers = store.state.input.requestedAec;
+    const f0 = speakers && !drawable ? 0 : frame.f0;
+    health.compare(t, frame, drawable);
+    this.core.bus.publish({
+      singer: 0,
+      frame: { t, f0, clarity: frame.clarity, rms: frame.rms },
+      gated: !drawable,
+    });
   }
 
   private onMicEnded(parts: SessionParts): void {
@@ -234,12 +260,17 @@ export class InputController {
     const { store } = this.core;
     this.latestFrame = null;
     this.level = 0;
+    this.core.health.reset();
     store.patchSection('input', {
       label: '',
       open: false,
       level: 0,
       processing: { aec: null, ns: null, agc: null },
       requestedAec: false,
+      levelDb: SILENCE_DB,
+      floorDb: SILENCE_DB,
+      micState: 'nothing',
+      bleed: BLEED_OFF,
     });
     store.patch({
       tracker: this.core.trackerSupported ? 'idle' : 'unsupported',

@@ -12,6 +12,7 @@
  */
 import { expect, test } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import type { AppState } from '../src/app/state';
 import { decodeWav } from '../src/audio/wav';
 import { stubService } from './fake-service';
@@ -210,7 +211,8 @@ test('4. the fake microphone is tracked at 440 Hz from the built worklet', async
   expect(input.processing).toEqual({ aec: false, ns: false, agc: false });
   expect(fps).toBeGreaterThan(85);
   expect(fps).toBeLessThan(115);
-  await expect(page.getByTestId('pitch-note')).toHaveText('A4');
+  // Karaoke mode has no graded tuner; its one readout is the opt-in note guide.
+  await expect(page.getByTestId('pitch-readout')).toBeHidden();
 });
 
 test('5. recording while playing stores a take with the sung pitch', async () => {
@@ -311,6 +313,44 @@ test('6. a saved take plays back under the song and stops cleanly', async () => 
   await page.getByTestId('record').click();
   await expect(page.getByTestId('take-item')).toHaveCount(2);
   await page.getByTestId('stop').click();
+});
+
+test('6b. the mic meter hears the fake mic, the note guide reads A4, and a take saves as WAV and JSON', async () => {
+  // The meter's own line, and the noise-floor mark; headphones raise no bleed line.
+  await expect(page.getByTestId('mic-state')).toHaveText('Hearing you');
+  await expect(page.getByTestId('mic-floor')).toBeVisible();
+  await expect(page.getByTestId('mic-bleed')).toBeHidden();
+
+  // The note guide is off until asked for, then a neutral readout of the note.
+  await expect(page.getByTestId('note-guide-readout')).toBeHidden();
+  await page.getByTestId('note-guide-toggle').check();
+  await expect(page.getByTestId('note-guide-readout')).toHaveText(/^A4 · (in tune|\d+ c (sharp|flat))$/);
+  await page.getByTestId('note-guide-toggle').uncheck();
+  await expect(page.getByTestId('note-guide-readout')).toBeHidden();
+
+  // Each take downloads as audio and as frames with the mic settings.
+  // The oldest take is the 1.5 s one; the newest is only half a second.
+  const item = page.getByTestId('take-item').last();
+  const [wavDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    item.getByTestId('take-save-wav').click(),
+  ]);
+  expect(wavDownload.suggestedFilename()).toMatch(/-\d{8}-\d{4}\.wav$/);
+  const wav = decodeWav(Uint8Array.from(readFileSync((await wavDownload.path()) as string)).buffer as ArrayBuffer);
+  expect(wav.sampleRate).toBe(48000);
+  expect(wav.pcm.length).toBeGreaterThan(48000);
+
+  const [jsonDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    item.getByTestId('take-save-json').click(),
+  ]);
+  expect(jsonDownload.suggestedFilename()).toMatch(/-\d{8}-\d{4}\.json$/);
+  const json = JSON.parse(readFileSync((await jsonDownload.path()) as string, 'utf8'));
+  expect(json.format).toBe('encore-take');
+  expect(json.frames.length).toBeGreaterThan(50);
+  expect(json.mic.requestedAec).toBe(false);
+  expect(json.mic.monitor).toBe('headphones');
+  expect(json.mic.inputLabel).not.toBe('');
 });
 
 test('7. calibration with no echo fails with a message and does not crash', async () => {

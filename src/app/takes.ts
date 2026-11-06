@@ -13,12 +13,36 @@
  */
 import type { PitchFrame } from '../analysis/pitch';
 import type { TakeReport } from '../analysis/score';
+import type { MonitorMode } from '../audio/mic';
+import type { MixChoice } from './mix';
 
 /**
  * The clock a take's song time came from: the audio engine's sample-accurate
  * one, or a YouTube embed's reported time, which is only approximate.
  */
 export type TakeClock = 'engine' | 'embed';
+
+/**
+ * The mic and mix settings in force when a take began, kept so the take can be
+ * judged (or handed to someone to analyse) later. Nothing here is a
+ * measurement of the singing.
+ */
+export interface TakeMicSettings {
+  inputLabel: string;
+  monitor: MonitorMode;
+  /** What the browser really applied; null where it did not say. */
+  processing: { aec: boolean | null; ns: boolean | null; agc: boolean | null };
+  requestedAec: boolean;
+  clarityThreshold: number;
+  /** The calibrated round trip, or null when none was set. */
+  latencyS: number | null;
+  embedOffsetS: number;
+  outputLabel: string;
+  mix: { choice: MixChoice; guideLevel: number };
+  source: { kind: 'file'; name: string } | { kind: 'youtube'; videoId: string };
+  /** The measured noise floor in dB at the start; null when not yet known. */
+  noiseFloorDb: number | null;
+}
 
 /** The list-view slice of a take: everything except the heavy payloads. */
 export interface TakeSummary {
@@ -48,6 +72,8 @@ export interface TakeSummary {
    * existed; such a take has no card.
    */
   report?: TakeReport;
+  /** Absent on takes saved before settings were kept. */
+  mic?: TakeMicSettings;
 }
 
 /** The clock of a take; takes saved without one came from the engine. */
@@ -119,6 +145,7 @@ function toSummary(record: TakeRecord): TakeSummary {
   if (record.startedAtSongS !== undefined) summary.startedAtSongS = record.startedAtSongS;
   if (record.clock !== undefined) summary.clock = record.clock;
   if (record.report !== undefined) summary.report = record.report;
+  if (record.mic !== undefined) summary.mic = record.mic;
   return summary;
 }
 

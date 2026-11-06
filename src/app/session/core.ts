@@ -19,6 +19,7 @@ import { FrameBus } from './frame-bus';
 import { InputController } from './input';
 import { LatencyController } from './latency';
 import { TickLoop } from './loop';
+import { MicHealthController } from './mic-health';
 import { MixController } from './mix';
 import { PlaybackController } from './playback';
 import { PrepareController } from './prepare';
@@ -68,6 +69,7 @@ export class SessionCore {
   readonly playback: PlaybackController;
   readonly prepare: PrepareController;
   readonly input: InputController;
+  readonly health: MicHealthController;
   readonly devices: DeviceController;
   readonly latency: LatencyController;
   readonly mix: MixController;
@@ -91,6 +93,7 @@ export class SessionCore {
     this.songs = new SongController(this, init.youtubeApi);
     this.playback = new PlaybackController(this);
     this.prepare = new PrepareController(this);
+    this.health = new MicHealthController(this);
     this.input = new InputController(this);
     this.devices = new DeviceController(this);
     this.latency = new LatencyController(this);
@@ -105,6 +108,7 @@ export class SessionCore {
       embedOffsetS: this.current.embedOffsetS,
       mode: this.current.mode,
       scoring: this.current.scoring,
+      noteGuide: this.current.noteGuide,
     });
     this.store.patchSection('input', {
       deviceId: this.current.inputDeviceId,

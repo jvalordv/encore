@@ -47,9 +47,14 @@ export class ScoringController {
     });
     // After the take recorder's subscriber, as the take is recorded before the
     // lane draws the frame.
-    this.live.attach(core.bus, ({ frame }, grade) => {
+    this.live.attach(core.bus, ({ frame, gated }, grade) => {
       // While a take replays, its own trace owns the lane.
       if (core.store.state.playingTakeId !== null) return;
+      // A frame under the level gate is a gap, not jitter.
+      if (gated) {
+        core.lane?.pushFrame({ t: frame.t, f0: 0, clarity: frame.clarity });
+        return;
+      }
       const drawn = { t: frame.t, f0: frame.f0, clarity: frame.clarity };
       core.lane?.pushFrame(grade === null ? drawn : { ...drawn, grade });
     });
@@ -68,6 +73,11 @@ export class ScoringController {
   /** The melody to score against; null when the song has none. */
   setReference(reference: ScoreReference | null): void {
     this.reference = reference;
+  }
+
+  /** The song's key map, for the note guide; null without one. */
+  keyMap(): KeyMap | null {
+    return this.key;
   }
 
   /** The song's key to judge freestyle against, with what the panel says of it. */

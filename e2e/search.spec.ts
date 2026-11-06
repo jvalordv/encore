@@ -205,9 +205,9 @@ test('with no song the search is what the main area shows, and the lane still wo
   const lane = await boxOf('#pitch-lane');
   expect(lane.height).toBeGreaterThanOrEqual(150);
   expect(overlap(await boxOf('#search'), lane)).toBe(false);
-  // The mic and the pitch readout work before any song is picked.
+  // The mic and its level line work before any song is picked.
   await page.getByTestId('mic-toggle').click();
-  await expect(page.getByTestId('pitch-note')).toHaveText('A4');
+  await expect(page.getByTestId('mic-state')).toHaveText('Hearing you');
 });
 
 test('with no key a search opens YouTube in a new tab and asks the API nothing', async () => {

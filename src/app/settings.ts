@@ -3,7 +3,8 @@
  * the song, the service address, whether a pasted YouTube link is sent to the
  * service by itself, the voicing threshold, the round-trip latency measured for
  * each device pair, the extra offset applied while a YouTube video supplies
- * the song, the level of the vocal guide in the karaoke mix and the practice
+ * the song, the level of the vocal guide in the karaoke mix, whether the
+ * karaoke note guide is on and the practice
  * mode (karaoke, or the opt-in learning mode) and learning mode's scoring style
  * (Strict, or Open).
  * One object under one storage key, behind the KeyValueStore interface, so a
@@ -67,6 +68,11 @@ export interface Settings {
   scoring: ScoringStyle;
   /** Level of the original vocal in the "karaoke with a vocal guide" mix, 0..1. */
   guideLevel: number;
+  /**
+   * Karaoke mode's opt-in note guide: a neutral readout of the nearest note
+   * and the cents off it. Off unless the singer turns it on.
+   */
+  noteGuide: boolean;
   /** Which search provider answers the song search; only 'youtube' exists. */
   searchProvider: SearchProviderId;
   /**
@@ -102,6 +108,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   mode: 'karaoke',
   scoring: 'strict',
   guideLevel: DEFAULT_GUIDE_LEVEL,
+  noteGuide: false,
   searchProvider: 'youtube',
   youtubeApiKey: '',
 });
@@ -216,6 +223,7 @@ export function sanitizeSettings(value: unknown): Settings {
     mode: practiceMode(raw.mode),
     scoring: scoringStyle(raw.scoring),
     guideLevel: guide(raw.guideLevel),
+    noteGuide: typeof raw.noteGuide === 'boolean' ? raw.noteGuide : DEFAULT_SETTINGS.noteGuide,
     searchProvider: searchProviderId(raw.searchProvider),
     youtubeApiKey: apiKey(raw.youtubeApiKey),
   };

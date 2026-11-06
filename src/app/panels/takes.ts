@@ -6,9 +6,11 @@
  * says its timing is approximate. The list and its empty line are in
  * index.html; this fills them from `state.takes`.
  */
+import { downloadBlob } from '../download';
 import type { Session } from '../session';
 import { formatClock } from '../state';
 import type { AppState, StateStore } from '../state';
+import type { TakeFileKind } from '../take-export';
 import { takeClockOf } from '../takes';
 import type { TakeSummary } from '../takes';
 import type { MountPanel } from './panel';
@@ -29,7 +31,7 @@ const WATCHED: ReadonlyArray<keyof AppState> = [
 /** What the panel needs: the state to draw, and the intents it calls. */
 export interface TakesPanelDeps {
   store: StateStore;
-  session: Pick<Session, 'playTake' | 'stopTake' | 'deleteTake' | 'showReport'>;
+  session: Pick<Session, 'playTake' | 'stopTake' | 'deleteTake' | 'showReport' | 'exportTake'>;
 }
 
 /** Builds the list into `host`; the returned function takes it down. */
@@ -88,7 +90,19 @@ export const mountTakesPanel: MountPanel<TakesPanelDeps> = (host, { store, sessi
     });
     del.disabled = busy;
 
-    item.append(label, play, del);
+    // Two buttons rather than one, so the browser does not ask to allow
+    // several downloads at once.
+    const save = (kind: TakeFileKind): (() => void) => () => {
+      void session.exportTake(take.id, kind).then((file) => {
+        if (file) downloadBlob(doc, file.blob, file.name);
+      });
+    };
+    const saveWav = button('Save WAV', 'take-save-wav', save('wav'));
+    saveWav.title = 'Download this take\'s audio';
+    const saveJson = button('Save JSON', 'take-save-json', save('json'));
+    saveJson.title = 'Download this take\'s pitch frames and mic settings';
+
+    item.append(label, play, del, saveWav, saveJson);
     // Karaoke mode shows nothing of the measurements, even on a take that has them.
     if (state.mode === 'learning' && take.report) {
       const open = state.reportTakeId === take.id;

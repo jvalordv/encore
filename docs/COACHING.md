@@ -1,7 +1,10 @@
 # Coaching
 
 Two modes (owner, 2026-10-27). **Karaoke mode** is the default and never
-judges: no scores, no hit or miss colours, no tips. **Learning mode** is
+judges: no scores, no hit or miss colours, no tips. The one thing it can show,
+only when the singer turns the note guide on, is a neutral readout of the
+nearest note and how many cents sharp or flat, with no colour and nothing
+stored. **Learning mode** is
 opt-in and direct: it scores every take against the original vocal and
 says where the singing misses. Tips come only when the singer asks for
 them. Every finding carries its evidence (which notes, how far off) so

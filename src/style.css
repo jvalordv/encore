@@ -565,6 +565,7 @@ input[type='range'] {
 }
 
 .meter {
+  position: relative;
   height: 10px;
   overflow: hidden;
   background: var(--color-surface-2);
@@ -627,6 +628,51 @@ input[type='range'] {
   min-width: 0;
   padding: 3px 8px;
   font-size: 0.8rem;
+}
+
+/* Where the room's noise floor sits on the meter. */
+.meter-floor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-text);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.mic-bleed[data-kind='warn'] {
+  padding-left: 8px;
+  color: var(--color-text);
+  border-left: calc(var(--border-width) * 2) solid var(--color-accent);
+}
+
+/* Karaoke mode's note guide: a header checkbox, and a neutral readout over the lane. */
+.note-guide-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.guide-readout {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* Under its row: a take timed against a YouTube video says so. */

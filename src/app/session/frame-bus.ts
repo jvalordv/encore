@@ -12,6 +12,12 @@ import type { PitchFrame } from '../../analysis/pitch';
 export interface SingerFrame {
   singer: number;
   frame: PitchFrame;
+  /**
+   * True when the frame failed the level gate (too quiet to be a voice). The
+   * take and the scorer still receive it, as an unvoiced frame in speaker
+   * mode; the lane draws a gap for it either way.
+   */
+  gated?: boolean;
 }
 
 /** Fan-out of singer frames to subscribers, in subscription order. */

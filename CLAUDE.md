@@ -10,7 +10,9 @@ service that uses the local GPU to prepare songs.
 ## Purpose, in priority order
 
 1. **Karaoke that is fun and never shames.** Karaoke mode shows no scores,
-   misses or tips. Nothing from learning mode leaks into it.
+   misses or tips and judges nothing unless the singer turns the note guide
+   on: a neutral readout of the nearest note and the cents off it, stored
+   nowhere. Nothing from learning mode leaks into it.
 2. **Learning mode that is honest.** When the singer turns it on, feedback
    is measured, specific and direct. Rules over measured features, never
    guesses.
