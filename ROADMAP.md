@@ -32,8 +32,10 @@ webcam or USB mic.
   and W1 (the reference step and the browser seams); older work in
   `docs/HISTORY.md`.
 - **In progress:** none.
-- **Next:** the owner's W0 test (under the wave), then **W5** (needs a
-  second person for its owner test). Search needs the owner's YouTube Data API key
+- **Next:** **W0b** (links that will not embed, Encore's controls only,
+  pressed buttons; decided), then the owner's W0 test
+  (under the wave), then **W5** (needs a second person for its owner
+  test). Search needs the owner's YouTube Data API key
   (README, "Run it"; pasted into the app, never into chat).
 - **Blockers:** none for W5. YouTube now answers yt-dlp with "Sign in to
   confirm you're not a bot" (2026-10-28, seven tries on Big Buck Bunny), so
@@ -196,6 +198,44 @@ Tracks inside a wave share no files and may run in parallel.
     does the bleed warning show? Record one take and press Save WAV and Save
     JSON; hand both files to a session to see how much of the song reached
     the mic.
+
+- [ ] **W0b: Links that will not embed, and one set of controls** (owner
+  test, 2026-11-05; browser only). The owner has no search key, so Search
+  opens YouTube's own results in a new tab and the pasted link is not
+  filtered for embedding (`videoEmbeddable` in `src/search/youtube.ts`
+  applies only with a key). One such link failed with error 101/150 ("would
+  not play that video here", `describeYouTubeError` in
+  `src/audio/youtube-transport.ts`), which YouTube also sends for an id that
+  does not exist.
+  - **Tell the two apart before loading:** YouTube's oEmbed endpoint
+    answers 401 when the owner blocks embedding and 404 when the video does
+    not exist. Check it from the browser if CORS allows, else from the
+    service, else skip the check. Say which it is, and for a blocked video
+    say what helps: another upload of the song (karaoke channels usually
+    allow embedding), or a search key so Search shows only videos that play
+    here (README, "Run it").
+  - **No-key Search:** say beside the button that YouTube's own results
+    include videos that will not play here.
+  - **Controls (owner decision, 2026-11-05): Encore's buttons only.** With
+    a video loaded, Encore's Play/Pause and Stop sat beside YouTube's own
+    controls and the owner could not tell what Encore's do. Hide YouTube's
+    controls (`controls: 0` in the player vars), so Encore's buttons and the
+    lane are the only controls. A click on the video still pauses, and the
+    next click resumes, "because that's what people expect", in step with
+    Encore's buttons. If YouTube does not do that itself with
+    `controls: 0`, use a click layer over the video that calls the session's
+    play toggle. Take the layer away while an ad plays, so its skip button
+    still works.
+  - **Pressed state (owner, 2026-11-05):** the transport buttons show what
+    is on, like hardware controls. Play stays visibly held down (a filled
+    background, `aria-pressed`) while playing, and so do Loop and Record
+    while they are on. One look should tell whether the song is playing.
+    This applies in all three skins and uses their tokens.
+  - Done when the checks and e2e are green (the fake YouTube in
+    `e2e/fake-youtube.ts` answers the oEmbed check). Owner test: paste the
+    link that failed and one that plays. Click the video to pause and
+    resume and check Encore's Play button follows it. Press each control
+    and check its pressed look in each skin.
 
 - [x] **W1: Seams and the reference melody.** Two tracks, one commit.
   - **W1a, service: reference melody** (was P2-T3). New `reference` step
