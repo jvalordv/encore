@@ -33,7 +33,7 @@ webcam or USB mic.
   `docs/HISTORY.md`.
 - **In progress:** none.
 - **Next:** **W0b** (links that will not embed, Encore's controls only,
-  pressed buttons; decided), then the owner's W0 test
+  pressed buttons, full take metadata; decided), then the owner's W0 test
   (under the wave), then **W5** (needs a second person for its owner
   test). Search needs the owner's YouTube Data API key
   (README, "Run it"; pasted into the app, never into chat).
@@ -231,6 +231,29 @@ Tracks inside a wave share no files and may run in parallel.
     background, `aria-pressed`) while playing, and so do Loop and Record
     while they are on. One look should tell whether the song is playing.
     This applies in all three skins and uses their tokens.
+  - **Everything for analysis is recorded with each take (owner,
+    2026-11-05).** W0's saved take already holds the mic settings at the
+    start (`captureMicSettings` in `src/app/take-export.ts`) and the frames.
+    It loses what matters for tuning: in speaker mode a gated frame is
+    stored with f0=0, so its raw pitch is gone. Record:
+    - each frame's raw f0, clarity and rms, plus its gate result and the
+      reason it failed;
+    - the noise floor, mic state and bleed state over time (sampled about
+      4 times a second);
+    - a timed log of what happened during the take: play, pause, seek, loop,
+      mix or guide-level changes, mode and scoring changes, embed ads and
+      buffering, mic or monitor switches;
+    - the reference contour and `KeyMap` for the take's span, when the song
+      has them;
+    - what the browser actually granted (`MediaStreamTrack.getSettings()`),
+      the AudioContext sample rate and base and output latency, the user
+      agent, the skin, the settings that affect analysis, and the app
+      version (build-time commit hash);
+    - the calibration trials behind `latencyS`.
+    Keep it on the take record (optional fields, so older takes still load)
+    and in the JSON export (bump `TAKE_EXPORT_VERSION`). Nothing from it
+    renders in karaoke mode. Test the export shape and the event log in
+    unit tests.
   - Done when the checks and e2e are green (the fake YouTube in
     `e2e/fake-youtube.ts` answers the oEmbed check). Owner test: paste the
     link that failed and one that plays. Click the video to pause and
