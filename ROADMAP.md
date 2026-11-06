@@ -39,9 +39,9 @@ webcam or USB mic.
   and W1 (the reference step and the browser seams); older work in
   `docs/HISTORY.md`.
 - **In progress:** none.
-- **Next:** the owner's W0 and W0b tests and one protocol take run
-  through W0c's command (under each wave). The findings set the next
-  tuning wave. Then **W5** (needs a second person for its owner
+- **Next:** **W0d** (the Mic check in the app, which replaces the
+  hand-run W0c protocol), then the owner's W0, W0b and W0d tests. Then
+  **W5** (needs a second person for its owner
   test). Search needs the owner's YouTube Data API key
   (README, "Run it"; pasted into the app, never into chat).
 - **Blockers:** none for W5. YouTube now answers yt-dlp with "Sign in to
@@ -372,6 +372,52 @@ Tracks inside a wave share no files and may run in parallel.
     label.
   - Follow-up: `--crepe` has run only on synthetic sines, not on a real
     take.
+
+- [ ] **W0d: Mic check in the app** (owner, 2026-11-05: "build that into a
+  calibration setting"; running the command by hand "seems imprecise").
+  The app runs W0c's protocol itself, labels the sections, gets the
+  analysis from the service, and offers the tuned settings. Two tracks:
+  service and browser.
+  - **Guided steps** (a Mic check button beside Calibrate). Each step shows
+    one prompt, a countdown and the live meter:
+    1. Quiet room, 5 s: nothing plays and you stay silent. This measures
+       the noise floor.
+    2. Speakers only, 10 s: the app plays the test melody through the
+       chosen output at the song volume while you stay silent. This
+       measures bleed. In headphones mode it measures leakage.
+    3. Sing along, 15 s: the melody plays and you sing with it.
+    4. Sing alone, 10 s: nothing plays and you sing.
+    Cancel at any step. The check records like a take and runs in either
+    mode.
+  - **Test melody** (default): synthesised in the browser as a voice-like
+    harmonic tone with vibrato, in a comfortable range (low or high), and
+    played through the audio engine and the chosen output, so echo
+    cancellation sees it as the page's own audio. Its contour is the exact
+    reference. Option: use the loaded song instead, when it has a melody.
+  - **Labels in the trace:** the check's take carries `kind: 'mic-check'`
+    and a `sections` list (label, span) in its trace. The JSON export
+    gains them (version 3), and W0c's command reads them when no
+    `--section` is given.
+  - **Service:** `POST /takes/analyse` (multipart JSON and WAV, Pydantic
+    response) runs W0c's analysis, crepe included when the pitch extra is
+    installed. It returns the findings and recommended values: the draw
+    margin, the clarity threshold, the bleed rule, and the latency.
+  - **Settings:** the tunable constants become settings kept per device
+    pair, like `latencyByDevicePair`, defaulting to today's constants and
+    sanitised. The gate, the bleed detector and the meter read them.
+  - **Result card:** the findings in plain words, with before and after
+    numbers, a "Use these settings" button and "Reset to defaults". It
+    talks about the mic and the room only, never grades the singing, and
+    so is fine in karaoke mode. With the service down, the steps still run
+    and the take is saved. The card says the analysis needs the service
+    and offers Save WAV and Save JSON.
+  - Tests: unit tests for the melody generator (exact contour), the step
+    machine and the settings sanitiser; pytest for the endpoint and for
+    reading sections from the trace; e2e that runs the check with the fake
+    mic and a fake service answer, then applies the settings.
+  - Done when every check is green. Owner test: run the Mic check in
+    speaker mode, then in headphones mode, and report the card and whether
+    the ribbon behaves better after "Use these settings".
 
 - [x] **W1: Seams and the reference melody.** Two tracks, one commit.
   - **W1a, service: reference melody** (was P2-T3). New `reference` step
