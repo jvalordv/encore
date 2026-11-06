@@ -417,6 +417,36 @@ that installs it. It is stored as `<song_id>/reference.json` and served by
   resampler and decoder take about 15 s once); the model holds about 100 MB,
   and a chunk takes about 2 GB while it is decoded, given back afterwards.
 
+## Analyse a saved take
+
+Reads a take saved by the app (its `.json`, optionally its `.wav`) and prints
+a report of about 50 to 80 lines: a headline, the environment (what the
+browser granted the mic, latencies, calibration), a table of sections with a
+verdict each (silence, singer, likely bleed, unclear), the events, and a
+Processing part meant for development: an audit of the app's gate and bleed
+state against the raw frames, a latency check, a what-if sweep of the gate and
+bleed constants, and findings that name the constant and the number.
+
+```
+uv run python -m encore_service.take_analysis take.json --wav take.wav     --section 0-10:silent --section 10-30:sing --section 30-40:silent
+```
+
+- `--section A-B` is in seconds of *take time*, counted from the first frame
+  (it equals the WAV's clock when the song played straight through; the table
+  prints song time too). `:silent` or `:sing` says what you meant and feeds the
+  sweep; without it a section's class comes from its verdict.
+- `--window N` adds fixed windows (default 5 s, `0` for none); spans between
+  play, pause, seek, mix, monitor and input events are always added.
+- `--json out.json` writes the full result. `--crepe` (with `--wav`) also
+  compares the browser's pitch with torchcrepe's; it needs the `pitch` extra
+  and is skipped with one line when torchcrepe is missing.
+- A version 1 take, or one without a reference, still works; the report says
+  which numbers it cannot give. A bad file prints one line and exits 1.
+
+The rules for each verdict are in `encore_service/take_analysis/measure.py`.
+The app's constants it mirrors are checked against the TypeScript by
+`tests/test_take_analysis_constants.py`.
+
 ## Configuration
 
 Environment variables, all optional:

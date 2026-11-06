@@ -24,7 +24,11 @@ webcam or USB mic.
 
 ## Current state
 
-- **Last done:** **W0b** (2026-11-05): YouTube's controls hidden so
+- **Last done:** **W0c** (2026-11-05): `take_analysis` in the service
+  reads a saved take and reports sections, verdicts and processing
+  feedback for development: a decision audit, a crepe tracker check, a
+  latency check, a what-if sweep of the constants, and measured findings.
+  Before it **W0b** (2026-11-05): YouTube's controls hidden so
   Encore's are the only ones, held-down Play, Loop and Record, an oEmbed
   check that tells a blocked video from a missing one, the no-key Search
   line, and a full analysis trace with every take (raw frames with gate
@@ -35,7 +39,9 @@ webcam or USB mic.
   and W1 (the reference step and the browser seams); older work in
   `docs/HISTORY.md`.
 - **In progress:** none.
-- **Next:** the owner's W0 and W0b tests (under each wave), then **W5** (needs a second person for its owner
+- **Next:** the owner's W0 and W0b tests and one protocol take run
+  through W0c's command (under each wave). The findings set the next
+  tuning wave. Then **W5** (needs a second person for its owner
   test). Search needs the owner's YouTube Data API key
   (README, "Run it"; pasted into the app, never into chat).
 - **Blockers:** none for W5. YouTube now answers yt-dlp with "Sign in to
@@ -282,6 +288,90 @@ Tracks inside a wave share no files and may run in parallel.
   - Follow-up: the reference and key slices are unit-tested only; no
     recorded-take test covers them on the fake harness. Loop and Record's
     pressed look is checked by CSS only.
+
+- [x] **W0c: Analyse a saved take** (owner, 2026-11-05: "we absolutely
+  need to be able to analyze saved sections"; service only, Python). A
+  command that reads a take saved by W0 and W0b (the JSON, optionally the
+  WAV) and prints a short report. A session can then run it and read a
+  page of numbers instead of a large JSON file.
+  - `uv run python -m encore_service.take_analysis <take.json> [--wav
+    <take.wav>] [--section 0-10 --section 30-40 ...] [--window 5]
+    [--json <out.json>]`. Pydantic models read the export, versions 1 and
+    2, and a version-1 file says which numbers it cannot give.
+  - **Sections:** the given ranges, fixed windows, and the spans between
+    events (play, pause, seek, mix, monitor, input). Each section reports:
+    - frames, voiced share, gate pass share and the failure reasons;
+    - level (median and p90 dBFS) against the floor from the health
+      samples;
+    - against the reference, where the trace has it: the share within
+      30 c octave-exact, the share within 50 c any octave, the median error
+      and the best lag;
+    - the share of time the app's bleed state said suspected;
+    - one verdict: silence, singer, likely bleed, or unclear. The verdict
+      follows written rules: bleed tracks the melody tightly at a steady
+      lag, a singer is looser and drifts.
+  - **The rest of the report:** the environment (what the browser granted:
+    echo cancellation, noise suppression, gain control; the sample rate;
+    latencies; calibration confidence; monitor, mix, output, app version)
+    and a condensed event timeline. With the WAV: peak, clipped samples,
+    DC offset, and a check that the length and sample rate match the JSON.
+    A headline sums it up in one or two lines, such as "In the sections
+    you marked silent, 62 % of frames followed the melody within 30 c at
+    +40 ms: the speakers reached the mic."
+  - **Processing feedback (owner, 2026-11-05: "so you can better improve
+    the program and its processing capability; it is direct raw
+    feedback").** The report serves development, not the singer. It covers:
+    - a decision audit: frames the gate dropped that held clear pitch, and
+      frames it passed in silent or bleed sections;
+    - a tracker check of the browser frames against crepe on the WAV
+      (`--crepe`, when the pitch extra is installed): voicing agreement,
+      octave errors, cents difference, jitter on held notes;
+    - a latency check: the best lag against `latencyS` and the
+      calibration;
+    - a what-if sweep of the gate and bleed constants over the raw frames,
+      naming the settings that best separate the marked-silent sections
+      from the singing ones;
+    - a list of measured findings, each naming the constant or step and the
+      number behind it.
+  - The app's constants (`src/analysis/bleed.ts`, `src/analysis/mic-level.ts`)
+    are mirrored in Python, and a pytest reads the TS files and fails when
+    they drift.
+  - pytest uses synthetic takes with known answers: a bleed section, a
+    singer section, silence, a version-1 file. ruff stays clean.
+  - Done when the service checks and `npm run check` are green. Owner test:
+    record the protocol take (10 s silent with the song aloud, 20 s
+    singing, 10 s silent), save both files, and run the command with
+    `--section 0-10 --section 30-40`.
+  - Built (2026-11-05): package `service/encore_service/take_analysis/`
+    (22 small modules; the `processing/` subpackage holds the audit, sweep,
+    latency, tracker and findings). Tests are `service/tests/take_factory.py`
+    and `test_take_{analysis,processing,analysis_constants}.py`.
+    `--section A-B[:silent|:sing]` is in take time (seconds from the first
+    frame), and each section prints its song time too. The `:silent` and
+    `:sing` labels feed the sweep. Frame, health and reference times share
+    song time, with the latency already taken off. Event `songT` is the raw
+    position, so span edges subtract `latencyS`. A WAV sample maps to song
+    time as `startedAtSongS + i/rate - latencyS`. A positive bleed lag
+    means the latency is under-corrected, so the implied latency is
+    `latencyS + lag`. The tracker check (`--crepe`, CUDA here) compares
+    only the frames before the first pause, seek or loop. The bleed sweep
+    never recommends a rule that loses detection in the silent sections.
+    A 5-minute take analyses in about 1.2 s. Review fixes: the reference
+    array is built once, the bleed pick, the tracker cut at breaks, and
+    the span latency.
+  - Owner run (after W0b's test):
+    `cd service && uv run python -m encore_service.take_analysis
+    <take.json> --wav <take.wav> --section 0-10:silent --section
+    10-30:sing --section 30-40:silent --crepe`, then hand the report to a
+    session.
+  - Follow-up: sections and spans assume song time runs straight through.
+    A take with seeks needs a map from wall time to song time, built from
+    the event log.
+  - Follow-up: the bleed sweep can only count false alarms on singing
+    sections. A silent section has no ground truth beyond the owner's
+    label.
+  - Follow-up: `--crepe` has run only on synthetic sines, not on a real
+    take.
 
 - [x] **W1: Seams and the reference melody.** Two tracks, one commit.
   - **W1a, service: reference melody** (was P2-T3). New `reference` step
@@ -736,6 +826,7 @@ were.
 |---|---|---|---|
 | W0 Guide and mic diagnostics (measured) | 0.75 | 0.85 M | 20 min |
 | W0b Embed controls and take trace (measured) | 0.6 | 0.42 M | 15 min |
+| W0c Take analysis (measured) | 0.4 | 0.44 M | 10 min |
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |
@@ -743,7 +834,7 @@ were.
 | W5 Two singers | 1 (0.7-1.8) | about 0.7 M | 30 min, a second person |
 | W6 Synced lyrics | 0.4 (0.3-0.8) | about 0.3 M | 5 min |
 | W7 Test and sweep | 0.8 (0.6-1.5) | about 0.6 M | 45 min |
-| **Total** | **about 7.5 (6.5-10.5)** | **about 6.2 M** | **about 3 h** |
+| **Total** | **about 8 (7-11)** | **about 6.6 M** | **about 3.2 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The
 orchestrator's own reading adds about 100 to 200 thousand tokens per wave
