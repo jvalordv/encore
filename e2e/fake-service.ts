@@ -135,6 +135,8 @@ export interface FakeService {
   upload: SongStatus | Refusal;
   /** The answer to `GET /songs/{id}`. */
   status: SongStatus | Refusal;
+  /** The answer to `GET /songs`, the list the Library reads. */
+  songs: unknown[];
   /** The answers to `GET /songs/{id}/audio`, in turn; the last one repeats. */
   audio: AudioAnswer[];
   /** The answer to `GET /songs/{id}/stems/{stem}`. */
@@ -273,6 +275,7 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
     create: linkStatus(videoId, stepStatus('queued')),
     upload: fileStatus(UPLOAD_SONG_ID),
     status: linkStatus(videoId, stepStatus('queued')),
+    songs: [],
     audio: ['ok'],
     stems: 'ok',
     stemGain: STEM_GAIN,
@@ -289,6 +292,7 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
       service.create = linkStatus(id, stepStatus('queued'));
       service.upload = fileStatus(UPLOAD_SONG_ID);
       service.status = linkStatus(id, stepStatus('queued'));
+      service.songs = [];
       service.audio = ['ok'];
       service.stems = 'ok';
       service.stemGain = STEM_GAIN;
@@ -390,6 +394,8 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
       } else {
         await json(next ?? 404, { detail: next === 409 ? 'Song not fetched yet.' : 'No such song.' });
       }
+    } else if (method === 'GET' && path === '/songs') {
+      await json(200, service.songs);
     } else if (method === 'GET' && /^\/songs\/[^/]+$/.test(path)) {
       await answer(service.status);
     } else {

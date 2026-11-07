@@ -35,6 +35,8 @@ import { initialSearch } from './search';
 import type { PickedResult, SearchState } from './search';
 import { DEFAULT_GUIDE_LEVEL } from './settings';
 import type { PracticeMode, ScoringStyle } from './settings';
+import { initialLibrary } from './library-state';
+import type { LibraryState } from './library-state';
 import type { TakeSummary } from './takes';
 
 /** How loudly the status line should speak. */
@@ -105,6 +107,8 @@ export interface AppState {
   reference: ReferenceState;
   /** The song search: the chip, the words, the results, what to tell. */
   search: SearchState;
+  /** The Library of loaded songs and the favorites playlist. */
+  library: LibraryState;
   /**
    * Karaoke (never judges) or learning (scores against the original). Mirrors
    * `settings.mode`; the Session is the one that changes both.
@@ -183,6 +187,7 @@ export function initialState(): AppState {
     mix: initialMix(DEFAULT_GUIDE_LEVEL),
     reference: initialReference(),
     search: initialSearch('karaoke', false),
+    library: initialLibrary(),
     mode: 'karaoke',
     scoring: 'strict',
     noteGuide: false,

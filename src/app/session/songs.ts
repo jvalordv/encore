@@ -3,10 +3,12 @@
  * the one active Transport everything else reads. Owns the embed lifecycle
  * (the video that is the song, the one loading behind it), the load token that
  * lets a newer load win, the copy of the transport's state into the store and
- * the lane, and the status line's word on ads. Exactly one transport is
+ * the lane, and the status line's word on ads. Each song that loads, a file,
+ * a stored upload or a link, is noted in the Library, and a song's end is
+ * passed to it for the favorites playlist. Exactly one transport is
  * active; a load that fails leaves the song in use as it was.
  */
-import type { SongInfo } from '../../audio/player';
+import type { Player, SongInfo } from '../../audio/player';
 import { isRunning } from '../../audio/transport';
 import type { TrackInfo, Transport, TransportEvent, TransportState } from '../../audio/transport';
 import { loadYouTubeApi } from '../../audio/youtube-api';
@@ -15,6 +17,10 @@ import { checkEmbeddable, describeVerdict } from '../../audio/youtube-oembed';
 import { EmbedClosedError, YouTubeTransport } from '../../audio/youtube-transport';
 import type { EmbedHost } from '../../audio/youtube-transport';
 import { parseYouTubeUrl } from '../../audio/youtube-url';
+import { ServiceClient } from '../../service/client';
+import type { SongStatus } from '../../service/types';
+import { youtubeSongId } from '../library';
+import { describeServiceError } from '../prepare';
 import { describeLoadFailure, formatClock } from '../state';
 import type { SessionCore } from './core';
 import { messageOf, pageOrigin } from './helpers';
@@ -29,6 +35,8 @@ const TRANSPORT_EVENTS: readonly TransportEvent[] = [
   'loop',
   'state',
 ];
+/** A file name's audio extension, dropped to make the Library title. */
+const AUDIO_EXTENSION = /\.(mp3|wav|flac|ogg|oga|m4a|aac|opus|webm)$/i;
 /** Said while an advertisement is in the video player. */
 const AD_STATUS = 'An ad is playing in the video. Nothing is drawn or recorded until it ends.';
 /** The same, shorter, across the pitch lane. */
@@ -73,6 +81,53 @@ export class SongController {
 
   /** Decodes and loads a dropped or picked audio file. */
   async loadSong(file: File): Promise<void> {
+    await this.loadAudio(
+      file.name,
+      (player) => player.load(file),
+      () => this.core.stems.beginFile(file),
+      file.name,
+    );
+  }
+
+  /**
+   * Loads an upload the service still holds, by its song id: the audio comes
+   * back from the service and its karaoke track is followed from where the
+   * service has got to, with no second upload. With the service away the
+   * song is left as it was and the status line says why.
+   */
+  async loadStored(songId: string, name: string): Promise<void> {
+    const client = new ServiceClient({ baseUrl: this.core.current.serviceUrl });
+    let status: SongStatus | null = null;
+    await this.loadAudio(
+      name,
+      async (player) => {
+        try {
+          status = await client.getSong(songId);
+          const bytes = await client.fetchSongAudio(songId);
+          // Filed under the service's id, so takes and the Library match.
+          return await player.load(new Blob([bytes]), name, songId);
+        } catch (error) {
+          throw new Error(describeServiceError(error), { cause: error });
+        }
+      },
+      () => {
+        if (status) this.core.stems.follow(status);
+      },
+      name,
+    );
+  }
+
+  /**
+   * The shared road of a file or a stored upload: a newer load wins, a
+   * recording is finished, and the Player's song becomes the one in use.
+   * `decode` puts the audio in the Player; `begin` starts its karaoke track.
+   */
+  private async loadAudio(
+    label: string,
+    decode: (player: Player) => Promise<SongInfo>,
+    begin: () => void,
+    fileName: string,
+  ): Promise<void> {
     const { parts, store, takes } = this.core;
     if (!parts) return;
     const token = ++this.loadToken;
@@ -81,10 +136,10 @@ export class SongController {
     this.discardLoadingEmbed();
     this.core.prepare.cancelAttempt();
     if (store.state.recording) await takes.finishRecording();
-    store.setStatus(`Loading ${file.name}…`);
+    store.setStatus(`Loading ${label}…`);
     let info: SongInfo;
     try {
-      info = await parts.player.load(file);
+      info = await decode(parts.player);
     } catch (error) {
       this.reportLoadFailure(token, error);
       return;
@@ -100,7 +155,15 @@ export class SongController {
     takes.endReplay();
     this.core.lane?.clearFrames();
     // The file plays as it is; its karaoke track is made in the background.
-    this.core.stems.beginFile(file);
+    begin();
+    this.core.library.noteLoaded({
+      id: info.hash,
+      source: 'file',
+      title: fileName.replace(AUDIO_EXTENSION, ''),
+      videoId: null,
+      fileName,
+      durationS: info.durationS,
+    });
     await takes.refreshTakes();
     const next = store.state.input.open ? 'Press Space to play.' : 'Pick a microphone, then press Play.';
     store.setStatus(`Loaded ${info.name} (${formatClock(info.durationS)}). ${next}`);
@@ -202,6 +265,14 @@ export class SongController {
     // Said before the takes are read, so a message the player sends meanwhile
     // (it can still fail once cued) is the last word, not this one.
     const song = transport.info ?? info;
+    this.core.library.noteLoaded({
+      id: youtubeSongId(link.videoId),
+      source: 'youtube',
+      title: song.name,
+      videoId: link.videoId,
+      fileName: null,
+      durationS: song.durationS,
+    });
     const next = store.state.input.open ? 'Press Space to play.' : 'Pick a microphone, then press Play.';
     const length = song.durationS > 0 ? ` (${formatClock(song.durationS)})` : '';
     store.setStatus(`Loaded ${song.name}${length} from YouTube. ${next}`);
@@ -235,6 +306,8 @@ export class SongController {
     const breaksTake = event === 'seek' || event === 'ended' || transport.state !== 'playing';
     if (breaksTake && store.state.recording) void takes.finishRecording();
     if (event === 'seek') takes.resyncReplay();
+    // A looping video reports the end before it restarts, so it is not over.
+    if (event === 'ended' && !transport.loop) this.core.library.songEnded();
   }
 
   /**

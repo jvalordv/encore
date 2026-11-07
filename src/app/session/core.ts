@@ -11,12 +11,15 @@ import { PcmCapture } from '../../audio/capture';
 import type { YouTubeApi } from '../../audio/youtube-api';
 import { saveSettings } from '../settings';
 import type { Settings } from '../settings';
+import { memoryLibraryStore } from '../library';
+import type { LibraryStore } from '../library';
 import type { StateStore } from '../state';
 import type { KeyValueStore } from '../storage';
 import type { TakeStore } from '../takes';
 import { DeviceController } from './devices';
 import { FrameBus } from './frame-bus';
 import { InputController } from './input';
+import { LibraryController } from './library';
 import { LatencyController } from './latency';
 import { TickLoop } from './loop';
 import { MicCheckController } from './mic-check';
@@ -41,6 +44,8 @@ export interface SessionCoreInit {
   /** The audio objects, or null when the browser has no Web Audio. */
   parts: SessionParts | null;
   takes: Promise<TakeStore>;
+  /** The Library's storage; a memory store when left out. */
+  library?: Promise<LibraryStore>;
   youtubeApi?: () => Promise<YouTubeApi>;
   /** What the song search reaches out with (see SearchOptions). */
   search?: SearchOptions;
@@ -77,6 +82,7 @@ export class SessionCore {
   readonly mix: MixController;
   readonly stems: StemsController;
   readonly search: SearchController;
+  readonly library: LibraryController;
   readonly loop: TickLoop;
 
   constructor(init: SessionCoreInit) {
@@ -103,6 +109,7 @@ export class SessionCore {
     this.mix = new MixController(this);
     this.stems = new StemsController(this);
     this.search = new SearchController(this, init.search);
+    this.library = new LibraryController(this, init.library ?? Promise.resolve(memoryLibraryStore()));
     this.loop = new TickLoop(this);
 
     const sinkCapable = typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;

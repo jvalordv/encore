@@ -23,7 +23,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeVar, get_args
 
 from pydantic import BaseModel, Field
 
@@ -33,6 +33,7 @@ from encore_service.schemas import (
     SongSource,
     SongStatus,
     SongSteps,
+    SongSummary,
     StepName,
     StepStatus,
 )
@@ -223,6 +224,36 @@ class SongStore:
         folder = self.song_dir(song_id)
         with self._lock:
             _write_json(folder / META_FILE, meta)
+
+    def list_songs(self) -> list[SongSummary]:
+        """Every stored song, most recently written first."""
+        found: list[SongSummary] = []
+        for song_id in self._song_ids():
+            status = self.read_status(song_id)
+            if status is None:
+                continue
+            try:
+                updated = (self.root / song_id / STATUS_FILE).stat().st_mtime
+            except OSError:
+                updated = 0.0
+            done = [
+                name
+                for name in get_args(StepName)
+                if getattr(status.steps, name).state == "done"
+            ]
+            found.append(
+                SongSummary(
+                    id=song_id,
+                    name=status.title or song_id,
+                    source=status.source,
+                    duration_s=status.duration_s,
+                    steps_done=done,
+                    has_audio=self.source_path(song_id) is not None,
+                    updated_at=updated,
+                )
+            )
+        found.sort(key=lambda s: s.updated_at, reverse=True)
+        return found
 
     def source_path(self, song_id: str) -> Path | None:
         """The finished source audio file, or None if there is none yet."""

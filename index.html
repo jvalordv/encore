@@ -53,6 +53,9 @@
         <!-- Learning mode only: opens the Progress panel below. Wired by
              src/app/panels/progress.ts, which hides it in karaoke mode. -->
         <button type="button" id="progress-button" class="progress-button" data-testid="progress-button" aria-controls="progress" aria-expanded="false" hidden>Progress</button>
+        <!-- Opens the Library drawer (every loaded song, and the favorites).
+             Built by src/app/panels/library.ts. -->
+        <button type="button" id="library-toggle" data-testid="library-toggle" aria-controls="library" aria-expanded="false">Library</button>
         <div class="skin-picker">
           <label for="skin-switcher">Skin</label>
           <select id="skin-switcher"></select>
@@ -72,6 +75,10 @@
         <!-- Brings the search back over a loaded song; hidden while no song is
              loaded, because the search is then what the main area shows. -->
         <button type="button" id="search-toggle" data-testid="search-toggle" aria-controls="search" aria-expanded="true" hidden>Search for a song</button>
+        <!-- The song in use, starred or not, and the favorites playlist's
+             Previous and Next while it runs. Built by src/app/panels/library.ts. -->
+        <button type="button" id="favorite-toggle" data-testid="favorite-toggle" aria-pressed="false" title="Keep this song in your favorites" hidden>Favorite</button>
+        <div id="playlist-bar" class="playlist-bar" data-testid="playlist-bar" aria-label="Favorites playlist" hidden></div>
         <!-- Off unless ticked: a link is otherwise sent to the service only when
              Prepare for scoring is pressed. Preparing downloads the video's
              audio, which YouTube's terms restrict (service/README.md). -->
@@ -159,6 +166,10 @@
           <p id="take-empty" class="song-meta">No takes yet. Press Record and sing.</p>
         </section>
       </aside>
+
+      <!-- The Library drawer, over the page at the right. Built by
+           src/app/panels/library.ts. -->
+      <section id="library" class="library" data-testid="library" aria-label="Library" hidden></section>
 
       <div id="stage">
         <!-- Find a song: the first thing shown with no song loaded, and on

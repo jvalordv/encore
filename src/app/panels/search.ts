@@ -4,7 +4,8 @@
  * a chip (Karaoke versions or Originals) make a search; the results are a grid
  * of cards, each with a thumbnail, title, channel, length and a Karaoke or
  * Original badge; clicking a card loads it like a pasted link, and a karaoke
- * card also offers "Find the original". Below sits the field for the person's
+ * card also offers "Find the original". Below sit, until there is a key, the
+ * steps to get one ("Set up in-app search"), and the field for the person's
  * own YouTube API key. Everything drawn is a function of `state.search` (see
  * src/app/search.ts) and whether a song is loaded; the controls call the
  * Session's intents and hold no logic of their own. The panel knows the search
@@ -43,6 +44,16 @@ export const HINT_WITH_KEY = 'Search for a song, then pick a result to load it.'
 export const HINT_WITHOUT_KEY =
   "No API key is set, so Search opens YouTube's own search in a new tab: copy the link of the video you " +
   'pick into the link box. Paste a key below to search here.';
+
+/** The steps of the setup box, in the words of README.md ("Search for songs"). */
+export const SETUP_STEPS: readonly string[] = [
+  'In the Google Cloud console, create or pick a project and enable YouTube Data API v3 for it ' +
+    '(APIs & Services, Library).',
+  'Create an API key (APIs & Services, Credentials, Create credentials, API key).',
+  'Limit it to that API: under API restrictions choose YouTube Data API v3 only, and under ' +
+    'Application restrictions choose Websites with the address of this page.',
+  'Paste the key into the field below and press Save key. It stays in this browser and goes only to Google.',
+];
 
 /** Shown beside the button while no key is set, whatever else is said. */
 export const KEYLESS_WARNING = "YouTube's own results include videos that will not play here.";
@@ -152,7 +163,26 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
     session.setSearchKey('');
   });
 
-  host.append(title, form, hint, status, list, keyBox);
+  // Shown while there is no key: the way to in-app search, with YouTube's own
+  // results (the Search button above) as the way around it.
+  const setup = element(doc, 'details', 'search-setup', 'search-setup');
+  setup.open = true;
+  const setupSummary = doc.createElement('summary');
+  setupSummary.textContent = 'Set up in-app search';
+  const setupSteps = doc.createElement('ol');
+  for (const step of SETUP_STEPS) {
+    const li = doc.createElement('li');
+    li.textContent = step;
+    setupSteps.append(li);
+  }
+  const consoleLink = element(doc, 'a', 'search-setup-link');
+  consoleLink.href = 'https://console.cloud.google.com/';
+  consoleLink.target = '_blank';
+  consoleLink.rel = 'noopener';
+  consoleLink.textContent = 'Open the Google Cloud console';
+  setup.append(setupSummary, setupSteps, consoleLink);
+
+  host.append(title, form, hint, status, list, setup, keyBox);
 
   listen(toggle, 'click', () => {
     const opening = host.hidden;
@@ -244,6 +274,7 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
     list.hidden = search.results.length === 0;
 
     setText(keySummary, search.hasKey ? 'YouTube API key (saved)' : 'YouTube API key (not set)');
+    setup.hidden = search.hasKey;
     keyForget.hidden = !search.hasKey;
     keyInput.placeholder = search.hasKey ? 'Paste a new key to replace it' : 'Paste your key';
     // Open for a first key; once there is one the person decides.

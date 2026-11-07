@@ -23,6 +23,7 @@ import { domEmbedHost } from '../audio/youtube-transport';
 import { parseYouTubeUrl } from '../audio/youtube-url';
 import { mountKaraokePanel } from './panels/karaoke';
 import { mountKeyboardPanel } from './panels/keyboard';
+import { mountLibraryPanel } from './panels/library';
 import { mountMicCheckPanel } from './panels/mic-check';
 import { mountMicHealthPanel } from './panels/mic-health';
 import { mountModePanel } from './panels/mode';
@@ -395,6 +396,15 @@ export function mountUI(session: Session, root: Document = document): UI {
   cleanups.push(mountKeyboardPanel(get('keyboard'), { store, session }));
   cleanups.push(
     mountMicCheckPanel(get('mic-check'), { store, session, toggle: get<HTMLButtonElement>('mic-check-button') }),
+  );
+  cleanups.push(
+    mountLibraryPanel(get('library'), {
+      store,
+      session,
+      toggle: get<HTMLButtonElement>('library-toggle'),
+      star: get<HTMLButtonElement>('favorite-toggle'),
+      bar: get('playlist-bar'),
+    }),
   );
   cleanups.push(mountTakesPanel(get('takes'), { store, session }));
   cleanups.push(mountReportPanel(get('report'), { store, session }));

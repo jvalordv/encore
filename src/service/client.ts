@@ -3,7 +3,8 @@
  * docs/ARCHITECTURE.md and the routes in service/encore_service/routes/
  * songs.py). It wraps the calls the browser makes: `health` (is the service
  * running), `createSongFromUrl` (add a YouTube link), `uploadSong` (add a
- * file, with progress), `getSong` (one status), `fetchSongAudio` (the stored
+ * file, with progress), `getSong` (one status), `listSongs` (every stored
+ * song, for the Library), `fetchSongAudio` (the stored
  * audio), `fetchStem` (the vocal or the backing, with the gain they were
  * scaled by), `fetchReference` (the melody), `fetchKey` (the song's key),
  * `analyseTake` (a Mic check take) and `pollSong` (a status loop that
@@ -28,6 +29,7 @@ import type {
   Reference,
   SongLinkRequest,
   SongStatus,
+  SongSummary,
   StemName,
   StepName,
   StepState,
@@ -151,6 +153,19 @@ export function isSongStatus(value: unknown): value is SongStatus {
       Number.isFinite(step.progress)
     );
   });
+}
+
+/** True when `value` is a row of the song list this app can use. */
+export function isSongSummary(value: unknown): value is SongSummary {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    value.id !== '' &&
+    typeof value.name === 'string' &&
+    (value.source === 'file' || value.source === 'youtube') &&
+    Array.isArray(value.steps_done) &&
+    typeof value.has_audio === 'boolean'
+  );
 }
 
 /**
@@ -365,6 +380,14 @@ export class ServiceClient {
     const path = `/songs/${encodeURIComponent(id)}`;
     const limits = { timeoutMs: this.requestTimeoutMs, signal };
     return this.statusOf(await this.call(path, { method: 'GET' }, limits, readJson));
+  }
+
+  /** Every song the service holds, newest first; rows that cannot be read are left out. */
+  async listSongs(signal?: AbortSignal): Promise<SongSummary[]> {
+    const limits = { timeoutMs: this.requestTimeoutMs, signal };
+    const body = await this.call('/songs', { method: 'GET' }, limits, readJson);
+    if (!Array.isArray(body)) throw new ServiceError('unexpected', BAD_BODY_MESSAGE);
+    return body.filter(isSongSummary);
   }
 
   /** The song's stored audio, as the bytes of the file the service holds. */

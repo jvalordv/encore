@@ -12,7 +12,8 @@
  * store, the parts and the settings: songs and transports (songs.ts),
  * playback and loop (playback.ts), the service and prepared audio
  * (prepare.ts), the karaoke track from the service (stems.ts) and the mix of
- * its stems (mix.ts), the song search (search.ts), the mic (input.ts), devices
+ * its stems (mix.ts), the song search (search.ts), the Library and favorites
+ * playlist (library.ts), the mic (input.ts), devices
  * and output (devices.ts), latency and calibration (latency.ts), takes
  * (takes.ts) and learning mode (scoring.ts: the practice mode and scoring
  * style, the phrases marked free, the live grade of each frame and the report
@@ -55,6 +56,8 @@ import type { Transport } from '../audio/transport';
 import type { EmbedHost } from '../audio/youtube-transport';
 import type { LaneNote } from '../render/lane-geometry';
 import type { SearchFilter, SearchResult } from '../search';
+import { memoryLibraryStore, openLibraryStore } from './library';
+import type { LibraryView } from './library-state';
 import type { MixChoice } from './mix';
 import { SessionCore } from './session/core';
 import { buildParts } from './session/parts';
@@ -93,6 +96,7 @@ export class Session {
     const settingsStore = options.settings ?? localStorageStore();
     const settings = loadSettings(settingsStore);
     const takes = Promise.resolve(options.takes ?? openTakeStore()).catch(() => memoryTakeStore());
+    const library = Promise.resolve(options.library ?? openLibraryStore()).catch(() => memoryLibraryStore());
     this.parts = buildParts(this.store, settings.clarityThreshold);
     this.core = new SessionCore({
       store: this.store,
@@ -100,6 +104,7 @@ export class Session {
       settings,
       parts: this.parts,
       takes,
+      library,
       youtubeApi: options.youtubeApi,
       search: options.search,
     });
@@ -411,6 +416,78 @@ export class Session {
   /** Sets the clarity a frame needs to count as voiced (0..1). */
   setClarity(v: number): void {
     this.core.input.setClarity(v);
+  }
+
+  // ---- Library and favorites ----------------------------------------------
+
+  /** Shows or hides the Library panel. */
+  setLibraryOpen(open: boolean): void {
+    this.core.library.setOpen(open);
+  }
+
+  /** Chooses between the whole Library and the favorites. */
+  setLibraryView(view: LibraryView): void {
+    this.core.library.setView(view);
+  }
+
+  /** Loads a Library entry as the song; true once it is the song. */
+  loadLibraryEntry(id: string): Promise<boolean> {
+    return this.core.library.loadEntry(id);
+  }
+
+  /** Loads an upload that only the service holds. */
+  loadServiceSong(id: string): Promise<boolean> {
+    return this.core.library.loadServiceSong(id);
+  }
+
+  /** Stars a Library entry, or takes the star off. */
+  toggleFavorite(id: string): Promise<void> {
+    return this.core.library.toggleFavorite(id);
+  }
+
+  /** Moves a favorite one place up (-1) or down (+1). */
+  moveFavorite(id: string, step: -1 | 1): Promise<void> {
+    return this.core.library.moveFavorite(id, step);
+  }
+
+  /** Removes an entry from the Library; its takes are kept. */
+  removeLibraryEntry(id: string): Promise<void> {
+    return this.core.library.removeEntry(id);
+  }
+
+  /** Plays the favorites from the top, or from one entry. */
+  playFavorites(fromId?: string): Promise<void> {
+    return this.core.library.playFavorites(fromId);
+  }
+
+  /** Plays the next favorite. */
+  nextFavorite(): Promise<void> {
+    return this.core.library.next();
+  }
+
+  /** Plays the favorite before this one. */
+  previousFavorite(): Promise<void> {
+    return this.core.library.previous();
+  }
+
+  /** Ends the favorites playlist; the song plays on. */
+  stopFavorites(): void {
+    this.core.library.stopPlaylist();
+  }
+
+  /** Turns moving on to the next favorite at a song's end on or off. */
+  setAutoAdvance(on: boolean): void {
+    this.core.library.setAutoAdvance(on);
+  }
+
+  /** The favorites as a JSON file's text; null when there are none. */
+  exportFavorites(): string | null {
+    return this.core.library.exportText();
+  }
+
+  /** Adds the favorites in a JSON file's text; answers with what to tell. */
+  importFavorites(text: string): Promise<string> {
+    return this.core.library.importText(text);
   }
 
   // ---- Takes --------------------------------------------------------------
