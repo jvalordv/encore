@@ -65,6 +65,7 @@ import { StateStore } from './state';
 import { localStorageStore } from './storage';
 import type { TakeFileKind } from './take-export';
 import { memoryTakeStore, openTakeStore } from './takes';
+import type { TakeSummary } from './takes';
 
 export {
   DEFAULT_LOOP_S,
@@ -430,6 +431,11 @@ export class Session {
   /** A take as a WAV or JSON file to download; null if it cannot be read. */
   exportTake(id: string, kind: TakeFileKind): Promise<{ blob: Blob; name: string } | null> {
     return this.core.takes.exportFile(id, kind);
+  }
+
+  /** Summaries of the saved takes of every song, newest first (no payloads). */
+  async listAllTakes(): Promise<TakeSummary[]> {
+    return (await this.core.takesReady).list();
   }
 
   /** Stops the take, restores the song's level and pauses. */

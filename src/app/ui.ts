@@ -27,6 +27,7 @@ import { mountMicCheckPanel } from './panels/mic-check';
 import { mountMicHealthPanel } from './panels/mic-health';
 import { mountModePanel } from './panels/mode';
 import { mountNoteGuidePanel } from './panels/note-guide';
+import { mountProgressPanel } from './panels/progress';
 import { mountReportPanel } from './panels/report';
 import { mountSearchPanel } from './panels/search';
 import { mountTakesPanel } from './panels/takes';
@@ -397,6 +398,9 @@ export function mountUI(session: Session, root: Document = document): UI {
   );
   cleanups.push(mountTakesPanel(get('takes'), { store, session }));
   cleanups.push(mountReportPanel(get('report'), { store, session }));
+  cleanups.push(
+    mountProgressPanel(get('progress'), { store, session, toggle: get<HTMLButtonElement>('progress-button') }),
+  );
   // The song search is what the main area shows until a song is loaded.
   cleanups.push(
     mountSearchPanel(get('search'), { store, session, toggle: get<HTMLButtonElement>('search-toggle') }),

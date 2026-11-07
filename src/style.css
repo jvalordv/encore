@@ -997,3 +997,56 @@ button[aria-pressed='true'] {
   font-size: 0.85rem;
   cursor: pointer;
 }
+
+/* Learning mode's Progress panel: a sparkline and a few plain lines per
+   measure. Skin tokens only; it never colours a value as good or bad. */
+.progress-button[hidden],
+.progress[hidden] {
+  display: none;
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.progress-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-accent-2);
+}
+
+.progress-row h4,
+.progress-row p,
+.progress > p {
+  margin: 0;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.progress-spark {
+  max-width: 160px;
+  color: var(--color-accent);
+}
+
+.progress-numbers {
+  font-family: var(--font-mono);
+}
+
+.progress-note {
+  color: var(--color-text-muted);
+}
