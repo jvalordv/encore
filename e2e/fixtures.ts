@@ -15,8 +15,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encodeWav } from '../src/audio/wav';
 
-/** Port the built app is served on; playwright.config.ts starts it here. */
-export const PORT = 4173;
+/**
+ * Port the built app is served on; playwright.config.ts starts it here.
+ * E2E_PORT overrides it so parallel worktrees can run their suites at once.
+ */
+export const PORT = Number(process.env.E2E_PORT ?? 4173);
 
 /** Sample rate of both fixtures; matches the engine's 48 kHz context. */
 export const FIXTURE_RATE = 48000;
