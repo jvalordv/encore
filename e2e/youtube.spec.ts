@@ -105,7 +105,7 @@ test.beforeAll(async ({ browser }) => {
       body: FAKE_IFRAME_API.replace('__CONFIG__', config),
     });
   });
-  await context.route('https://www.youtube-nocookie.com/embed/**', (route) => {
+  await context.route('https://www.youtube.com/embed/**', (route) => {
     served.push(route.request().url());
     return route.fulfill({
       status: 200,
@@ -286,14 +286,14 @@ test('3. pasting a link anywhere loads it: the title, the length, a cued player 
   await expect(page.getByTestId('embed-offset')).toBeVisible();
   await expect(page.getByTestId('play')).toBeEnabled();
 
-  // The API script was fetched once, now; the iframe is in the nocookie host.
+  // The API script was fetched once, now; the iframe is in the main host.
   expect(served.filter((url) => url.endsWith('/iframe_api'))).toHaveLength(1);
   const iframe = page.locator('#embed-player iframe');
   await expect(iframe).toHaveCount(1);
-  await expect(iframe).toHaveAttribute('src', new RegExp(`^https://www\\.youtube-nocookie\\.com/embed/${VIDEO}\\?`));
+  await expect(iframe).toHaveAttribute('src', new RegExp(`^https://www\\.youtube\\.com/embed/${VIDEO}\\?`));
 
   const fake = await fakeHandle(0);
-  expect(fake.options.host).toBe('https://www.youtube-nocookie.com');
+  expect(fake.options.host).toBe('https://www.youtube.com');
   expect(fake.options.videoId).toBe(VIDEO);
   expect(fake.options.playerVars).toEqual({
     enablejsapi: 1,

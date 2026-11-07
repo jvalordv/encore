@@ -63,7 +63,7 @@ test.beforeAll(async ({ browser }) => {
       body: FAKE_IFRAME_API.replace('__CONFIG__', config),
     });
   });
-  await context.route('https://www.youtube-nocookie.com/embed/**', (route) =>
+  await context.route('https://www.youtube.com/embed/**', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'text/html',

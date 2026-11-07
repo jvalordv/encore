@@ -20,7 +20,7 @@ import type {
 import {
   AUTOPLAY_BLOCKED,
   EmbedClosedError,
-  NOCOOKIE_HOST,
+  EMBED_HOST,
   POLL_MS,
   READY_TIMEOUT_MS,
   SETTLE_MS,
@@ -235,10 +235,10 @@ describe('describeYouTubeError', () => {
 });
 
 describe('YouTubeTransport.load', () => {
-  it('builds the player in the nocookie host with the documented variables and no autoplay', async () => {
+  it('builds the player in the main host with the documented variables and no autoplay', async () => {
     const t = await loaded();
-    expect(NOCOOKIE_HOST).toBe('https://www.youtube-nocookie.com');
-    expect(t.player.options.host).toBe('https://www.youtube-nocookie.com');
+    expect(EMBED_HOST).toBe('https://www.youtube.com');
+    expect(t.player.options.host).toBe('https://www.youtube.com');
     expect(t.player.options.videoId).toBe(VIDEO);
     expect(t.player.options.width).toBe('100%');
     expect(t.player.options.height).toBe('100%');

@@ -21,7 +21,7 @@
  *   active one. The app mutes it (`mute`) and moves it with the ordinary
  *   controls from embed-follower.ts, so it stays a picture of the song.
  *
- * The player lives in the nocookie host (privacy-enhanced mode). The DOM is
+ * The player lives in the main YouTube host (see EMBED_HOST). The DOM is
  * reached only through an injected EmbedHost, and time and timers are
  * injectable, so the whole class runs under test with a fake player.
  */
@@ -32,8 +32,8 @@ import type { LoopRegion, TrackInfo, Transport, TransportEvent, TransportState }
 import { API_UNREACHABLE, YT_STATE } from './youtube-api';
 import type { YouTubeApi, YouTubePlayer, YouTubePlayerEvent } from './youtube-api';
 
-/** The privacy-enhanced embed host; sets no cookies until playback. */
-export const NOCOOKIE_HOST = 'https://www.youtube-nocookie.com';
+/** The embed host: the main one, so the singer's YouTube sign-in reaches it. */
+export const EMBED_HOST = 'https://www.youtube.com';
 
 /**
  * How often the transport checks the player for changes events may miss, and
@@ -338,7 +338,7 @@ export class YouTubeTransport implements Transport {
       this.readyTimer = this.timers.setTimeout(() => this.failLoad(API_UNREACHABLE), READY_TIMEOUT_MS);
       try {
         this.player = new this.api.Player(mount.element, {
-          host: NOCOOKIE_HOST,
+          host: EMBED_HOST,
           videoId,
           width: '100%',
           height: '100%',

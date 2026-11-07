@@ -109,9 +109,13 @@ so learning mode when it is up. Scoring and tips run in the browser.
     calls its alignment approximate, until the owner-side timing on a
     visible page and the constant output offset are measured; then this
     line is revisited.
-  - *Host.* `https://www.youtube-nocookie.com` (privacy-enhanced mode):
-    it loads from localhost like the main host and sets no cookies until
-    playback, which suits a local-first app.
+  - *Host (owner, 2026-11-06).* `https://www.youtube.com` (`EMBED_HOST`).
+    It was `www.youtube-nocookie.com` (privacy-enhanced mode) until
+    YouTube began asking this machine to "sign in to confirm you're not a
+    bot". The no-cookie host never receives the youtube.com sign-in, so
+    signing in looped back to the same check. The main host gets the
+    sign-in and clears it; the cost is YouTube's usual cookies once a video
+    plays.
   - *Latency.* Calibration measures our own output path with our chirp. The
     embed adds a path we cannot play a chirp through, so it gets its own
     setting, `embedOffsetS` (default 0, clamped to plus or minus 0.5 s),
