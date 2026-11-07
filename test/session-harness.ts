@@ -213,6 +213,7 @@ export function fakeLane(): LaneSink & {
   setRange: ReturnType<typeof vi.fn>;
   setFreePhrases: ReturnType<typeof vi.fn>;
   setPhraseClick: ReturnType<typeof vi.fn>;
+  setKeyboard: ReturnType<typeof vi.fn>;
 } {
   return {
     setTime: vi.fn(),
@@ -225,6 +226,7 @@ export function fakeLane(): LaneSink & {
     setRange: vi.fn(),
     setFreePhrases: vi.fn(),
     setPhraseClick: vi.fn(),
+    setKeyboard: vi.fn(),
   };
 }
 

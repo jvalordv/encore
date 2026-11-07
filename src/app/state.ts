@@ -114,6 +114,8 @@ export interface AppState {
   scoring: ScoringStyle;
   /** Whether karaoke mode's note guide is on. Mirrors `settings.noteGuide`. */
   noteGuide: boolean;
+  /** Whether the lane's keyboard view is on. Mirrors `settings.keyboard`. */
+  keyboard: boolean;
   /** What the note guide reads now; null with the guide off or no voice. */
   guideReading: GuideNote | null;
   /** What the song panel knows about the song's key, which Open scores against. */
@@ -184,6 +186,7 @@ export function initialState(): AppState {
     mode: 'karaoke',
     scoring: 'strict',
     noteGuide: false,
+    keyboard: true,
     guideReading: null,
     key: initialKey(),
     freePhrases: [],

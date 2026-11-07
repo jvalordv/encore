@@ -42,6 +42,7 @@ describe('DEFAULT_SETTINGS', () => {
       scoring: 'strict',
       guideLevel: 0.5,
       noteGuide: false,
+      keyboard: true,
       searchProvider: 'youtube',
       youtubeApiKey: '',
     });
@@ -107,6 +108,7 @@ describe('loadSettings', () => {
       scoring: 'strict',
       guideLevel: 0.5,
       noteGuide: false,
+      keyboard: true,
       searchProvider: 'youtube',
       youtubeApiKey: '',
     });
@@ -262,6 +264,7 @@ describe('saveSettings', () => {
     scoring: 'open',
     guideLevel: 0.25,
     noteGuide: true,
+    keyboard: false,
     searchProvider: 'youtube',
     youtubeApiKey: 'AIzaSyExample_key-123',
   };
@@ -449,6 +452,16 @@ describe('song search settings', () => {
     const store = memoryStore();
     saveSettings(store, { ...DEFAULT_SETTINGS, youtubeApiKey: 'not a key' });
     expect(JSON.parse(store.get('settings') ?? 'null').youtubeApiKey).toBe('');
+  });
+});
+
+describe('the keyboard setting', () => {
+  it('is on by default and keeps only a real boolean', () => {
+    expect(DEFAULT_SETTINGS.keyboard).toBe(true);
+    expect(sanitizeSettings({ keyboard: false }).keyboard).toBe(false);
+    for (const bad of ['no', 0, null, {}]) {
+      expect(sanitizeSettings({ keyboard: bad }).keyboard, String(bad)).toBe(true);
+    }
   });
 });
 

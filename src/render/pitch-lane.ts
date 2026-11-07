@@ -6,8 +6,9 @@
  * no note, the contour as a soft band, the target notes as bars;
  * lane-reference.ts), a band behind each phrase marked free (learning mode only;
  * lane-free.ts), one live f0 ribbon per singer (lane-ribbon.ts), the hit
- * colours over the ribbons (learning mode only; lane-overlay.ts), and the
- * overlay with the notice and the playhead. A Shift+click on a phrase reports
+ * colours over the ribbons (learning mode only; lane-overlay.ts), the
+ * keyboard view over the gutter (lit key and voice marker, when on;
+ * lane-keyboard.ts), and the overlay with the notice and the playhead. A Shift+click on a phrase reports
  * its span so the session can mark it free (a plain click is left alone). The lane scrolls
  * with song time, so what the singer sees at the playhead is what they are
  * singing now and what is coming sits to its right. A one-line notice can be
@@ -36,6 +37,7 @@ import {
 import type { LaneFrame, LaneOptions, LaneReference, LaneView } from './lane-geometry';
 import { drawFreeBands, phraseAtX } from './lane-free';
 import { drawGrid } from './lane-grid';
+import { drawKeyboard } from './lane-keyboard';
 import { drawCaption, drawGrades, drawPlayhead } from './lane-overlay';
 import { drawReference } from './lane-reference';
 import { drawRibbon } from './lane-ribbon';
@@ -107,6 +109,7 @@ export class PitchLane {
   private reference: LaneReference | null = null;
   private phrases: Phrase[] = [];
   private freeSpans: Span[] = [];
+  private keyboard = true;
   private onPhraseClick: ((span: Span) => void) | null = null;
   private notice: string | null = null;
   private now = 0;
@@ -130,6 +133,7 @@ export class PitchLane {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('2D canvas is not available');
     this.ctx = ctx;
+    canvas.dataset.keyboard = 'on';
     const container = isElement(second) ? second : undefined;
     const options = (isElement(second) ? third : second) ?? {};
     this.container = container ?? canvas.parentElement ?? canvas;
@@ -205,6 +209,13 @@ export class PitchLane {
       this.fitted = false;
       this.setRange(this.baseLow, this.baseHigh);
     }
+    this.loop.invalidate();
+  }
+
+  /** Turns the keyboard view (lit key, voice marker) on or off. */
+  setKeyboard(on: boolean): void {
+    this.keyboard = on;
+    this.canvas.dataset.keyboard = on ? 'on' : 'off';
     this.loop.invalidate();
   }
 
@@ -296,6 +307,9 @@ export class PitchLane {
     drawGrades(ctx, view, this.style, traces[1], gutter);
     ctx.restore();
 
+    if (this.keyboard) {
+      drawKeyboard(ctx, view, this.style, this.reference?.notes, [traces[0], traces[1]], gutter);
+    }
     drawCaption(ctx, view, this.style, this.notice, empty, gutter);
     drawPlayhead(ctx, view, this.style, gutter);
   }

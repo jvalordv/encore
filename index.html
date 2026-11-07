@@ -47,6 +47,9 @@
              src/app/panels/note-guide.ts, which also draws the readout in
              the lane. -->
         <div id="note-guide" class="note-guide" data-testid="note-guide"></div>
+        <!-- The lane's keyboard view toggle, in both modes. Built by
+             src/app/panels/keyboard.ts. -->
+        <div id="keyboard" class="keyboard" data-testid="keyboard"></div>
         <div class="skin-picker">
           <label for="skin-switcher">Skin</label>
           <select id="skin-switcher"></select>
@@ -166,7 +169,7 @@
         </section>
 
         <main id="pitch-lane" aria-label="Pitch lane">
-          <canvas id="lane-canvas"></canvas>
+          <canvas id="lane-canvas" data-testid="lane-canvas"></canvas>
           <div id="pitch-readout" class="pitch-readout" data-testid="pitch-readout" hidden>
             <div class="pitch-note"><span id="pitch-note" data-testid="pitch-note"></span> <span id="pitch-cents" class="pitch-cents"></span></div>
             <div class="tuner" aria-hidden="true"><div id="tuner-marker" class="tuner-marker"></div></div>

@@ -18,7 +18,7 @@
  * song, and its karaoke track, as they were.
  */
 import type { ScoreReference } from '../../analysis/score';
-import type { LaneReference } from '../../render/lane-geometry';
+import type { LaneNote, LaneReference } from '../../render/lane-geometry';
 import { isAbortError, ServiceClient, ServiceError, settledThrough } from '../../service/client';
 import type { KeyMap, Reference, SongStatus, SongSteps } from '../../service/types';
 import { initialKaraoke } from '../karaoke';
@@ -111,6 +111,12 @@ export class StemsController {
   checkService(): void {
     const file = this.heldFile;
     if (file && this.core.store.state.karaoke.phase === 'unavailable') void this.runFile(file);
+  }
+
+  /** The song's own melody notes, for saving as MIDI; null without a melody. */
+  melodyNotes(): readonly LaneNote[] | null {
+    const notes = this.laneReference?.notes;
+    return notes && notes.length > 0 ? notes : null;
   }
 
   /** The reference melody's pitch track, for the bleed check; null without one. */

@@ -53,6 +53,7 @@ import type { MelodyRange } from '../analysis/test-melody';
 import type { MonitorMode } from '../audio/mic';
 import type { Transport } from '../audio/transport';
 import type { EmbedHost } from '../audio/youtube-transport';
+import type { LaneNote } from '../render/lane-geometry';
 import type { SearchFilter, SearchResult } from '../search';
 import type { MixChoice } from './mix';
 import { SessionCore } from './session/core';
@@ -130,6 +131,7 @@ export class Session {
   attachLane(lane: LaneSink): void {
     this.core.lane = lane;
     lane.setTime(this.core.songs.currentPosition());
+    lane.setKeyboard(this.core.current.keyboard);
     this.core.stems.syncLane();
     this.core.scoring.syncLane();
   }
@@ -212,6 +214,22 @@ export class Session {
   /** Sets, and remembers, the original vocal's level in the guide mix (0..1). */
   setGuideLevel(level: number): void {
     this.core.mix.setGuideLevel(level);
+  }
+
+  /** Shows or hides the lane's piano keyboard view, remembering the choice. */
+  setKeyboard(on: boolean): void {
+    const { core } = this;
+    core.current.keyboard = on;
+    core.persist();
+    core.lane?.setKeyboard(on);
+    core.store.patch({ keyboard: on });
+  }
+
+  /** The loaded song's melody notes and name, for Save melody; null without notes. */
+  melodyForExport(): { name: string; notes: readonly LaneNote[] } | null {
+    const notes = this.core.stems.melodyNotes();
+    if (!notes) return null;
+    return { name: this.core.parts?.player.info?.name ?? 'song', notes };
   }
 
   /** Turns karaoke mode's note guide (a neutral nearest-note readout) on or off. */

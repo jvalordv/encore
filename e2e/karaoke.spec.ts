@@ -206,6 +206,21 @@ test('2. the stems arrive and Karaoke is the mix, with the melody read after the
   expect(state.karaoke.phase).toBe('ready');
   await expect(lines()).toBeHidden();
   expect(service.count('GET', `/songs/${SONG_ID}/reference`)).toBe(1);
+
+  // The keyboard view is on, and the melody can be saved as a MIDI file.
+  await expect(page.getByTestId('lane-canvas')).toHaveAttribute('data-keyboard', 'on');
+  await expect(page.getByTestId('keyboard-toggle')).toBeChecked();
+  const download = page.waitForEvent('download');
+  await page.getByTestId('save-melody').click();
+  const saved = await download;
+  expect(saved.suggestedFilename()).toMatch(/-melody\.mid$/);
+  const stream = await saved.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(chunk as Buffer);
+  expect(Buffer.concat(chunks).subarray(0, 4).toString('latin1')).toBe('MThd');
+  await page.getByTestId('keyboard-toggle').uncheck();
+  await expect(page.getByTestId('lane-canvas')).toHaveAttribute('data-keyboard', 'off');
+  await page.getByTestId('keyboard-toggle').check();
 });
 
 test('3. the stems join a song that is playing without a seek, a stop or a restart', async () => {

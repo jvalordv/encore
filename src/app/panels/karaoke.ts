@@ -7,9 +7,11 @@
  * the guide is chosen. Everything drawn is a function of `state.karaoke`,
  * `state.reference` and `state.mix` through `describeKaraoke`
  * (src/app/karaoke.ts); the buttons and the slider call the Session's `setMix`
- * and `setGuideLevel`. Karaoke mode shows nothing here about the singing.
+ * and `setGuideLevel`. Under the melody line, Save melody (.mid) downloads the
+ * notes as a MIDI file while a melody exists. Karaoke mode shows nothing here about the singing.
  */
 import { describeKaraoke } from '../karaoke';
+import { saveMelody } from '../melody-download';
 import { MIX_CHOICES, MIX_LABELS } from '../mix';
 import type { MixChoice } from '../mix';
 import type { Session } from '../session';
@@ -19,7 +21,7 @@ import type { MountPanel } from './panel';
 /** What the panel needs: the state to draw, and the two intents it calls. */
 export interface KaraokePanelDeps {
   store: StateStore;
-  session: Pick<Session, 'setMix' | 'setGuideLevel'>;
+  session: Pick<Session, 'setMix' | 'setGuideLevel' | 'melodyForExport'>;
 }
 
 /** The keys of the state the panel is drawn from. */
@@ -50,6 +52,17 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
   note.setAttribute('role', 'status');
   note.setAttribute('aria-live', 'polite');
   const melody = element(doc, 'p', 'reference-status', 'karaoke-note song-meta');
+
+  const save = element(doc, 'button', 'save-melody');
+  save.type = 'button';
+  save.textContent = 'Save melody (.mid)';
+  save.title = 'Download the melody as a MIDI file, to open in any MIDI player.';
+  const onSave = (): void => {
+    const melodyOut = session.melodyForExport();
+    if (melodyOut) saveMelody(doc, melodyOut.name, melodyOut.notes);
+  };
+  save.addEventListener('click', onSave);
+  cleanups.push(() => save.removeEventListener('click', onSave));
 
   const mixBox = element(doc, 'div', 'mix', 'karaoke-mix');
   const mixLabel = doc.createElement('span');
@@ -87,7 +100,7 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
   cleanups.push(() => guide.removeEventListener('input', onGuide));
   mixBox.append(mixLabel, mixButtons, guideLabel, guide);
 
-  host.append(title, lines, note, melody, mixBox);
+  host.append(title, lines, note, melody, save, mixBox);
 
   let linesSignature = '';
   const setText = (el: HTMLElement, text: string): void => {
@@ -117,6 +130,8 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
     melody.hidden = view.melody === '';
     melody.dataset.phase = state.reference.phase;
     melody.dataset.notes = String(state.reference.notes);
+    save.hidden = state.reference.phase !== 'ready';
+    save.disabled = state.reference.notes === 0;
 
     mixBox.hidden = !view.mixVisible;
     for (const [choice, button] of buttons) {

@@ -80,6 +80,8 @@ export interface Settings {
    * and the cents off it. Off unless the singer turns it on.
    */
   noteGuide: boolean;
+  /** Whether the lane shows the piano keyboard view (lit key, voice marker). */
+  keyboard: boolean;
   /** Which search provider answers the song search; only 'youtube' exists. */
   searchProvider: SearchProviderId;
   /**
@@ -117,6 +119,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   scoring: 'strict',
   guideLevel: DEFAULT_GUIDE_LEVEL,
   noteGuide: false,
+  keyboard: true,
   searchProvider: 'youtube',
   youtubeApiKey: '',
 });
@@ -242,6 +245,7 @@ export function sanitizeSettings(value: unknown): Settings {
     scoring: scoringStyle(raw.scoring),
     guideLevel: guide(raw.guideLevel),
     noteGuide: typeof raw.noteGuide === 'boolean' ? raw.noteGuide : DEFAULT_SETTINGS.noteGuide,
+    keyboard: typeof raw.keyboard === 'boolean' ? raw.keyboard : DEFAULT_SETTINGS.keyboard,
     searchProvider: searchProviderId(raw.searchProvider),
     youtubeApiKey: apiKey(raw.youtubeApiKey),
   };

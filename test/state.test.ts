@@ -66,6 +66,7 @@ describe('initialState', () => {
       mode: 'karaoke',
       scoring: 'strict',
       noteGuide: false,
+      keyboard: true,
       guideReading: null,
       key: { phase: 'none', message: '' },
       freePhrases: [],
@@ -753,6 +754,7 @@ describe('Session without Web Audio', () => {
       setRange: vi.fn(),
       setFreePhrases: vi.fn(),
       setPhraseClick: vi.fn(),
+      setKeyboard: vi.fn(),
     };
     session.attachLane(lane);
     expect(lane.setTime).toHaveBeenCalledWith(0);

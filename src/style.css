@@ -986,3 +986,14 @@ button[aria-pressed='true'] {
   font-weight: 400;
   color: var(--color-text-muted);
 }
+
+/* The keyboard view toggle and the melody download sit with the other lane controls. */
+.keyboard-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  cursor: pointer;
+}

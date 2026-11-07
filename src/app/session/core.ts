@@ -112,6 +112,7 @@ export class SessionCore {
       mode: this.current.mode,
       scoring: this.current.scoring,
       noteGuide: this.current.noteGuide,
+      keyboard: this.current.keyboard,
     });
     this.store.patchSection('input', {
       deviceId: this.current.inputDeviceId,

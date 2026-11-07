@@ -24,7 +24,12 @@ webcam or USB mic.
 
 ## Current state
 
-- **Last done:** **W0d** (2026-11-05): a Mic check beside Calibrate. It
+- **Last done:** **W0e** (2026-11-06): a live keyboard over the lane's
+  gutter, with the melody's key lit, a voice marker at the exact pitch
+  joined to the ribbon, a Keyboard toggle, and "Save melody (.mid)". The
+  YouTube player also moved to youtube.com so the sign-in clears the bot
+  check (2026-11-06). Before it **W0d** (2026-11-05): a Mic check beside
+  Calibrate. It
   runs four guided steps over a synthesised test melody, labels them,
   gets W0c's analysis from the service (`POST /takes/analyse`), and offers
   "Use these settings" for the gate, the bleed rule and the latency per
@@ -44,11 +49,17 @@ webcam or USB mic.
   and W1 (the reference step and the browser seams); older work in
   `docs/HISTORY.md`.
 - **In progress:** none.
-- **Next:** the owner's tests for W0, W0b and W0d (under each wave): Mic
-  check in speaker and headphone modes. The card's findings set the next
-  tuning wave. Then
-  **W5** (needs a second person for its owner
-  test). Search needs the owner's YouTube Data API key
+- **Next:** **WL1** (learning feedback on any song, with no melody
+  needed: the owner's priority), **WL2** (progress over time), **WL3** (a
+  melody for YouTube songs: capture while it plays, plus the downloader
+  as a backup, both used together where possible), then **W0f** (library and
+  favorites), **W0g** (backing music as
+  notes), **W5**, **W6**, **W6b** (range and key), **W6c** (settings
+  panel), **W6d** (fun extras), then the owner's **W7**. The owner asked
+  to chain these in one session, 2026-11-06. W5's owner test needs a
+  second person. The owner's tests for W0, W0b and W0d (Mic check in
+  speaker and headphone modes) can run at any time; the card's findings
+  set a tuning wave. Search needs the owner's YouTube Data API key
   (README, "Run it"; pasted into the app, never into chat).
 - **Blockers:** none for W5. YouTube now answers yt-dlp with "Sign in to
   confirm you're not a bot" (2026-10-28, seven tries on Big Buck Bunny), so
@@ -461,6 +472,181 @@ Tracks inside a wave share no files and may run in parallel.
   - Follow-up: the three skins and the narrow window were not looked at
     in a browser.
 
+- [x] **W0e: Keyboard view and melody MIDI** (owner, 2026-11-06: "auto
+  transpose music to midi and then have that play on the keyboard ... a
+  line show where the singer's voice falls note wise on the keyboard, for
+  a nice broad visual representation"). Owner decisions, 2026-11-06: the
+  melody and the voice first (transcribing the backing music is Later),
+  visual only (no piano sound). Browser only, one track.
+  - **Keyboard:** a piano keyboard down the lane's left edge, its keys
+    lined up with the lane's semitone rows (`midiToY`, `isBlackKey` and
+    the gutter in `src/render/lane-geometry.ts`), following the lane's
+    range. The melody's key lights up while its note sounds at the
+    playhead (from the reference notes, `LaneNote`). The singer's pitch
+    shows as a marker at its exact, unrounded height, joined to the
+    ribbon by a short line, and the nearest key glows softly. In karaoke
+    mode the colours are neutral, with no hit or miss, the same rule as
+    the note guide. Learning mode may use the existing grade colours. A
+    `keyboard` setting, on by default, turns it off. It works in all
+    three skins with their tokens and stays readable in a narrow window.
+  - **Melody as MIDI:** a "Save melody (.mid)" button where the song's
+    melody is shown, when a reference exists. It writes a Standard MIDI
+    File, type 0, timed so that 1 tick = 1 ms (tempo 60 bpm at 1000 ticks
+    per quarter), with one note per reference note, rounded to the
+    nearest semitone. The pitch bend for the cents is left out.
+  - Tests: the key layout against the lane rows; the marker height from
+    f0; the lit key at a time; the MIDI encoder (exact bytes for a two-note
+    case, and a round trip through a small parser in the test).
+  - Done when the checks and e2e are green (one e2e: the keyboard renders
+    with a melody and the .mid downloads). Owner test: sing over a
+    prepared song and say whether the keyboard reads well at a glance;
+    open the .mid in any MIDI player.
+  - Built (2026-11-06): `src/render/lane-keyboard.ts`, a live layer over
+    the existing piano gutter in `lane-grid.ts`. The lit key is the
+    reference colour at 65 % alpha, so the C labels stay readable. The
+    lit key is found by binary search (`overlappingRange`). The marker
+    uses only the newest frame at or before now, so it disappears as soon
+    as the singer stops or the gate closes. A karaoke frame has no grade,
+    so the marker takes the singer's colour. Also
+    `src/audio/midi-file.ts` (type 0, 1 tick = 1 ms; a same-key overlap
+    is cut, and a same-tick repeat replaces the earlier note),
+    `src/app/panels/keyboard.ts` and `src/app/melody-download.ts`. The
+    lane canvas exposes `data-keyboard`. Review fixes: the lingering
+    marker, a same-tick MIDI double on, and the missing tests (a fake DOM
+    helper is in `test/fake-dom.ts`).
+  - Follow-up: the keyboard has not been looked at in the three skins or
+    a narrow window.
+
+- [ ] **WL1: Learning feedback on any song** (owner, 2026-11-06: "get
+  the learning mode built out so we can get some feedback; that's the
+  whole point of this in the first place"). Today learning mode scores
+  only against a prepared song's melody. A YouTube link cannot be prepared
+  while YouTube's bot check blocks the downloader, and a karaoke video has
+  no vocal to take a melody from. So on the owner's usual songs learning
+  mode says nothing. This wave makes it give measured feedback with no
+  melody at all. Browser only.
+  - **The voice alone:** from the take's frames, segment notes (the
+    W3 rule in `docs/COACHING.md`) and measure, per note and per take:
+    - intonation against the nearest note (or the nearest scale tone when
+      a `KeyMap` exists, else a key estimated from the sung notes
+      themselves, labelled as estimated): the sharp or flat bias and the
+      share of notes within ±25 c and ±50 c;
+    - stability on held notes (over 400 ms): the std of cents;
+    - scoops into notes (the first 150 ms against the steady part);
+    - drift over long notes (the slope in cents per second);
+    - vibrato (rate, extent, regularity) where present;
+    - range used (p10 to p90), and phrase lengths and breath gaps.
+  - **Live:** in learning mode with no melody, the lane colours the ribbon
+    by cents from the nearest note (or scale tone), like a tuner. The
+    existing grade colours apply.
+  - **Report card:** a "Your voice" section beside the melody scores (or
+    alone when there is no melody), with the worst notes jumpable and
+    replayable like today's worst phrases. New tips from the same rule
+    engine (`src/coach/tips.ts`): `drift`, `vibrato_wide`,
+    `vibrato_irregular`, `short_phrases`, and reuse of `scoop`,
+    `flat_bias`, `sharp_bias` and `unstable_sustain` without a reference.
+    Every tip names its number.
+  - Update `docs/COACHING.md` ("What we measure", "Tips") to match.
+  - Tests: each measure on synthetic contours with known answers (a 6 Hz
+    ±50 c vibrato, a 30 c/s drift, a 100 c scoop, a steady sharp bias),
+    the estimated key, and the tips firing past their thresholds only.
+    One e2e: learning mode on a YouTube link with the fake mic gives a
+    card with "Your voice".
+  - Owner test: sing a YouTube karaoke video in learning mode and say
+    which tips ring true.
+- [ ] **WL2: Progress over time.** Each learning take stores its summary
+  (it already does). A Progress view shows per song and overall trends:
+  in-tune share, bias, stability, scoops, range. Show the best and the
+  latest, and the change since the first week. Learning mode only; nothing
+  in karaoke mode. Tests: aggregation across takes and songs, and old
+  takes without the new fields.
+- [ ] **WL3: A melody for YouTube songs** (owner decision, 2026-11-06:
+  capture while it plays as the main path, plus the downloader fixed as a
+  backup; "maybe they could both be used for improved accuracy where
+  possible"). Two routes into the same prepare pipeline:
+  - **Downloader fix:** yt-dlp's PO-token provider plugin (the bgutil
+    provider in its Node script mode; Node 24 is on PATH) and a newer
+    yt-dlp, with no browser cookies. When it works, Prepare and "Find the
+    original" run automatically as before.
+  - **Both, for accuracy:** when both a download and a capture exist for
+    a video, the download is the audio source (lossless timing, no room
+    or tab-volume effects). The capture is cross-checked against it by
+    chroma alignment to confirm the timing offset of the embed
+    (`embedOffsetS`) and the latency. If only one exists, use it. Record
+    which source a melody came from, and show it on the song panel.
+  - **Capture while it plays** (main path): with "Capture for learning"
+    on, Chrome's tab-audio share
+  (`getDisplayMedia`, this tab, audio) records the video as it plays once.
+  The service separates it and extracts the melody and key as Prepare
+  does today, so it is not stopped by bot checks. For a karaoke video it
+  gives the key and the backing notes (Open scoring and W0g), and the
+  melody comes from "Find the original" (W2), aligned to the karaoke
+  audio by chroma DTW. That is the Later item "Scoring a karaoke video
+  against its original", now pulled in. It has its own confidence check
+  and falls back to Open when the arrangement differs. Both routes are
+  opt-in and in the same policy category as Prepare (Current state,
+  Policy flag).
+  - Likely two waves (WL3a capture and the downloader fix, WL3b the
+    karaoke-to-original alignment); split when it is briefed.
+
+- [ ] **W0f: Library and favorites** (owner, 2026-11-06: "create a
+  playlist of favorites, which would be the youtube links if they're from
+  ... through the app view and play saved music tracks"). Two tracks:
+  browser and service.
+  - **Library:** every song you load, a YouTube link or an uploaded file,
+    is added to a Library list kept in the browser (IndexedDB, like the
+    takes), newest first. Each entry has its title, its source (a YouTube
+    video id, or a file's hash and name), its length, when it was last
+    played, whether it is prepared (karaoke stems, melody), and how many
+    takes it has. Click an entry to load it: a link loads the video, and
+    an upload is fetched back from the service
+    (`GET /songs/{id}/audio`, with stems and melody as now). With the
+    service down, an upload entry says it needs the service. Remove an
+    entry with a confirm step. The takes stay with their song.
+  - **No-key Search (owner, 2026-11-06):** without a key, the Search panel
+    shows a "Set up in-app search" box with the steps from the README (a
+    Google Cloud project, enable YouTube Data API v3, create an API key
+    limited to that API, paste it here). Opening YouTube's own results
+    stays as a secondary link.
+  - **Service:** `GET /songs` lists what the store holds (id, name,
+    length, which steps are done), so the Library can show an upload the
+    browser forgot (cleared storage, another browser).
+  - **Favorites:** a star on the current song and on each Library entry.
+    Favorites is a playlist: order it (up and down), play it from the top
+    or from any entry, with Next and Previous, moving to the next song
+    when one ends (a setting, on by default). Export and import the
+    favorites as a JSON file, so a list survives a browser reset or moves
+    to another machine (links travel; uploads need the same service
+    store).
+  - Tests: the library store (add, update, dedupe by source, remove, old
+    records), the playlist order and advance logic, export and import
+    (sanitised), and the `GET /songs` route. One e2e: load two songs, star
+    them, reorder, and let one end to see the next load.
+  - Done when every check is green. Owner test: star the two songs you
+    recorded, reload the page, and play the Favorites through.
+
+- [ ] **W0g: Backing music as notes** (owner, 2026-11-06: "we can also do
+  the backing music as midi as well, but they could show as grey").
+  Service and browser.
+  - **Service:** a `backing` step after separation transcribes the
+    instrumental stem (`no_vocals`) to notes with a polyphonic
+    transcription model (Basic Pitch, through an ONNX backend if it runs
+    on this machine; one new optional extra, `transcribe`, installed like
+    `pitch`). `GET /songs/{id}/backing` returns notes (onset, offset, midi,
+    velocity). It is skipped with a plain line when the extra is missing.
+    Accuracy on dense mixes is rough: say so in the README, and keep notes
+    under about 30 ms or with low confidence out.
+  - **Browser:** backing notes drawn grey behind the melody bars on the
+    lane, and grey lit keys on the W0e keyboard, under the melody's
+    colour. A "Backing notes" toggle, on when present. "Save melody (.mid)"
+    gains a "with backing" choice that writes a type-1 file with two
+    tracks (melody, and backing on another channel).
+  - Tests: the step on a synthetic two-chord WAV with known notes (skip
+    when the extra is missing), the route, drawing order and colours (by
+    the lane's layer list, not pixels), and the type-1 MIDI encoder.
+  - Done when every check is green. Owner test: prepare a song, look at
+    the grey notes against the music, and open the two-track .mid.
+
 - [x] **W1: Seams and the reference melody.** Two tracks, one commit.
   - **W1a, service: reference melody** (was P2-T3). New `reference` step
     after separation: `torchcrepe` (full model) on `vocals.flac` at 10 ms
@@ -822,6 +1008,39 @@ Tracks inside a wave share no files and may run in parallel.
     exist, W5's turns follow them instead of note gaps. No Whisper.
   - Done when the checks are green. Owner test: sing an original with its
     lyrics.
+  - Owner, 2026-11-06: import only, no transcription of sung lyrics. Most
+    karaoke videos already show lyrics, so the lyrics line is off by
+    default for a Karaoke-badged video and on for others when lines
+    exist.
+- [ ] **W6b: Range and key** (owner pulled it in from Later, 2026-11-06).
+  - Range: estimate the singer's comfortable range from takes (a robust
+    low and high, e.g. the 5th and 95th percentile of voiced, gated
+    frames over the last takes or a short "sing low, sing high" step in
+    the Mic check), shown as a band on the W0e keyboard.
+  - Key: transpose the song by semitones (-6 to +6) to fit the range,
+    with a suggested shift from the melody's range against the singer's.
+    Browser playback uses a pitch-shifting AudioWorklet (WSOLA,
+    hand-written and tested); the YouTube embed cannot be shifted, so
+    there the suggestion only shows. The melody bars, keyboard, `KeyMap`
+    (W4), scoring and the MIDI export shift by the same interval.
+  - Tests: the range estimate on synthetic frames, the WSOLA shift on a
+    sine (pitch within 5 c, length unchanged), the shifted `KeyMap` and
+    notes. Owner test: transpose a prepared song and sing it.
+- [ ] **W6c: Settings panel** (owner pulled it in from Later, 2026-11-06).
+  One panel that gathers every setting: mic and output, monitor mode,
+  latency and Mic check tuning per device pair, note guide, keyboard,
+  vocal guide level, skin, search key, service URL, auto-advance and
+  auto-prepare. It reads and writes the same settings store; the inline
+  controls stay where they are used. Includes Reset all, and export and
+  import of settings (no search key in the export unless asked). Tests:
+  the export sanitiser. Owner test: change a few, reload, export.
+- [ ] **W6d: Fun extras** (owner pulled it in from Later, 2026-11-06).
+  Streaks (days sung in a row), stars per song in learning mode only (no
+  stars or streak counts in karaoke mode beyond "days sung", which judges
+  nothing), skin effects on a new personal best in learning mode, and PNG
+  export of a report card. Per-skin copy where the skins already have
+  personality text. Tests: streak dates across time zones and midnight,
+  star thresholds. Owner test: sing on two days, export a card.
 - [ ] **W7: Owner test and one bug sweep.** The owner runs the full list:
   solo with a file, a link, a prepared link; learning mode; duet on one
   mic and on two; speakers and headphones. Then one reviewer reads
@@ -832,7 +1051,8 @@ Tracks inside a wave share no files and may run in parallel.
 
 Not scheduled. Pull one in only when the owner asks.
 
-- **Lyrics by transcription.** Whisper on the vocal stem. If ever picked:
+- **Lyrics by transcription.** Owner, 2026-11-06: not needed; imported
+  lyrics (W6) are enough. Whisper on the vocal stem. If ever picked:
   whisperx 3.8.6 pins torch ~=2.8 and pyannote-audio >=4, which do not
   coexist with our torch 2.11 (uv silently fell back to an old whisperx
   3.4.5 stack). Options were faster-whisper directly (CTranslate2 on
@@ -916,6 +1136,7 @@ were.
 | W0b Embed controls and take trace (measured) | 0.6 | 0.42 M | 15 min |
 | W0c Take analysis (measured) | 0.4 | 0.44 M | 10 min |
 | W0d Mic check in the app (measured) | 1 | 0.75 M | 15 min |
+| W0e Keyboard and melody MIDI (measured) | 0.4 | 0.31 M | 10 min |
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |

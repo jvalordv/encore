@@ -22,6 +22,7 @@ import { isRunning } from '../audio/transport';
 import { domEmbedHost } from '../audio/youtube-transport';
 import { parseYouTubeUrl } from '../audio/youtube-url';
 import { mountKaraokePanel } from './panels/karaoke';
+import { mountKeyboardPanel } from './panels/keyboard';
 import { mountMicCheckPanel } from './panels/mic-check';
 import { mountMicHealthPanel } from './panels/mic-health';
 import { mountModePanel } from './panels/mode';
@@ -390,6 +391,7 @@ export function mountUI(session: Session, root: Document = document): UI {
   cleanups.push(
     mountNoteGuidePanel(get('note-guide'), { store, session, readoutHost: get('pitch-lane') }),
   );
+  cleanups.push(mountKeyboardPanel(get('keyboard'), { store, session }));
   cleanups.push(
     mountMicCheckPanel(get('mic-check'), { store, session, toggle: get<HTMLButtonElement>('mic-check-button') }),
   );
