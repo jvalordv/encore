@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { isBlackKey, midiToY } from '../src/render/lane-geometry';
 import type { LaneNote, LaneView } from '../src/render/lane-geometry';
-import { keyRows, latestVoiced, litKey, markerY } from '../src/render/lane-keyboard';
+import { bandRect, keyRows, latestVoiced, litKey, markerY } from '../src/render/lane-keyboard';
 
 const VIEW: LaneView = {
   width: 600,
@@ -92,5 +92,26 @@ describe('latestVoiced', () => {
   it('is null when the newest frame is stale', () => {
     expect(latestVoiced([frame(9, 440)], 10)).toBeNull();
     expect(latestVoiced([], 10)).toBeNull();
+  });
+});
+
+describe('bandRect', () => {
+  it('covers the keys of the range, edge to edge', () => {
+    // Rows are 20 px; 71 is the top row (y 0..20), 60 the bottom (220..240).
+    const rect = bandRect(VIEW, { lowMidi: 62, highMidi: 66 });
+    expect(rect?.top).toBeCloseTo(100, 9);
+    expect(rect?.height).toBeCloseTo(100, 9);
+  });
+
+  it('is held inside the lane when the range runs past it', () => {
+    const rect = bandRect(VIEW, { lowMidi: 40, highMidi: 90 });
+    expect(rect?.top).toBeCloseTo(0, 9);
+    expect(rect?.height).toBeCloseTo(240, 9);
+  });
+
+  it('is null with no range, or one wholly out of view', () => {
+    expect(bandRect(VIEW, null)).toBeNull();
+    expect(bandRect(VIEW, { lowMidi: 30, highMidi: 40 })).toBeNull();
+    expect(bandRect(VIEW, { lowMidi: 80, highMidi: 90 })).toBeNull();
   });
 });

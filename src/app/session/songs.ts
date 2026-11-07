@@ -308,6 +308,7 @@ export class SongController {
     const breaksTake = event === 'seek' || event === 'ended' || transport.state !== 'playing';
     if (breaksTake && store.state.recording) void takes.finishRecording();
     if (event === 'seek') takes.resyncReplay();
+    if (event === 'ended' && !transport.loop && store.state.playingTakeId !== null) takes.endReplay();
     // A looping video reports the end before it restarts, so it is not over.
     if (event === 'ended' && !transport.loop) this.core.library.songEnded();
   }
@@ -454,9 +455,12 @@ export class SongController {
     return this.active?.positionS ?? 0;
   }
 
-  /** Extra delay for the YouTube path; zero for a file. */
+  /**
+   * Extra delay calibration cannot measure: the YouTube path's, and the
+   * pitch shifter's while the song is moved. Zero for a file left as it is.
+   */
   embedOffsetNow(): number {
-    return this.active?.clock === 'embed' ? this.core.current.embedOffsetS : 0;
+    return (this.active?.clock === 'embed' ? this.core.current.embedOffsetS : 0) + this.core.keys.delayS;
   }
 
   /**

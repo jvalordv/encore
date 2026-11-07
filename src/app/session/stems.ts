@@ -145,13 +145,18 @@ export class StemsController {
 
   /** The song's own melody notes, for saving as MIDI; null without a melody. */
   melodyNotes(): readonly LaneNote[] | null {
-    const notes = this.laneReference?.notes;
+    const notes = this.core.keys.lane(this.laneReference)?.notes;
     return notes && notes.length > 0 ? notes : null;
   }
 
-  /** The reference melody's pitch track, for the bleed check; null without one. */
+  /** The melody's notes as the service gave them, before any key shift. */
+  rawNotes(): readonly LaneNote[] | undefined {
+    return this.laneReference?.notes;
+  }
+
+  /** The reference melody's pitch track (moved by the key shift); null without one. */
   contour(): LaneReference | null {
-    return this.transientReference ?? this.laneReference;
+    return this.transientReference ?? this.core.keys.lane(this.laneReference);
   }
 
   /**
@@ -408,5 +413,6 @@ export class StemsController {
     this.core.scoring.setReference(score);
     this.syncLane();
     this.core.store.patch({ reference: state });
+    this.core.keys.refresh();
   }
 }

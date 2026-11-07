@@ -434,7 +434,7 @@ describe('TakeController', () => {
     h.core.lane = lane;
     const id = h.store.state.takes[0].id;
     await h.core.takes.playTake(id);
-    expect(h.player.addStem).toHaveBeenCalledWith('take', expect.anything(), 0);
+    expect(h.player.addStem).toHaveBeenCalledWith('take', expect.anything(), 0, undefined, false);
     expect(h.player.setStemGain).toHaveBeenCalledWith('original', DUCKED_ORIGINAL_GAIN);
     expect(h.store.state.playingTakeId).toBe(id);
     expect(h.player.state).toBe('playing');

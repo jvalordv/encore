@@ -110,6 +110,7 @@ export class PitchLane {
   private phrases: Phrase[] = [];
   private freeSpans: Span[] = [];
   private keyboard = true;
+  private singerRange: { lowMidi: number; highMidi: number } | null = null;
   private onPhraseClick: ((span: Span) => void) | null = null;
   private notice: string | null = null;
   private now = 0;
@@ -219,6 +220,12 @@ export class PitchLane {
     this.loop.invalidate();
   }
 
+  /** Sets the singer's range, drawn as a neutral strip on the keyboard; null clears it. */
+  setSingerRange(band: { lowMidi: number; highMidi: number } | null): void {
+    this.singerRange = band;
+    this.loop.invalidate();
+  }
+
   /** Sets the phrases drawn as free (a band behind them); empty draws none. */
   setFreePhrases(spans: readonly Span[]): void {
     this.freeSpans = spans.map((s): Span => [s[0], s[1]]);
@@ -308,7 +315,7 @@ export class PitchLane {
     ctx.restore();
 
     if (this.keyboard) {
-      drawKeyboard(ctx, view, this.style, this.reference?.notes, [traces[0], traces[1]], gutter);
+      drawKeyboard(ctx, view, this.style, this.reference?.notes, [traces[0], traces[1]], gutter, this.singerRange);
     }
     drawCaption(ctx, view, this.style, this.notice, empty, gutter);
     drawPlayhead(ctx, view, this.style, gutter);

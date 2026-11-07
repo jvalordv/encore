@@ -106,6 +106,13 @@ export class FakePlayer extends FakeTransport {
     return { ...info, sampleRate: 44100, channels: 2 } as TrackInfo;
   });
   readonly addStem = vi.fn();
+  /** The key shift the fake engine holds, as the real Player's `shift`. */
+  shift = 0;
+  shiftDelayS = 0;
+  readonly setShift = vi.fn(async (n: number) => {
+    this.shift = n;
+    return true;
+  });
   readonly removeStem = vi.fn();
   readonly setStemGain = vi.fn();
   /** Decodes a stem; the fake hands back an empty buffer of the bytes' size. */
@@ -216,6 +223,7 @@ export function fakeLane(): LaneSink & {
   setFreePhrases: ReturnType<typeof vi.fn>;
   setPhraseClick: ReturnType<typeof vi.fn>;
   setKeyboard: ReturnType<typeof vi.fn>;
+  setSingerRange: ReturnType<typeof vi.fn>;
 } {
   return {
     setTime: vi.fn(),
@@ -229,6 +237,7 @@ export function fakeLane(): LaneSink & {
     setFreePhrases: vi.fn(),
     setPhraseClick: vi.fn(),
     setKeyboard: vi.fn(),
+    setSingerRange: vi.fn(),
   };
 }
 

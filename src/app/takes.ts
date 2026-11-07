@@ -76,6 +76,11 @@ export interface TakeSummary {
   mic?: TakeMicSettings;
   /** 'mic-check' for a Mic check take; absent (a song take) otherwise. */
   kind?: TakeKind;
+  /**
+   * The key shift in force when the take was sung, in semitones; absent when
+   * the song was not moved. Its report was scored against the shifted melody.
+   */
+  shiftSemitones?: number;
 }
 
 /** What a take is: a song sung over, or the Mic check's test track. */

@@ -52,10 +52,10 @@ webcam or USB mic.
   and Open scoring), W3 (learning mode), W2 (search and the karaoke core)
   and W1 (the reference step and the browser seams); older work in
   `docs/HISTORY.md`.
-- **In progress (2026-11-07, overnight, owner asleep):** W6b (range and
-  key) in a worktree, being fixed after review. Landed tonight: WL1,
-  W0f, WL2, WL3a (capture), W6 (lyrics) and WL3b (alignment). WL3 stays
-  unticked only for the downloader fix, which waits on the owner.
+- **In progress (2026-11-07, overnight, owner asleep):** none at this
+  commit. Landed tonight: WL1, W0f, WL2, WL3a (capture), W6 (lyrics),
+  WL3b (alignment) and W6b (range and key). WL3 stays unticked only for
+  the downloader fix, which waits on the owner.
 - **Next:** **WL2** (progress over time), **WL3** (a
   melody for YouTube songs: capture while it plays, plus the downloader
   as a backup, both used together where possible), then **W0f** (library and
@@ -1183,7 +1183,7 @@ Tracks inside a wave share no files and may run in parallel.
     guessed from the file or video name.
   - Follow-up: lyrics do not follow a take played solo. W5's turns
     following the lines are still to do with W5.
-- [ ] **W6b: Range and key** (owner pulled it in from Later, 2026-11-06).
+- [x] **W6b: Range and key** (owner pulled it in from Later, 2026-11-06).
   - Range: estimate the singer's comfortable range from takes (a robust
     low and high, e.g. the 5th and 95th percentile of voiced, gated
     frames over the last takes or a short "sing low, sing high" step in
@@ -1197,6 +1197,32 @@ Tracks inside a wave share no files and may run in parallel.
   - Tests: the range estimate on synthetic frames, the WSOLA shift on a
     sine (pitch within 5 c, length unchanged), the shifted `KeyMap` and
     notes. Owner test: transpose a prepared song and sing it.
+  - Built (2026-11-07):
+    - Code: `src/analysis/key-shift.ts` (range, suggestion, and the
+      transpose seam), `src/audio/{pitch-shift,shift-worklet,shift-node,shift-router}.ts`,
+      `src/app/key-shift.ts`, `src/app/session/keys.ts` and
+      `src/app/panels/key-shift.ts`.
+    - Pitch shift: time-domain granular resampling with WSOLA-style
+      alignment (1536-sample Hann grains at hop 768, a ±480-sample
+      cross-correlation search). The error measured on sines is under
+      0.66 c, and the latency is a fixed 2338 samples (49 ms at 48 kHz).
+      The delay is added in `embedOffsetNow()`, so takes and grades stay
+      aligned.
+    - Range: the median p10–p90 of the last 8 learning takes (at least
+      3), drawn as a band on the keyboard. The suggestion centres the
+      melody's p10–p90 on the band.
+    - Seam: the lane, keyboard, scoring, note guide, trace, MIDI and key
+      basis all read the shifted reference. Takes store
+      `shiftSemitones`, and a replay borrows the take's own shift.
+    - Restrictions: the key cannot change while recording, and the
+      YouTube embed is never shifted (it shows the suggestion only).
+    - Review fixes: changing the key mid-recording, and the replay
+      timing and key.
+  - Follow-up: the owner should judge the sound on a real voice at ±4 or
+    more; Playwright cannot hear it.
+  - Follow-up: a key change keeps the lane's old frame trace and grades.
+  - Follow-up: `src/audio/player.ts` is about 690 lines; split the stem
+    and loop logic out.
 - [ ] **W6c: Settings panel** (owner pulled it in from Later, 2026-11-06).
   One panel that gathers every setting: mic and output, monitor mode,
   latency and Mic check tuning per device pair, note guide, keyboard,
@@ -1314,6 +1340,7 @@ were.
 | WL3a Capture for learning (measured, worktree) | 0.8 | 0.47 M | 10 min |
 | W6 Imported lyrics (measured, worktree) | 0.5 | 0.33 M | 5 min |
 | WL3b Karaoke-to-original alignment (measured) | 0.8 | 0.53 M | 15 min |
+| W6b Range and key (measured, worktree) | 0.7 | 0.45 M | 10 min |
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |

@@ -998,6 +998,37 @@ button[aria-pressed='true'] {
   cursor: pointer;
 }
 
+/* The Key control by the transport: skin tokens only, wraps on a narrow window. */
+.key-shift {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.key-shift[hidden],
+.key-shift [hidden] {
+  display: none;
+}
+
+.key-label {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+.key-readout {
+  min-width: 2.2em;
+  text-align: center;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+}
+
+.key-hint {
+  flex-basis: 100%;
+  max-width: 36em;
+}
+
 /* Learning mode's Progress panel: a sparkline and a few plain lines per
    measure. Skin tokens only; it never colours a value as good or bad. */
 .progress-button[hidden],

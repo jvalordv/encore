@@ -27,6 +27,7 @@ import { lazyLyricsStore } from '../lyrics/store';
 import { mountCapturePanel } from './panels/capture';
 import { mountKaraokePanel } from './panels/karaoke';
 import { mountKeyboardPanel } from './panels/keyboard';
+import { mountKeyShiftPanel } from './panels/key-shift';
 import { mountLibraryPanel } from './panels/library';
 import { mountLyricsPanel } from './panels/lyrics';
 import { mountMicCheckPanel } from './panels/mic-check';
@@ -400,6 +401,7 @@ export function mountUI(session: Session, root: Document = document): UI {
     mountNoteGuidePanel(get('note-guide'), { store, session, readoutHost: get('pitch-lane') }),
   );
   cleanups.push(mountKeyboardPanel(get('keyboard'), { store, session }));
+  cleanups.push(mountKeyShiftPanel(get('key-shift'), { store, session }));
   cleanups.push(
     mountLyricsPanel(get('lyrics'), {
       store,

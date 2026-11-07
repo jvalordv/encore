@@ -154,7 +154,11 @@ export class TakeController {
         this.playTakeAlone(parts, id, take, buffer, offsetS, startS);
         return;
       }
-      parts.player.addStem(TAKE_STEM, buffer, offsetS);
+      // The lane and the song play in the key the take was sung in, and the
+      // shifter delays the song, so the voice is placed that much later.
+      await this.core.keys.lend(take.shiftSemitones ?? 0);
+      // A take is the singer's own pitch; the key shift does not move it.
+      parts.player.addStem(TAKE_STEM, buffer, offsetS + parts.player.shiftDelayS, undefined, false);
       parts.player.setStemGain(TAKE_STEM, 1);
       // Whatever the mix, the song gives way to the take.
       this.core.mix.setDucked(true);
@@ -238,6 +242,7 @@ export class TakeController {
       this.core.mix.setDucked(false);
     }
     this.replay = null;
+    this.core.keys.release();
     this.core.store.patch({ playingTakeId: null });
   }
 
@@ -449,6 +454,7 @@ export class TakeController {
       clock,
       mic,
       ...(meta.sections ? { kind: 'mic-check' as const } : {}),
+      ...(this.core.keys.shift !== 0 && !meta.sections ? { shiftSemitones: this.core.keys.shift } : {}),
       // Frames are on song time with the latency already taken off.
       frames,
       wav: encodeWavBlob(rec.pcm, rec.sampleRate, 16),
@@ -489,6 +495,7 @@ export class TakeController {
     try {
       const list = song ? await (await this.core.takesReady).list(song.hash) : [];
       this.core.store.patch({ takes: list });
+      void this.core.keys.refreshRange();
     } catch (error) {
       this.core.store.setStatus(`Could not read saved takes: ${messageOf(error)}`, 'warn');
     }

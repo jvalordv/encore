@@ -13,6 +13,7 @@
  * embedded YouTube player. DOM-free.
  */
 import type { AudioEngine } from './engine';
+import { ShiftRouter } from './shift-router';
 import type { LoopRegion, TrackInfo, Transport, TransportEvent } from './transport';
 
 /**
@@ -203,6 +204,8 @@ interface Stem {
   level: number;
   gain: GainNode;
   source: AudioBufferSourceNode | null;
+  /** False for a layer that keeps its own pitch, such as a replayed take. */
+  shifted: boolean;
 }
 
 /** Loads a song and plays it with synced stems, loop and clock-derived time. */
@@ -224,8 +227,45 @@ export class Player implements Transport {
   private runId = 0;
   private loadId = 0;
   private shelved: Shelf | null = null;
+  private readonly shifter: ShiftRouter;
 
-  constructor(private readonly engine: AudioEngine) {}
+  constructor(private readonly engine: AudioEngine) {
+    this.shifter = new ShiftRouter(engine);
+  }
+
+  /** The transposition in force, in semitones; 0 when the song plays as it is. */
+  get shift(): number {
+    return this.shifter.value;
+  }
+
+  /** True while the pitch shifter is in the audio graph. */
+  get shifterInGraph(): boolean {
+    return this.shifter.inGraph && this.shelved === null;
+  }
+
+  /** Seconds the shifter delays the sound by while it is in the graph; else 0. */
+  get shiftDelayS(): number {
+    return this.shifterInGraph ? this.shifter.delayS : 0;
+  }
+
+  /**
+   * Moves the song's pitch by whole `semitones` (-6..+6) with its length
+   * unchanged; stems added unshifted keep their pitch. Resolves false when the
+   * browser cannot shift (no AudioWorklet), leaving the song as it was.
+   */
+  async setShift(semitones: number): Promise<boolean> {
+    const ok = await this.shifter.set(semitones);
+    this.reroute();
+    return ok;
+  }
+
+  /** Points every stem's gain at the shifter's bus or the master, as the shift needs. */
+  private reroute(): void {
+    for (const stem of this.stems.values()) {
+      stem.gain.disconnect();
+      stem.gain.connect(this.shifter.output(stem.shifted, this.shelved !== null));
+    }
+  }
 
   /** The loaded song, or null before the first successful load. */
   get info(): SongInfo | null {
@@ -313,6 +353,7 @@ export class Player implements Transport {
     for (const stem of this.stems.values()) stem.gain.disconnect();
     this.stems.clear();
     for (const [id, stem] of shelf.stems) this.stems.set(id, stem);
+    this.reroute();
     const hadLoop = this.loopValue !== null;
     this.infoValue = shelf.info;
     this.stateValue = shelf.state;
@@ -369,10 +410,11 @@ export class Player implements Transport {
    * Adds or replaces a stem played in sync with the original. `offsetS` is
    * the song time at which the buffer's first sample plays, and `level` the
    * gain it starts at (default 1; a stem meant to be silent at first is not
-   * heard for the moment before its level is set). Throws before a song is loaded, and for
+   * heard for the moment before its level is set). `shifted` false keeps the
+   * stem out of the transposition. Throws before a song is loaded, and for
    * the reserved id 'original' (use `load`).
    */
-  addStem(id: string, buffer: AudioBuffer, offsetS = 0, level?: number): void {
+  addStem(id: string, buffer: AudioBuffer, offsetS = 0, level?: number, shifted = true): void {
     const held = this.shelved?.stems;
     // Nothing set aside to give a stem to: the song it was for is gone.
     if (this.shelved?.state === 'empty') return;
@@ -387,7 +429,7 @@ export class Player implements Transport {
       // A stem added again keeps its level unless this call names one.
       if (level !== undefined) this.applyLevel(stem, level, 0);
     } else {
-      stem = this.makeStem(buffer, offsetS, level);
+      stem = this.makeStem(buffer, offsetS, level, shifted);
       map.set(id, stem);
     }
     if (!held && this.stateValue === 'playing') {
@@ -539,12 +581,13 @@ export class Player implements Transport {
     return wrapLoop(Math.max(this.anchorSongS, linear), this.runLoop, this.duration);
   }
 
-  private makeStem(buffer: AudioBuffer, offsetS = 0, level = 1): Stem {
+  private makeStem(buffer: AudioBuffer, offsetS = 0, level = 1, shifted = true): Stem {
     const gain = this.engine.context.createGain();
     const start = Math.min(Math.max(Number.isNaN(level) ? 1 : level, 0), 1);
     gain.gain.value = start;
-    gain.connect(this.engine.master);
-    return { buffer, offsetS, level: start, gain, source: null };
+    // A transient song (the Mic check's test track) is never transposed.
+    gain.connect(this.shifter.output(shifted, this.shelved !== null));
+    return { buffer, offsetS, level: start, gain, source: null, shifted };
   }
 
   /** Moves a stem's gain to `level` (clamped) over a short ramp. */

@@ -31,6 +31,7 @@ export type LaneSink = Pick<
   | 'setFreePhrases'
   | 'setPhraseClick'
   | 'setKeyboard'
+  | 'setSingerRange'
 >;
 
 /** The audio objects behind the Session, exposed for tests and debugging. */

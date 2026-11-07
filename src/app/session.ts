@@ -140,6 +140,7 @@ export class Session {
     lane.setKeyboard(this.core.current.keyboard);
     this.core.stems.syncLane();
     this.core.scoring.syncLane();
+    this.core.keys.syncLane();
   }
 
   /**
@@ -246,6 +247,26 @@ export class Session {
     core.persist();
     core.lane?.setKeyboard(on);
     core.store.patch({ keyboard: on });
+  }
+
+  /** Moves the song by whole semitones (-6..+6), kept for the song. */
+  setKeyShift(semitones: number): void {
+    this.core.keys.setShift(semitones);
+  }
+
+  /** One semitone up (1) or down (-1) from where the song is. */
+  stepKey(by: 1 | -1): void {
+    this.core.keys.step(by);
+  }
+
+  /** Takes the suggested key shift, if there is one. */
+  useSuggestedKey(): void {
+    this.core.keys.useSuggested();
+  }
+
+  /** Puts the song back in its own key. */
+  resetKey(): void {
+    this.core.keys.reset();
   }
 
   /** The loaded song's melody notes and name, for Save melody; null without notes. */

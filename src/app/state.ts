@@ -20,6 +20,8 @@ import type { MonitorMode } from '../audio/mic';
 import type { ClockKind, LoopRegion, TrackInfo, TransportState } from '../audio/transport';
 import { noteName } from '../render/lane-geometry';
 import { initialKaraoke } from './karaoke';
+import { initialKeyShift } from './key-shift';
+import type { KeyShiftState } from './key-shift';
 import { initialKey } from './key-state';
 import type { KeyState } from './key-state';
 import type { KaraokeState } from './karaoke';
@@ -132,6 +134,8 @@ export interface AppState {
   guideReading: GuideNote | null;
   /** What the song panel knows about the song's key, which Open scores against. */
   key: KeyState;
+  /** The key shift, its suggestion and the singer's range (W6b). */
+  keyShift: KeyShiftState;
   /** The phrases of the loaded song marked free, as [start, end] spans. */
   freePhrases: Span[];
   /** The search result that became the song, or null for a file or a link. */
@@ -204,6 +208,7 @@ export function initialState(): AppState {
     keyboard: true,
     guideReading: null,
     key: initialKey(),
+    keyShift: initialKeyShift(),
     freePhrases: [],
     pickedResult: null,
     reportTakeId: null,

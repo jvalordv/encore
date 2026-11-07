@@ -43,7 +43,7 @@ export class ScoringController {
       reference: () => this.activeReference(),
       style: () => core.current.scoring,
       octaveInvariant: () => core.current.octaveInvariant,
-      key: () => this.key,
+      key: () => this.keyMap(),
       freeSpans: () => this.free,
     });
     // After the take recorder's subscriber, as the take is recorded before the
@@ -76,9 +76,9 @@ export class ScoringController {
     this.reference = reference;
   }
 
-  /** The song's key map, for the note guide; null without one. */
+  /** The song's key map, moved by the key shift, for the note guide; null without one. */
   keyMap(): KeyMap | null {
-    return this.key;
+    return this.core.keys.key(this.key);
   }
 
   /** The song's key to judge freestyle against, with what the panel says of it. */
@@ -147,7 +147,7 @@ export class ScoringController {
     const takes = await core.takesReady;
     const take = await takes.get(takeId);
     if (!take?.report || take.songHash !== core.store.state.song?.hash) return;
-    const report = this.scoreIn(take.frames, take.report.style ?? 'strict');
+    const report = this.scoreIn(take.frames, take.report.style ?? 'strict', take.shiftSemitones ?? 0);
     await takes.setReport(takeId, report);
     await core.takes.refreshTakes();
   }
@@ -161,15 +161,17 @@ export class ScoringController {
   }
 
   /** The melody, unless the song is a karaoke track, which has no original singer. */
-  private activeReference(): ScoreReference | null {
-    return isKaraokeTrack(this.core.store.state) ? null : this.reference;
+  private activeReference(shift?: number): ScoreReference | null {
+    const ref = isKaraokeTrack(this.core.store.state) ? null : this.reference;
+    return this.core.keys.score(ref, shift);
   }
 
-  private scoreIn(frames: readonly PitchFrame[], style: ScoringStyle): TakeReport {
-    return scoreTake(frames, this.activeReference(), {
+  /** Scores frames sung with the song moved by `shift` (the shift in force when left out). */
+  private scoreIn(frames: readonly PitchFrame[], style: ScoringStyle, shift?: number): TakeReport {
+    return scoreTake(frames, this.activeReference(shift), {
       style,
       octaveInvariant: this.core.current.octaveInvariant,
-      key: this.key,
+      key: this.core.keys.key(this.key, shift),
       freeSpans: this.free,
     });
   }

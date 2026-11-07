@@ -82,6 +82,7 @@ describe('initialState', () => {
       guideReading: null,
       key: { phase: 'none', message: '' },
       freePhrases: [],
+      keyShift: { shift: 0, suggested: null, canShift: true, band: null, bandTakes: 0 },
       pickedResult: null,
       reportTakeId: null,
       positionS: 0,
@@ -767,6 +768,7 @@ describe('Session without Web Audio', () => {
       setFreePhrases: vi.fn(),
       setPhraseClick: vi.fn(),
       setKeyboard: vi.fn(),
+      setSingerRange: vi.fn(),
     };
     session.attachLane(lane);
     expect(lane.setTime).toHaveBeenCalledWith(0);
