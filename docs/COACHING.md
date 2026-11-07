@@ -176,6 +176,26 @@ names its numbers.
 Later, with service analysis: `vibrato_wider`, `vibrato_slower`,
 `softer_here`, `brighter`, `phrase_fade`.
 
+## Stars, personal bests and the streak (W6d)
+
+Learning mode only, except the streak. Each learning take has one primary
+measure, a share: Strict with a melody, the in-tune share (notes within
+50 c); Strict with no melody, the share of notes within 50 c of their tone
+(the voice section's measure); Open, the share of sung notes on the melody
+or, off it, in the song's key (the in-key share alone when there is no
+melody). A song's stars come from its best take: 1 star from 60 %, 2 from
+75 %, 3 from 90 %. They show on the report card and on the song's Library
+row, never in karaoke mode. A take is a personal best when its share, in
+whole percent, tops every earlier take of the song measured the same way
+(the first take has nothing to beat); the card then shows a short skin
+flourish (still under `prefers-reduced-motion`) and one line with the
+measure and both numbers. The header chip counts days sung in a row, in
+both modes: a day counts when a take with at least 5 voiced frames was
+saved that local day (Mic check takes excluded); yesterday keeps the streak
+alive until today ends. It judges nothing. "Save card (.png)" draws the
+card (song, date, stars, headline, the card's own lines) into a canvas in
+the skin's colours.
+
 ## What we do not claim
 
 - Tone aesthetics, emotion, diction, and "support" are not measured.

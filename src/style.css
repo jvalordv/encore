@@ -1081,3 +1081,76 @@ button[aria-pressed='true'] {
 .progress-note {
   color: var(--color-text-muted);
 }
+
+/* Fun extras (W6d): the streak chip (both modes), stars and the personal-best
+   flourish (learning mode's report card). Colours are skin tokens only. */
+.streak-chip {
+  padding: 2px 10px;
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: 999px;
+  color: var(--color-text);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.streak-chip[hidden] {
+  display: none;
+}
+
+.report-stars {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.library-stars {
+  display: block;
+  color: var(--color-accent);
+}
+
+.report-pb {
+  padding: 4px 8px;
+  border-left: 3px solid var(--color-hit);
+  background: var(--color-surface);
+  font-weight: 700;
+  animation: pb-pop var(--motion-slow) var(--easing) 1;
+}
+
+:root[data-skin='arcade'] .report-pb {
+  animation: pb-flash var(--motion-fast) steps(2, end) 6;
+}
+
+:root[data-skin='dreamhouse'] .report-pb {
+  animation: pb-sparkle var(--motion-slow) var(--easing) 3;
+}
+
+@keyframes pb-pop {
+  from {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes pb-flash {
+  50% {
+    background: var(--color-accent);
+    color: var(--color-bg);
+  }
+}
+
+@keyframes pb-sparkle {
+  50% {
+    box-shadow: 0 0 14px var(--color-accent), 0 0 4px var(--color-accent-2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .report-pb,
+  :root[data-skin='arcade'] .report-pb,
+  :root[data-skin='dreamhouse'] .report-pb {
+    animation: none;
+  }
+}

@@ -13,6 +13,8 @@
  * and the song; the controls call Session intents and hold no logic.
  */
 import { downloadBlob } from '../download';
+import { STAR_MEASURE_SHORT } from '../../analysis/stars';
+import { activeSkin, starGlyphs, starsText } from '../fun';
 import { FAVORITES_FILE_NAME } from '../library-share';
 import { entriesFor, lengthLabel, playlistPosition, rowOf } from '../library-state';
 import type { Session } from '../session';
@@ -22,7 +24,7 @@ import type { MountPanel } from './panel';
 /** A first Remove press waits this long for a confirming second press. */
 const REMOVE_ARM_MS = 3000;
 /** The keys of the state the panel is drawn from. */
-const WATCHED: ReadonlyArray<keyof AppState> = ['library', 'song', 'karaoke', 'reference'];
+const WATCHED: ReadonlyArray<keyof AppState> = ['library', 'song', 'karaoke', 'reference', 'mode'];
 
 /** What the panel needs: the state, the intents and the buttons it works with. */
 export interface LibraryPanelDeps {
@@ -172,6 +174,15 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
     const meta = make('span', 'library-meta', 'song-meta');
     meta.textContent = view.meta.join(' · ');
     load.append(name, meta);
+    // Stars are learning mode's: karaoke mode shows the song and nothing about it.
+    const stars = state.mode === 'learning' ? (library.songStars[entry.id] ?? 0) : 0;
+    if (stars > 0) {
+      const badge = make('span', 'library-stars', 'song-meta');
+      const measure = library.songStarMeasure[entry.id];
+      const label = measure === undefined ? '' : ` (${STAR_MEASURE_SHORT[measure]})`;
+      badge.textContent = `${starGlyphs(stars)} ${starsText(stars, activeSkin(doc))}${label}`;
+      load.append(badge);
+    }
     if (view.prepared !== '') {
       const badge = make('span', 'library-prepared', 'search-badge');
       badge.textContent = view.prepared;

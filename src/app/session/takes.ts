@@ -455,6 +455,7 @@ export class TakeController {
       mic,
       ...(meta.sections ? { kind: 'mic-check' as const } : {}),
       ...(this.core.keys.shift !== 0 && !meta.sections ? { shiftSemitones: this.core.keys.shift } : {}),
+      voicedFrames: frames.filter((f) => f.f0 > 0 && Number.isFinite(f.f0)).length,
       // Frames are on song time with the latency already taken off.
       frames,
       wav: encodeWavBlob(rec.pcm, rec.sampleRate, 16),

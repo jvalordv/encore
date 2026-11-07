@@ -8,6 +8,8 @@
  * itself and a click on a star never overwrite each other. Nothing here
  * touches a song's takes: removing an entry leaves them with the song.
  */
+import { songStarsBySong } from '../../analysis/stars';
+import { daysSung } from '../../analysis/streak';
 import { ServiceClient } from '../../service/client';
 import { entryAfterLoad, memoryLibraryStore, newestFirst } from '../library';
 import type { LibraryEntry, LibraryStore, LoadedSong } from '../library';
@@ -116,7 +118,13 @@ export class LibraryController {
         if (take.kind === 'mic-check') continue;
         counts[take.songHash] = (counts[take.songHash] ?? 0) + 1;
       }
-      this.set({ takeCounts: counts });
+      const stars: Record<string, number> = {};
+      const measures: LibraryState['songStarMeasure'] = {};
+      for (const [hash, s] of Object.entries(songStarsBySong(takes))) {
+        stars[hash] = s.stars;
+        measures[hash] = s.measure;
+      }
+      this.set({ takeCounts: counts, songStars: stars, songStarMeasure: measures, daysSung: daysSung(takes) });
     } catch {
       // The count is a nicety; a take store that will not answer leaves it.
     }

@@ -81,6 +81,8 @@ export interface TakeSummary {
    * the song was not moved. Its report was scored against the shifted melody.
    */
   shiftSemitones?: number;
+  /** Frames the tracker called voiced; the streak counts only real singing. */
+  voicedFrames?: number;
 }
 
 /** What a take is: a song sung over, or the Mic check's test track. */
@@ -162,6 +164,7 @@ function toSummary(record: TakeRecord): TakeSummary {
   if (record.report !== undefined) summary.report = record.report;
   if (record.mic !== undefined) summary.mic = record.mic;
   if (record.kind !== undefined) summary.kind = record.kind;
+  if (record.voicedFrames !== undefined) summary.voicedFrames = record.voicedFrames;
   return summary;
 }
 

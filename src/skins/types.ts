@@ -16,6 +16,12 @@ export const COPY_KEYS = [
   'stars1',
   'stars2',
   'stars3',
+  // Fun extras: days sung in a row ({n} is the count), stars per song
+  // ({n} of 3) and the lead of the personal-best line.
+  'dayInARow',
+  'daysInARow',
+  'songStars',
+  'personalBest',
   // Grade titles.
   'gradeS',
   'gradeA',

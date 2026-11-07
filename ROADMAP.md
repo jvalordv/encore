@@ -54,8 +54,9 @@ webcam or USB mic.
   `docs/HISTORY.md`.
 - **In progress (2026-11-07, overnight, owner asleep):** none at this
   commit. Landed tonight: WL1, W0f, WL2, WL3a (capture), W6 (lyrics),
-  WL3b (alignment) and W6b (range and key). WL3 stays unticked only for
-  the downloader fix, which waits on the owner.
+  WL3b (alignment), W6b (range and key) and W6d (fun extras). W0g
+  (backing notes) is in a worktree. WL3 stays unticked only for the
+  downloader fix, which waits on the owner.
 - **Next:** **WL2** (progress over time), **WL3** (a
   melody for YouTube songs: capture while it plays, plus the downloader
   as a backup, both used together where possible), then **W0f** (library and
@@ -1231,13 +1232,32 @@ Tracks inside a wave share no files and may run in parallel.
   controls stay where they are used. Includes Reset all, and export and
   import of settings (no search key in the export unless asked). Tests:
   the export sanitiser. Owner test: change a few, reload, export.
-- [ ] **W6d: Fun extras** (owner pulled it in from Later, 2026-11-06).
+- [x] **W6d: Fun extras** (owner pulled it in from Later, 2026-11-06).
   Streaks (days sung in a row), stars per song in learning mode only (no
   stars or streak counts in karaoke mode beyond "days sung", which judges
   nothing), skin effects on a new personal best in learning mode, and PNG
   export of a report card. Per-skin copy where the skins already have
   personality text. Tests: streak dates across time zones and midnight,
   star thresholds. Owner test: sing on two days, export a card.
+  - Built (2026-11-07):
+    - Code: `src/analysis/{streak,stars}.ts`,
+      `src/app/{card-layout,card-image,card-content,fun}.ts` and
+      `src/app/panels/streak.ts`.
+    - Streak: local days with at least 5 voiced frames (Mic check takes
+      excluded), shown as a header chip in both modes. It refreshes at
+      local midnight.
+    - Stars: 1 at 60 %, 2 at 75 %, 3 at 90 % of the song's best learning
+      take, within one measure (Strict in tune, the ±50 c share with no
+      melody, or Open). The card and the Library row name the measure.
+    - Personal best: learning mode only, a skin flourish that respects
+      reduced motion.
+    - Card export: "Save card (.png)" draws the card on a canvas with no
+      dependency; long titles are split, and a failure says so.
+    - Review fixes: the measure named with the stars, one measure per
+      Library row, long titles, the silent export failure, and the
+      midnight refresh.
+  - Follow-up: the PNG text uses the English report lines, not skin copy.
+  - Follow-up: the flourish replays whenever the card is reopened.
 - [ ] **W7: Owner test and one bug sweep.** The owner runs the full list:
   solo with a file, a link, a prepared link; learning mode; duet on one
   mic and on two; speakers and headphones. Then one reviewer reads
@@ -1341,6 +1361,7 @@ were.
 | W6 Imported lyrics (measured, worktree) | 0.5 | 0.33 M | 5 min |
 | WL3b Karaoke-to-original alignment (measured) | 0.8 | 0.53 M | 15 min |
 | W6b Range and key (measured, worktree) | 0.7 | 0.45 M | 10 min |
+| W6d Fun extras (measured, worktree) | 0.6 | 0.36 M | 10 min |
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |

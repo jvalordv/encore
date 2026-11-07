@@ -5,6 +5,7 @@
  * into the rows and words the panel draws (the panel holds no logic of its
  * own); the controller in session/library.ts is what changes it.
  */
+import type { StarMeasureId } from '../analysis/stars';
 import type { SongSummary } from '../service/types';
 import type { LibraryEntry } from './library';
 import { favoritesOf } from './playlist';
@@ -35,6 +36,12 @@ export interface LibraryState {
   entries: LibraryEntry[];
   /** Takes saved per song hash. */
   takeCounts: Record<string, number>;
+  /** Best learning-take stars (0..3) per song hash. */
+  songStars: Record<string, number>;
+  /** The measure each song's stars were earned on (its latest take's). */
+  songStarMeasure: Record<string, StarMeasureId>;
+  /** Local days with a take of real singing, ascending (see analysis/streak.ts). */
+  daysSung: number[];
   onService: ServiceSong[];
   playlist: PlaylistState;
   /** Move on to the next favorite when a song ends. */
@@ -50,6 +57,9 @@ export function initialLibrary(autoAdvance = true): LibraryState {
     view: 'all',
     entries: [],
     takeCounts: {},
+    songStars: {},
+    songStarMeasure: {},
+    daysSung: [],
     onService: [],
     playlist: { active: false, currentId: null },
     autoAdvance,

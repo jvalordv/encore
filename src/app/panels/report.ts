@@ -10,16 +10,24 @@
  * free phrases) adds the freestyle block: the share on the melody, the share of
  * free notes in the song's key, and each note off key with a Jump. On a karaoke
  * track Strict has no melody to compare with and offers Switch to Open, which
- * scores the track on the song's key. Every card ends with "Your voice"
+ * scores the track on the song's key. The card also shows the song's stars,
+ * a flourish with one line when the take beat the song's best (src/app/fun.ts),
+ * and Save card (.png). Every card ends with "Your voice"
  * (voice-block.ts), which stands alone when there is no melody. Drawn from the state through `karaokeTrackNotice` and
  * `openReport` (src/app/learning.ts), which answer nothing in karaoke mode, so
  * this panel is then hidden.
  */
 import { isMarked } from '../../analysis/free-phrases';
 import type { Span } from '../../analysis/free-phrases';
+import { personalBest, takeStars } from '../../analysis/stars';
 import { tipsFor } from '../../coach/tips';
 import type { Tip } from '../../coach/tips';
 import { describeAlign } from '../align';
+import { cardContentOf } from '../card-content';
+import { CARD_FAILED, drawCard, renderCardPng } from '../card-image';
+import { cardFileName, localDateString } from '../card-layout';
+import { downloadBlob } from '../download';
+import { activeSkin, personalBestText, starGlyphs, starsLineFor } from '../fun';
 import { karaokeTrackNotice, openReport, openSwitchOffer, originalQueryFor } from '../learning';
 import { describeReport, jumpTarget } from '../report';
 import type { MomentView, ReportView } from '../report';
@@ -160,6 +168,17 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
       button('Close', 'report-close', () => session.showReport(null)),
     );
     root.append(head, el('p', 'report-headline', 'report-headline', view.headline));
+    const skin = activeSkin(doc);
+    const stars = takeStars(report);
+    const starLine = starsLineFor(report, skin);
+    const best = personalBest(take, state.takes);
+    const bestLine = best === null ? '' : personalBestText(best, skin);
+    if (starLine) {
+      const row = el('p', 'report-stars', 'report-stars', `${starGlyphs(stars)} ${starLine}`);
+      row.dataset.stars = String(stars);
+      root.append(row);
+    }
+    if (bestLine) root.append(el('p', 'report-pb', 'report-pb', bestLine));
     if (view.melodyShare) root.append(el('p', 'report-melody-share', 'report-line', view.melodyShare));
     if (view.coverage) root.append(el('p', 'report-coverage', 'song-meta', view.coverage));
     if (view.frames) root.append(el('p', 'report-frames', 'song-meta', view.frames));
@@ -230,6 +249,26 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
       );
     }
 
+    const cardStatus = el('p', 'report-card-status', 'song-meta');
+    cardStatus.setAttribute('role', 'status');
+    root.append(
+      button('Save card (.png)', 'report-save-card', () => {
+        cardStatus.textContent = '';
+        const content = cardContentOf({
+          view,
+          songName: take.songName,
+          createdAt: take.createdAt,
+          stars: starLine,
+          personalBest: bestLine,
+          skin,
+        });
+        void drawCard(renderCardPng, doc, content).then((blob) => {
+          if (blob === null) cardStatus.textContent = CARD_FAILED;
+          else downloadBlob(doc, blob, cardFileName(take.songName, localDateString(take.createdAt)));
+        });
+      }),
+      cardStatus,
+    );
     const asked = tipsShownFor === take.id;
     root.append(
       button('Tips', 'report-tips', () => {

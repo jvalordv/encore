@@ -37,6 +37,7 @@ import { mountNoteGuidePanel } from './panels/note-guide';
 import { mountProgressPanel } from './panels/progress';
 import { mountReportPanel } from './panels/report';
 import { mountSearchPanel } from './panels/search';
+import { mountStreakPanel } from './panels/streak';
 import { mountTakesPanel } from './panels/takes';
 import { describePrepare } from './prepare';
 import type { Session } from './session';
@@ -423,6 +424,7 @@ export function mountUI(session: Session, root: Document = document): UI {
   );
   cleanups.push(mountTakesPanel(get('takes'), { store, session }));
   cleanups.push(mountReportPanel(get('report'), { store, session }));
+  cleanups.push(mountStreakPanel(get('streak'), { store }));
   cleanups.push(
     mountProgressPanel(get('progress'), { store, session, toggle: get<HTMLButtonElement>('progress-button') }),
   );
