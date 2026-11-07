@@ -13,6 +13,7 @@
  * it.
  */
 import './library.css';
+import './lyrics.css';
 import './search.css';
 import './skins/arcade.css';
 import './skins/dreamhouse.css';

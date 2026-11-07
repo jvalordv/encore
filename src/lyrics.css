@@ -1,0 +1,76 @@
+/*
+ * The lyrics panel in the song column and the current/next line over the
+ * lane (src/app/panels/lyrics.ts). Colour, type and shape come only from the
+ * skin tokens, so all three skins read as themselves. The line never takes
+ * the pointer, so the lane under it stays clickable, and it wraps and shrinks
+ * on a narrow window.
+ */
+
+#lyrics[hidden],
+#lyrics-line[hidden],
+#lyrics .lyrics-plain[hidden],
+#lyrics .lyrics-row[hidden] {
+  display: none;
+}
+
+#lyrics .lyrics-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+#lyrics .lyrics-row input[type='text'] {
+  flex: 1 1 8ch;
+  min-width: 0;
+}
+
+#lyrics textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  resize: vertical;
+}
+
+#lyrics .lyrics-plain {
+  max-height: 10rem;
+  margin: 6px 0 0;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  color: var(--color-text-muted);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+}
+
+.lyrics-line {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  z-index: 2;
+  width: min(92%, 52rem);
+  padding: 6px 12px;
+  transform: translateX(-50%);
+  text-align: center;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+
+.lyrics-now {
+  min-height: 1.4em;
+  color: var(--color-accent);
+  font-family: var(--font-display);
+  font-size: clamp(0.95rem, 2.4vw, 1.4rem);
+  overflow-wrap: anywhere;
+}
+
+.lyrics-next {
+  min-height: 1.2em;
+  color: var(--color-text-muted);
+  font-family: var(--font-body);
+  font-size: clamp(0.75rem, 1.8vw, 1rem);
+  overflow-wrap: anywhere;
+}

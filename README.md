@@ -93,6 +93,19 @@ The free quota is 10,000 units a day and one search costs 101, so about 100
 searches a day. When it is spent the panel says so and Search opens YouTube's
 own page instead until the quota resets (midnight Pacific time).
 
+### Lyrics
+
+The song panel's Lyrics group looks a song up on [LRCLIB](https://lrclib.net)
+(free, no key) by the title and artist it guesses from the file or video name,
+which you can correct, or reads an `.lrc` file or plain text you paste or drop.
+Only the title, artist and length are sent. Synced lines show over the lane and
+follow the song (nudge 0.1 s either way if they run early or late); plain text
+is shown without timing. The line is off by default on a Karaoke-badged video,
+which usually shows lyrics already, and on for other songs once lines exist.
+Lyrics are cached per song in this browser. LRCLIB is fine for personal use;
+a public release needs a licence for lyrics (see Later, Public app in the
+roadmap).
+
 ## Design
 
 - [ARCHITECTURE.md](./docs/ARCHITECTURE.md) — system design and request/response schemas
