@@ -83,6 +83,7 @@ describe('initialState', () => {
       scoring: 'strict',
       noteGuide: false,
       keyboard: true,
+      settingsRev: 0,
       guideReading: null,
       key: { phase: 'none', message: '' },
       freePhrases: [],

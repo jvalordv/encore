@@ -25,6 +25,7 @@ import { HANDS_FREE_WARNING, isHandsFreeLabel } from '../duet/hands-free';
 import { LyricsController } from '../lyrics/controller';
 import { createLrclibClient } from '../lyrics/lrclib';
 import { lazyLyricsStore } from '../lyrics/store';
+import { downloadBlob } from './download';
 import { mountCapturePanel } from './panels/capture';
 import { mountKaraokePanel } from './panels/karaoke';
 import { mountKeyboardPanel } from './panels/keyboard';
@@ -39,10 +40,12 @@ import { mountProgressPanel } from './panels/progress';
 import { mountReportPanel } from './panels/report';
 import { mountSingersPanel } from './panels/singers';
 import { mountSearchPanel } from './panels/search';
+import { mountSettingsPanel } from './panels/settings';
 import { mountStreakPanel } from './panels/streak';
 import { mountTakesPanel } from './panels/takes';
 import { describePrepare } from './prepare';
 import type { Session } from './session';
+import { domSkinPort } from './skin-port';
 import {
   describeHealth,
   describeMonitor,
@@ -438,12 +441,34 @@ export function mountUI(session: Session, root: Document = document): UI {
     mountSearchPanel(get('search'), { store, session, toggle: get<HTMLButtonElement>('search-toggle') }),
   );
 
+  // Every setting in one drawer; the controls above stay where they are.
+  cleanups.push(
+    mountSettingsPanel(get('settings'), {
+      store,
+      session,
+      toggle: get<HTMLButtonElement>('settings-toggle'),
+      micCheckToggle: get<HTMLButtonElement>('mic-check-button'),
+      skin: domSkinPort(window),
+      download: (text, name) => downloadBlob(root, new Blob([text], { type: 'application/json' }), name),
+    }),
+  );
+
   // The player is built into this pane; the Session shows and hides it through
   // the state (`embed`), never by touching the element.
   session.attachEmbedHost(domEmbedHost(embedPlayer));
   cleanups.push(() => session.attachEmbedHost(null));
 
   autoPrepare.checked = session.settings.autoPrepareLinks;
+  // The Settings drawer (or an import) can change these two, which the state
+  // does not hold, so a save of the settings redraws them.
+  cleanups.push(
+    store.subscribe((_state, changed) => {
+      if (!changed.has('settingsRev')) return;
+      autoPrepare.checked = session.settings.autoPrepareLinks;
+      if (root.activeElement !== clarityInput) clarityInput.value = String(session.settings.clarityThreshold);
+      setText(clarityValue, Number(session.settings.clarityThreshold).toFixed(2));
+    }),
+  );
   listen(autoPrepare, 'change', () => session.setAutoPrepareLinks(autoPrepare.checked));
   listen(prepareButton, 'click', () => void session.prepare());
   // The service may have been started while the person was elsewhere; while

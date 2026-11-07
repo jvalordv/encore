@@ -15,6 +15,7 @@
 import './library.css';
 import './lyrics.css';
 import './search.css';
+import './settings.css';
 import './skins/arcade.css';
 import './skins/dreamhouse.css';
 import './skins/studio.css';

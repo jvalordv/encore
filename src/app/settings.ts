@@ -170,7 +170,7 @@ function apiKey(value: unknown): string {
 }
 
 /** An http(s) URL without trailing slashes, or null when it is not one. */
-function serviceUrl(value: unknown): string | null {
+export function parseServiceUrl(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const text = value.trim();
   try {
@@ -233,7 +233,7 @@ export function sanitizeSettings(value: unknown): Settings {
     inputDeviceId: deviceId(raw.inputDeviceId),
     outputDeviceId: deviceId(raw.outputDeviceId),
     monitor: monitorMode(raw.monitor),
-    serviceUrl: serviceUrl(raw.serviceUrl) ?? DEFAULT_SETTINGS.serviceUrl,
+    serviceUrl: parseServiceUrl(raw.serviceUrl) ?? DEFAULT_SETTINGS.serviceUrl,
     autoPrepareLinks:
       typeof raw.autoPrepareLinks === 'boolean'
         ? raw.autoPrepareLinks

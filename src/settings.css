@@ -1,0 +1,58 @@
+/*
+ * The Settings drawer (src/app/panels/settings.ts). It sits where the Library
+ * drawer does, at the right edge below the top bar, and scrolls inside
+ * itself; the panel keeps the two from being open together. Colour, type and
+ * shape come only from the skin tokens. Loaded before style.css, so a rule
+ * that has to beat one there names an id.
+ */
+
+#settings {
+  position: fixed;
+  top: 64px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(520px, calc(100vw - 24px));
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  color: var(--color-text);
+}
+
+#settings[hidden] {
+  display: none;
+}
+
+#settings .settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#settings .settings-section label.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#settings .singer-row {
+  display: flex;
+  gap: 8px;
+}
+
+#settings input[type='text'],
+#settings input[type='password'],
+#settings input[type='number'] {
+  width: 100%;
+  min-width: 0;
+}
+
+#settings input[type='range'] {
+  width: 100%;
+}

@@ -62,6 +62,7 @@ import type { LibraryView } from './library-state';
 import type { MixChoice } from './mix';
 import { SessionCore } from './session/core';
 import { buildParts } from './session/parts';
+import type { ImportOutcome } from './session/settings';
 import type { DeviceLists, LaneSink, SessionOptions, SessionParts } from './session/types';
 import { loadSettings } from './settings';
 import type { PracticeMode, ScoringStyle, Settings } from './settings';
@@ -251,11 +252,7 @@ export class Session {
 
   /** Shows or hides the lane's piano keyboard view, remembering the choice. */
   setKeyboard(on: boolean): void {
-    const { core } = this;
-    core.current.keyboard = on;
-    core.persist();
-    core.lane?.setKeyboard(on);
-    core.store.patch({ keyboard: on });
+    this.core.settings.setKeyboard(on);
   }
 
   /** Moves the song by whole semitones (-6..+6), kept for the song. */
@@ -560,6 +557,38 @@ export class Session {
   /** Adds the favorites in a JSON file's text; answers with what to tell. */
   importFavorites(text: string): Promise<string> {
     return this.core.library.importText(text);
+  }
+
+  // ---- Settings panel -----------------------------------------------------
+
+  /** Keeps a new service address; false when the text is not an http(s) URL. */
+  setServiceUrl(text: string): boolean {
+    return this.core.settings.setServiceUrl(text);
+  }
+
+  /** Judges pitch modulo an octave, or not. */
+  setOctaveInvariant(on: boolean): void {
+    this.core.settings.setOctaveInvariant(on);
+  }
+
+  /** True when the service at the saved address answers its health check. */
+  testService(): Promise<boolean> {
+    return this.core.settings.testService();
+  }
+
+  /** The text of a settings file; the search key only when `includeKey`. */
+  exportSettings(skin: string, includeKey: boolean): string {
+    return this.core.settings.exportText(skin, includeKey);
+  }
+
+  /** Applies a settings file and says, in one sentence, what changed. */
+  importSettings(text: string, skinIds: readonly string[], skin: string): ImportOutcome {
+    return this.core.settings.importText(text, skinIds, skin);
+  }
+
+  /** Puts every setting back to its default; takes and the Library stay. */
+  resetAllSettings(): boolean {
+    return this.core.settings.resetAll();
   }
 
   // ---- Takes --------------------------------------------------------------

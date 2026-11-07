@@ -34,6 +34,7 @@ import { PlaybackController } from './playback';
 import { PrepareController } from './prepare';
 import { ScoringController } from './scoring';
 import { SearchController } from './search';
+import { SettingsController } from './settings';
 import type { SearchOptions } from './search';
 import { SongController } from './songs';
 import { StemsController } from './stems';
@@ -94,6 +95,7 @@ export class SessionCore {
   readonly backing: BackingController;
   readonly search: SearchController;
   readonly library: LibraryController;
+  readonly settings: SettingsController;
   readonly duet: DuetController;
   readonly loop: TickLoop;
 
@@ -126,6 +128,7 @@ export class SessionCore {
     this.keys = new KeyController(this);
     this.search = new SearchController(this, init.search);
     this.library = new LibraryController(this, init.library ?? Promise.resolve(memoryLibraryStore()));
+    this.settings = new SettingsController(this);
     this.duet = new DuetController(this, init.secondParts);
     this.loop = new TickLoop(this);
 
@@ -150,6 +153,7 @@ export class SessionCore {
   /** Writes the settings to storage, validated on the way. */
   persist(): void {
     saveSettings(this.settingsStore, this.current);
+    this.store.patch({ settingsRev: this.store.state.settingsRev + 1 });
   }
 
   private wire(parts: SessionParts): void {

@@ -24,52 +24,50 @@ webcam or USB mic.
 
 ## Current state
 
-- **Last done:** **WL1** (2026-11-07): learning mode now gives measured
-  feedback on any song, including a YouTube karaoke video with no melody:
-  intonation, stability, scoops, drift, vibrato, range and phrasing in a
-  "Your voice" card, a tuner-style live lane, and new tips. Before it
-  **W0e** (2026-11-06): a live keyboard over the lane's
-  gutter, with the melody's key lit, a voice marker at the exact pitch
-  joined to the ribbon, a Keyboard toggle, and "Save melody (.mid)". The
-  YouTube player also moved to youtube.com so the sign-in clears the bot
-  check (2026-11-06). Before it **W0d** (2026-11-05): a Mic check beside
-  Calibrate. It
-  runs four guided steps over a synthesised test melody, labels them,
-  gets W0c's analysis from the service (`POST /takes/analyse`), and offers
-  "Use these settings" for the gate, the bleed rule and the latency per
-  device pair. It works over a loaded file or a YouTube video. Before it
-  **W0c** (2026-11-05): `take_analysis` in the service
-  reads a saved take and reports sections, verdicts and processing
-  feedback for development: a decision audit, a crepe tracker check, a
-  latency check, a what-if sweep of the constants, and measured findings.
-  Before it **W0b** (2026-11-05): YouTube's controls hidden so
-  Encore's are the only ones, held-down Play, Loop and Record, an oEmbed
-  check that tells a blocked video from a missing one, the no-key Search
-  line, and a full analysis trace with every take (raw frames with gate
-  reasons, health at 4 Hz, an event log, environment, reference and key,
-  calibration). Before it **W0** (the note guide, the mic meter and level
-  gate, the bleed warning, Save take), W4 (Strict
-  and Open scoring), W3 (learning mode), W2 (search and the karaoke core)
-  and W1 (the reference step and the browser seams); older work in
-  `docs/HISTORY.md`.
-- **In progress (2026-11-07, overnight, owner asleep):** none at this
-  commit. Landed tonight: WL1, W0f, WL2, WL3a (capture), W6 (lyrics),
-  WL3b (alignment), W6b (range and key), W6d (fun extras) and W0g
-  (backing notes, code only; the model waits on the owner) and W5 (two
-  singers; the owner test needs a second person). WL3 stays unticked only for the
-  downloader fix, which waits on the owner.
-- **Next:** **WL2** (progress over time), **WL3** (a
-  melody for YouTube songs: capture while it plays, plus the downloader
-  as a backup, both used together where possible), then **W0f** (library and
-  favorites), **W0g** (backing music as
-  notes), **W5**, **W6**, **W6b** (range and key), **W6c** (settings
-  panel), **W6d** (fun extras), then the owner's **W7**. The owner asked
-  to chain these in one session, 2026-11-06. W5's owner test needs a
-  second person. The owner's tests for W0, W0b and W0d (Mic check in
-  speaker and headphone modes) can run at any time; the card's findings
-  set a tuning wave. Search needs the owner's YouTube Data API key
-  (README, "Run it"; pasted into the app, never into chat).
-- **Blockers:** none for W5. YouTube now answers yt-dlp with "Sign in to
+- **Morning summary for the owner (overnight session, 2026-11-07).**
+  Eleven waves landed on `main`, each with one review, one fix pass and
+  green checks (front end, e2e, service):
+  - **Learning first:** WL1 (feedback on any song, no melody needed:
+    "Your voice" card, tuner-style lane, tips with numbers), WL2
+    (Progress view: trends per song and overall), WL3a (Capture for
+    learning: record a YouTube video's audio as it plays, so the service
+    extracts its melody and key), WL3b (score a karaoke video against its
+    original's aligned melody; unrelated songs are refused).
+  - **The rest:** W0f (Library and favorites, the in-app search setup
+    box), W6 (imported synced lyrics), W6b (vocal range band, key
+    transpose ±6 in the browser), W6d (days-sung streak; stars and
+    personal bests in learning mode; PNG report card), W0g (backing notes
+    as grey, code only), W5 (two singers: second mic or turns on one
+    mic), W6c (one Settings panel with reset, export and import). Before
+    tonight: W0e (keyboard and melody MIDI), W0d (Mic check), W0c (take
+    analysis), W0b, W0, and W1-W4; older work in `docs/HISTORY.md`.
+- **Waiting on the owner (decide in chat):**
+  - **Downloader fix (WL3):** the safety check refused to start a plugin
+    that gets past YouTube's bot check. Say whether to proceed. Capture
+    covers YouTube songs meanwhile, and a search-result original still
+    needs it (or a captured or uploaded original from the Library).
+  - **Basic Pitch for backing notes (W0g):** it pins numpy below 2 and
+    pulls TensorFlow, so it cannot share the service's venv. Say whether
+    to give it its own environment.
+- **Test first (in Chrome, not Claude Desktop's pane; start the service
+  and the dev server):**
+  1. A YouTube karaoke video in **learning mode**: sing a take and read
+     "Your voice". Which tips ring true?
+  2. **Capture for learning** on a video (share this tab with tab audio
+     on), wait for the melody, then sing a Strict take.
+  3. **Mic check** in speaker mode, then headphones; Use these settings.
+  4. **Key** + / - on a prepared or uploaded song (does the shifted
+     sound hold up at ±4?), the range band after 3 takes, Progress,
+     Library favorites, lyrics, Settings.
+  5. With a second person: W5 duet on one mic, then two.
+- **In progress:** none.
+- **Next:** the owner's tests above, then a tuning wave from the Mic
+  check and take-analysis findings, then **W7** (the full test and one
+  sweep). Housekeeping follow-ups worth a quiet wave: files over 500
+  lines (`src/app/session.ts`, `src/app/ui.ts`, `src/audio/player.ts`,
+  `src/app/session/takes.ts`, `service/encore_service/store.py`), a
+  summaries store for takes, alignment confidence on real songs.
+- **Blockers:** YouTube answers yt-dlp with "Sign in to
   confirm you're not a bot" (2026-10-28, seven tries on Big Buck Bunny), so
   Prepare for links and W2's "Find the original" fail until a newer
   yt-dlp gets through (`uv lock --upgrade-package yt-dlp`, then sync as
@@ -1266,7 +1264,7 @@ Tracks inside a wave share no files and may run in parallel.
   - Follow-up: a key change keeps the lane's old frame trace and grades.
   - Follow-up: `src/audio/player.ts` is about 690 lines; split the stem
     and loop logic out.
-- [ ] **W6c: Settings panel** (owner pulled it in from Later, 2026-11-06).
+- [x] **W6c: Settings panel** (owner pulled it in from Later, 2026-11-06).
   One panel that gathers every setting: mic and output, monitor mode,
   latency and Mic check tuning per device pair, note guide, keyboard,
   vocal guide level, skin, search key, service URL, auto-advance and
@@ -1274,6 +1272,24 @@ Tracks inside a wave share no files and may run in parallel.
   controls stay where they are used. Includes Reset all, and export and
   import of settings (no search key in the export unless asked). Tests:
   the export sanitiser. Owner test: change a few, reload, export.
+  - Built (2026-11-07):
+    - Code: `src/app/panels/settings.ts`, `settings-fields.ts`,
+      `src/app/session/settings.ts`, `src/app/settings-io.ts` and
+      `src/settings.css`.
+    - Panel: a header Settings drawer writes through the same session
+      paths as the inline controls; a `settingsRev` counter keeps both in
+      sync.
+    - Reset and export: Reset all asks first and leaves takes, library,
+      lyrics and favorites alone. Export leaves the search key out
+      unless ticked, and import is sanitised.
+    - While busy: device, latency and monitor controls lock while
+      recording or calibrating, and Reset and Import refuse during
+      recording, calibration, record start or a Mic check.
+    - Left out: no global lyrics default (it is per song), and the
+      backing-notes toggle stays per session.
+    - Review fixes: the busy locks.
+  - Follow-up: `src/app/ui.ts` (about 644 lines) and `src/app/session.ts`
+    (about 628) need splitting.
 - [x] **W6d: Fun extras** (owner pulled it in from Later, 2026-11-06).
   Streaks (days sung in a row), stars per song in learning mode only (no
   stars or streak counts in karaoke mode beyond "days sung", which judges
@@ -1411,7 +1427,7 @@ were.
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |
 | W4 Strict and Open scoring (measured) | 1 | 0.83 M | 20 min |
 | W7 Test and sweep | 0.8 (0.6-1.5) | about 0.6 M | 45 min |
-| W6c Settings panel | 0.5 (0.4-0.8) | about 0.35 M | 5 min |
+| W6c Settings panel (measured, worktree) | 0.6 | 0.39 M | 5 min |
 | **Total** | **about 16 (15-19)** | **about 11.5 M** | **about 5 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The

@@ -136,6 +136,12 @@ export interface AppState {
   noteGuide: boolean;
   /** Whether the lane's keyboard view is on. Mirrors `settings.keyboard`. */
   keyboard: boolean;
+  /**
+   * Counts saves of the settings object, so a control for a setting the
+   * state does not hold itself (auto-prepare, clarity, the service address)
+   * can redraw when the Settings panel or an import changes it.
+   */
+  settingsRev: number;
   /** What the note guide reads now; null with the guide off or no voice. */
   guideReading: GuideNote | null;
   /** What the song panel knows about the song's key, which Open scores against. */
@@ -216,6 +222,7 @@ export function initialState(): AppState {
     scoring: 'strict',
     noteGuide: false,
     keyboard: true,
+    settingsRev: 0,
     guideReading: null,
     key: initialKey(),
     keyShift: initialKeyShift(),
