@@ -627,6 +627,11 @@ Tracks inside a wave share no files and may run in parallel.
     provider in its Node script mode; Node 24 is on PATH) and a newer
     yt-dlp, with no browser cookies. When it works, Prepare and "Find the
     original" run automatically as before.
+    **Waiting on the owner (2026-11-07):** the overnight session's
+    safety check refused to start this work: a plugin that gets past
+    YouTube's bot check. It needs the owner's explicit go-ahead in chat
+    before any agent installs or wires it. Capture covers YouTube songs
+    meanwhile.
   - **Both, for accuracy:** when both a download and a capture exist for
     a video, the download is the audio source (lossless timing, no room
     or tab-volume effects). The capture is cross-checked against it by
