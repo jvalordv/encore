@@ -1,0 +1,133 @@
+/*
+ * The Library drawer and the favorites bar (src/app/panels/library.ts). The
+ * drawer is fixed at the right edge, below the top bar, and scrolls inside
+ * itself; on a narrow window it spans the page. Colour, type and shape come
+ * only from the skin tokens, so all three skins read as themselves. Loaded
+ * before style.css, so a rule that has to beat one there names #app or an id.
+ */
+
+#library {
+  position: fixed;
+  top: 64px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(520px, calc(100vw - 24px));
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  color: var(--color-text);
+}
+
+#library[hidden],
+#playlist-bar[hidden] {
+  display: none;
+}
+
+.library-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.library-head .panel-title {
+  margin: 0;
+}
+
+.library-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.library-tools[hidden] {
+  display: none;
+}
+
+.library-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.library-list[hidden] {
+  display: none;
+}
+
+.library-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 8px;
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: var(--radius);
+}
+
+.library-item[data-current='true'] {
+  border-color: var(--color-accent);
+}
+
+/* The title-and-meta block is one button; it drops the usual button look so
+   the row reads as a row. */
+.library-load,
+.library-load:hover:not(:disabled) {
+  display: flex;
+  flex: 1 1 180px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font-weight: 400;
+  text-align: left;
+  transform: none;
+}
+
+.library-title {
+  max-width: 100%;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+button.star {
+  min-width: 0;
+  padding-inline: 8px;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.playlist-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0;
+}
+
+#favorite-toggle[hidden] {
+  display: none;
+}

@@ -6,7 +6,8 @@ file again is a cache hit that queues whatever has not finished, and puts back
 the audio if that has gone missing from the cache. `POST /songs/url` takes a
 link to one YouTube video instead: it checks the link, asks YouTube what the
 video is, and creates the song as `yt-<video id>` for the fetch step to fill.
-`GET /songs/{id}` reports per-step progress for the browser to poll, and `GET
+`GET /songs` lists what the store holds, for the browser's Library. `GET
+/songs/{id}` reports per-step progress for the browser to poll, and `GET
 /songs/{id}/audio` serves the stored source so a song can be reloaded without
 the original file. `GET /songs/{id}/stems/{stem}` serves the vocal or the
 backing that the separation step made, with the level they were scaled by in
@@ -30,7 +31,7 @@ from encore_service import youtube
 from encore_service.config import Settings
 from encore_service.jobs import JobQueue
 from encore_service.pipeline import initial_status, queue_preparation
-from encore_service.schemas import SongLinkRequest, SongStatus
+from encore_service.schemas import SongLinkRequest, SongStatus, SongSummary
 from encore_service.store import (
     AUDIO_MEDIA_TYPES,
     STEM_FILES,
@@ -205,6 +206,17 @@ def create_song_from_link(body: SongLinkRequest, request: Request) -> SongStatus
     # its status and the preparation below is queued once either way.
     store.add_link(song_id, meta, initial_status(song_id, meta))
     return queue_preparation(store, jobs, song_id)
+
+
+@router.get("", response_model=list[SongSummary])
+def list_songs(request: Request) -> list[SongSummary]:
+    """List the stored songs, newest first, with the steps each has done.
+
+    The browser's Library shows an upload it has forgotten (cleared site
+    data, another browser) from this list.
+    """
+    store: SongStore = request.app.state.store
+    return store.list_songs()
 
 
 @router.get(

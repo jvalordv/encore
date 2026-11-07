@@ -7,6 +7,8 @@
  */
 import { vi } from 'vitest';
 import type { PitchFrame } from '../src/analysis/pitch';
+import { memoryLibraryStore } from '../src/app/library';
+import type { LibraryStore } from '../src/app/library';
 import { SessionCore } from '../src/app/session/core';
 import type { SearchOptions } from '../src/app/session/search';
 import type { LaneSink, SessionParts } from '../src/app/session/types';
@@ -236,6 +238,7 @@ export interface Harness {
   store: StateStore;
   settingsStore: KeyValueStore;
   takeStore: TakeStore;
+  libraryStore: LibraryStore;
   engine: FakeEngine;
   player: FakePlayer;
   mic: FakeMic;
@@ -252,6 +255,7 @@ export function makeHarness(saved?: Record<string, unknown>, search?: SearchOpti
   if (saved) settingsStore.set('settings', JSON.stringify(saved));
   const store = new StateStore();
   const takeStore = memoryTakeStore();
+  const libraryStore = memoryLibraryStore();
   const engine = new FakeEngine();
   const player = new FakePlayer();
   const mic = new FakeMic();
@@ -271,10 +275,11 @@ export function makeHarness(saved?: Record<string, unknown>, search?: SearchOpti
     settings: loadSettings(settingsStore),
     parts,
     takes: Promise.resolve(takeStore),
+    library: Promise.resolve(libraryStore),
     trackerSupported: true,
     search,
   });
-  return { core, store, settingsStore, takeStore, engine, player, mic, tracker, recorder };
+  return { core, store, settingsStore, takeStore, libraryStore, engine, player, mic, tracker, recorder };
 }
 
 /** A song to load into a fake transport. */

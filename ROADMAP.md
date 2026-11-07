@@ -52,8 +52,9 @@ webcam or USB mic.
   and Open scoring), W3 (learning mode), W2 (search and the karaoke core)
   and W1 (the reference step and the browser seams); older work in
   `docs/HISTORY.md`.
-- **In progress (2026-11-07, overnight, owner asleep):** WL3a (capture)
-  and W0f (library) in worktrees, to be merged one at a time.
+- **In progress (2026-11-07, overnight, owner asleep):** WL2 (progress)
+  in the main checkout and WL3a (capture) in a worktree, landing one at
+  a time. W0f (library and favorites) landed.
 - **Next:** **WL2** (progress over time), **WL3** (a
   melody for YouTube songs: capture while it plays, plus the downloader
   as a backup, both used together where possible), then **W0f** (library and
@@ -626,7 +627,7 @@ Tracks inside a wave share no files and may run in parallel.
   - Likely two waves (WL3a capture and the downloader fix, WL3b the
     karaoke-to-original alignment); split when it is briefed.
 
-- [ ] **W0f: Library and favorites** (owner, 2026-11-06: "create a
+- [x] **W0f: Library and favorites** (owner, 2026-11-06: "create a
   playlist of favorites, which would be the youtube links if they're from
   ... through the app view and play saved music tracks"). Two tracks:
   browser and service.
@@ -661,6 +662,32 @@ Tracks inside a wave share no files and may run in parallel.
     them, reorder, and let one end to see the next load.
   - Done when every check is green. Owner test: star the two songs you
     recorded, reload the page, and play the Favorites through.
+  - Built (2026-11-07):
+    - Code: `src/app/{library,playlist,library-share,library-state}.ts`,
+      `src/app/session/library.ts`, `src/app/panels/library.ts`, and
+      `src/library.css`.
+    - Store: IndexedDB `encore-library` v1. A record is keyed by the song
+      hash the takes use (`yt-<id>` or the file's sha256); the takes
+      count is derived. `songs.ts` notes each load and gained
+      `loadStored` (fetch an upload back from the service).
+    - Favorites: they move to the next song on a natural end only (not
+      while looping), and survive a Mic check. The `autoAdvance` setting
+      is in the settings store. Export format:
+      `{kind:'encore-favorites', version:1}`. Import refuses other
+      versions.
+    - Service and Search: the service has `GET /songs` (newest first),
+      and the Search panel shows the "Set up in-app search" box without
+      a key.
+    - Review fixes: Mic check vs the playlist, a loop wrap
+      auto-advancing, the import version, an unread import file, and a
+      stale playlist after another load won.
+  - Follow-up: `src/app/session.ts` is over 500 lines; move a facade or
+    two out.
+  - Follow-up: without crypto the file hash falls back to FNV and cannot
+    match the service's sha256 id.
+  - Follow-up: "Last played" is set at load, not at play.
+  - Follow-up: the drawer was not looked at in the three skins or a
+    narrow window.
 
 - [ ] **W0g: Backing music as notes** (owner, 2026-11-06: "we can also do
   the backing music as midi as well, but they could show as grey").
@@ -1175,6 +1202,7 @@ were.
 | W0d Mic check in the app (measured) | 1 | 0.75 M | 15 min |
 | W0e Keyboard and melody MIDI (measured) | 0.4 | 0.31 M | 10 min |
 | WL1 Learning feedback on any song (measured) | 0.6 | 0.42 M | 20 min |
+| W0f Library and favorites (measured, worktree) | 0.6 | 0.45 M | 10 min |
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |

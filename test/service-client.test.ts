@@ -359,6 +359,21 @@ describe('ServiceClient.getSong', () => {
   });
 });
 
+describe('ServiceClient.listSongs', () => {
+  const row = { id: ID, name: 'tone', source: 'file', duration_s: 1, steps_done: ['key'], has_audio: true, updated_at: 5 };
+
+  it('reads the list and leaves out rows it cannot use', async () => {
+    const { client, calls } = clientFor(() => json([row, { id: 7 }, 'junk', { ...row, source: 'tape' }]));
+    expect(await client.listSongs()).toEqual([row]);
+    expect(calls[0].url).toBe(`${BASE}/songs`);
+  });
+
+  it('is unexpected when the body is not a list', async () => {
+    const { client } = clientFor(() => json({ songs: [] }));
+    expect(await failureOf(client.listSongs())).toMatchObject({ kind: 'unexpected' });
+  });
+});
+
 describe('ServiceClient.fetchSongAudio', () => {
   it('returns the bytes of the stored file', async () => {
     const bytes = new Uint8Array([102, 76, 97, 67, 0, 1, 2, 3, 255]);

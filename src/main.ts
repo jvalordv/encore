@@ -12,6 +12,7 @@
  * so there is nothing to protect; the end-to-end test drives the page through
  * it.
  */
+import './library.css';
 import './search.css';
 import './skins/arcade.css';
 import './skins/dreamhouse.css';

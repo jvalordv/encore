@@ -11,6 +11,7 @@ import type { Player } from '../../audio/player';
 import type { Recorder } from '../../audio/recorder';
 import type { YouTubeApi } from '../../audio/youtube-api';
 import type { PitchLane } from '../../render/pitch-lane';
+import type { LibraryStore } from '../library';
 import type { StateStore } from '../state';
 import type { SearchOptions } from './search';
 import type { KeyValueStore } from '../storage';
@@ -48,6 +49,8 @@ export interface SessionOptions {
   settings?: KeyValueStore;
   /** Take storage; default is IndexedDB with a memory fallback. */
   takes?: TakeStore | Promise<TakeStore>;
+  /** Library storage; default is IndexedDB with a memory fallback. */
+  library?: LibraryStore | Promise<LibraryStore>;
   /** State to write into; default is a fresh store. */
   store?: StateStore;
   /**

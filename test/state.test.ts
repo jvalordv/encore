@@ -51,6 +51,16 @@ describe('initialState', () => {
       karaoke: { phase: 'none', uploadProgress: 0, steps: null, message: '' },
       mix: { available: false, choice: 'original', guideLevel: 0.5 },
       reference: { phase: 'none', notes: 0, message: '' },
+      library: {
+        open: false,
+        view: 'all',
+        entries: [],
+        takeCounts: {},
+        onService: [],
+        playlist: { active: false, currentId: null },
+        autoAdvance: true,
+        notice: '',
+      },
       search: {
         open: false,
         filter: 'karaoke',

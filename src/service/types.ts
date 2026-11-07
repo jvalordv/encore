@@ -51,6 +51,18 @@ export interface SongStatus {
   steps: SongSteps;
 }
 
+/** One line of `GET /songs`: a stored song and the steps it has finished. */
+export interface SongSummary {
+  id: string;
+  name: string;
+  source: SongSource;
+  duration_s: number | null;
+  steps_done: StepName[];
+  /** True when the source file is held, so the song can be loaded again. */
+  has_audio: boolean;
+  updated_at: number;
+}
+
 /** Body of `POST /songs/url`: the link, as the person pasted it. */
 export interface SongLinkRequest {
   url: string;

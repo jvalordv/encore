@@ -157,6 +157,18 @@ class SongStatus(BaseModel):
     steps: SongSteps = Field(default_factory=SongSteps)
 
 
+class SongSummary(BaseModel):
+    """One line of GET /songs: what a stored song is and how far it got."""
+
+    id: str
+    name: str  # the title, or the id where the song has none
+    source: SongSource
+    duration_s: float | None = None
+    steps_done: list[StepName] = Field(default_factory=list)
+    has_audio: bool = False  # the source file is held, so the song can reload
+    updated_at: float = 0.0  # epoch seconds of the last status write
+
+
 class SongLinkRequest(BaseModel):
     """Body of POST /songs/url: a link to one YouTube video, as pasted."""
 
