@@ -36,12 +36,14 @@ export interface StepStatus {
   detail?: string | null;
 }
 
-/** The five steps of a song. */
+/** The steps of a song. */
 export interface SongSteps {
   fetch: StepStatus;
   separation: StepStatus;
   key: StepStatus;
   reference: StepStatus;
+  /** The backing notes (W0g); absent from a service older than that. */
+  backing?: StepStatus;
   lyrics: StepStatus;
 }
 
@@ -154,6 +156,21 @@ export interface KeySegment {
   mode: 'major' | 'minor' | null;
   /** 0..1: how far the best key beat the runner-up. */
   confidence: number;
+}
+
+/** One note of the backing music, as `GET /songs/{id}/backing` sends it. */
+export interface BackingNote {
+  onset_s: number;
+  offset_s: number;
+  /** Whole MIDI note number. */
+  midi: number;
+  /** 1 to 127. */
+  velocity: number;
+}
+
+/** The backing music as notes, in onset order; chords overlap. */
+export interface BackingNotes {
+  notes: BackingNote[];
 }
 
 /** The song's key over time, as `GET /songs/{id}/key` sends it. */

@@ -4,22 +4,27 @@
  * The bytes come from src/audio/midi-file.ts; this is the small glue between
  * the Save melody button and src/app/download.ts.
  */
-import { encodeMelodyMidi } from '../audio/midi-file';
+import { encodeMelodyAndBackingMidi, encodeMelodyMidi } from '../audio/midi-file';
 import type { LaneNote } from '../render/lane-geometry';
 import { downloadBlob } from './download';
 
-/** `<song name>-melody.mid`, with the song's extension and odd characters dropped. */
-export function melodyFileName(songName: string): string {
+/** `<song name>-melody.mid` (`-melody-backing.mid` with backing), with the song's extension and odd characters dropped. */
+export function melodyFileName(songName: string, withBacking = false): string {
   const base = songName
     .replace(/\.[A-Za-z0-9]{1,5}$/, '')
     .replace(/[\/:*?"<>|\u0000-\u001f]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  return `${base || 'song'}-melody.mid`;
+  return `${base || 'song'}-melody${withBacking ? '-backing' : ''}.mid`;
 }
 
-/** Downloads the melody as a Standard MIDI File. */
-export function saveMelody(doc: Document, songName: string, notes: readonly LaneNote[]): void {
-  const bytes = encodeMelodyMidi(notes);
-  downloadBlob(doc, new Blob([bytes as BlobPart], { type: 'audio/midi' }), melodyFileName(songName));
+/** Downloads the melody as a Standard MIDI File; with `backing`, a two-track one. */
+export function saveMelody(
+  doc: Document,
+  songName: string,
+  notes: readonly LaneNote[],
+  backing: readonly LaneNote[] | null = null,
+): void {
+  const bytes = backing ? encodeMelodyAndBackingMidi(notes, backing) : encodeMelodyMidi(notes);
+  downloadBlob(doc, new Blob([bytes as BlobPart], { type: 'audio/midi' }), melodyFileName(songName, backing !== null));
 }

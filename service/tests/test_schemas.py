@@ -63,6 +63,12 @@ def test_song_status_round_trips() -> None:
                 "error": None,
                 "detail": None,
             },
+            "backing": {
+                "state": "queued",
+                "progress": 0.0,
+                "error": None,
+                "detail": None,
+            },
             "lyrics": {
                 "state": "skipped",
                 "progress": 0.0,
@@ -127,6 +133,7 @@ def test_song_steps_run_in_order_with_fetch_first() -> None:
         "separation",
         "key",
         "reference",
+        "backing",
         "lyrics",
     ]
 

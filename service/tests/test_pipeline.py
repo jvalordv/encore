@@ -80,7 +80,14 @@ class FakeClock:
 
 
 def test_step_order_matches_the_schema() -> None:
-    assert STEP_ORDER == ("fetch", "separation", "key", "reference", "lyrics")
+    assert STEP_ORDER == (
+        "fetch",
+        "separation",
+        "key",
+        "reference",
+        "backing",
+        "lyrics",
+    )
     assert list(SongSteps.model_fields) == list(STEP_ORDER)
     assert set(RUNNERS) == set(STEP_ORDER)
 

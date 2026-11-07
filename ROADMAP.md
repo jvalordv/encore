@@ -54,8 +54,9 @@ webcam or USB mic.
   `docs/HISTORY.md`.
 - **In progress (2026-11-07, overnight, owner asleep):** none at this
   commit. Landed tonight: WL1, W0f, WL2, WL3a (capture), W6 (lyrics),
-  WL3b (alignment), W6b (range and key) and W6d (fun extras). W0g
-  (backing notes) is in a worktree. WL3 stays unticked only for the
+  WL3b (alignment), W6b (range and key), W6d (fun extras) and W0g
+  (backing notes, code only; the model waits on the owner). W5 (two
+  singers) is being built in a worktree. WL3 stays unticked only for the
   downloader fix, which waits on the owner.
 - **Next:** **WL2** (progress over time), **WL3** (a
   melody for YouTube songs: capture while it plays, plus the downloader
@@ -782,7 +783,7 @@ Tracks inside a wave share no files and may run in parallel.
   - Follow-up: the drawer was not looked at in the three skins or a
     narrow window.
 
-- [ ] **W0g: Backing music as notes** (owner, 2026-11-06: "we can also do
+- [x] **W0g: Backing music as notes** (owner, 2026-11-06: "we can also do
   the backing music as midi as well, but they could show as grey").
   Service and browser.
   - **Service:** a `backing` step after separation transcribes the
@@ -803,6 +804,25 @@ Tracks inside a wave share no files and may run in parallel.
     the lane's layer list, not pixels), and the type-1 MIDI encoder.
   - Done when every check is green. Owner test: prepare a song, look at
     the grey notes against the music, and open the two-track .mid.
+  - Built (2026-11-07), with the model **not installed**:
+    - Service: `service/encore_service/backing.py`, a `backing` step after
+      the reference (skipped with a plain detail when `basic_pitch` is
+      missing), and `GET /songs/{id}/backing`. Notes under 30 ms or
+      below an amplitude of 0.25 are dropped.
+    - Browser: `src/render/lane-backing.ts` draws grey notes under the
+      melody and grey keys under the melody's key, following the key
+      shift. A "Backing notes" toggle sits in the panel, and "with
+      backing" writes a type-1 two-track `.mid`. Melody readiness never
+      waits on the backing step.
+    - Review fix: declaring Basic Pitch as an extra made the shared
+      `uv.lock` resolve numpy 1.26 (and resampy 0.4.2) for every
+      install, so the extra was removed and the lock restored.
+  - **Waiting on the owner (2026-11-07):** whether to install Basic
+    Pitch. Its package declares TensorFlow and holds numpy below 2, so it
+    cannot share the service's venv. The likely route is its own
+    environment, called by the step as a subprocess (service/README.md,
+    "Backing notes"). Until then the backing notes stay empty, and the
+    real model's API and thresholds are untested.
 
 - [x] **W1: Seams and the reference melody.** Two tracks, one commit.
   - **W1a, service: reference melody** (was P2-T3). New `reference` step
@@ -1362,6 +1382,7 @@ were.
 | WL3b Karaoke-to-original alignment (measured) | 0.8 | 0.53 M | 15 min |
 | W6b Range and key (measured, worktree) | 0.7 | 0.45 M | 10 min |
 | W6d Fun extras (measured, worktree) | 0.6 | 0.36 M | 10 min |
+| W0g Backing notes, code only (measured, worktree) | 0.7 | 0.37 M | 5 min |
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |

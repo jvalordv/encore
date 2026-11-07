@@ -20,6 +20,7 @@ import { AlignController } from './align';
 import { DeviceController } from './devices';
 import { FrameBus } from './frame-bus';
 import { InputController } from './input';
+import { BackingController } from './backing';
 import { KeyController } from './keys';
 import { LibraryController } from './library';
 import { LatencyController } from './latency';
@@ -87,6 +88,7 @@ export class SessionCore {
   readonly stems: StemsController;
   readonly align: AlignController;
   readonly keys: KeyController;
+  readonly backing: BackingController;
   readonly search: SearchController;
   readonly library: LibraryController;
   readonly loop: TickLoop;
@@ -116,6 +118,7 @@ export class SessionCore {
     this.mix = new MixController(this);
     this.stems = new StemsController(this);
     this.align = new AlignController(this);
+    this.backing = new BackingController(this);
     this.keys = new KeyController(this);
     this.search = new SearchController(this, init.search);
     this.library = new LibraryController(this, init.library ?? Promise.resolve(memoryLibraryStore()));

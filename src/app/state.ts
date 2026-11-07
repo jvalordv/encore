@@ -19,6 +19,8 @@ import type { PitchFrame } from '../analysis/pitch';
 import type { MonitorMode } from '../audio/mic';
 import type { ClockKind, LoopRegion, TrackInfo, TransportState } from '../audio/transport';
 import { noteName } from '../render/lane-geometry';
+import { initialBacking } from './backing';
+import type { BackingState } from './backing';
 import { initialKaraoke } from './karaoke';
 import { initialKeyShift } from './key-shift';
 import type { KeyShiftState } from './key-shift';
@@ -113,6 +115,8 @@ export interface AppState {
   mix: MixState;
   /** The reference melody the lane draws, or why there is none. */
   reference: ReferenceState;
+  /** The backing notes (W0g): whether there are any and whether they show. */
+  backing: BackingState;
   /** Matching a karaoke track to its original's melody: progress and result. */
   align: AlignState;
   /** The song search: the chip, the words, the results, what to tell. */
@@ -199,6 +203,7 @@ export function initialState(): AppState {
     karaoke: initialKaraoke(),
     mix: initialMix(DEFAULT_GUIDE_LEVEL),
     reference: initialReference(),
+    backing: initialBacking(),
     align: initialAlign(),
     search: initialSearch('karaoke', false),
     library: initialLibrary(),

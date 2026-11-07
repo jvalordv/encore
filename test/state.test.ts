@@ -52,6 +52,7 @@ describe('initialState', () => {
       karaoke: { phase: 'none', uploadProgress: 0, steps: null, message: '' },
       mix: { available: false, choice: 'original', guideLevel: 0.5 },
       reference: { phase: 'none', notes: 0, message: '' },
+      backing: { phase: 'none', notes: 0, shown: true },
       align: { phase: 'idle', progress: 0, keyOffset: null, confidence: null, message: '' },
       library: {
         open: false,

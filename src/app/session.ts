@@ -141,6 +141,7 @@ export class Session {
     this.core.stems.syncLane();
     this.core.scoring.syncLane();
     this.core.keys.syncLane();
+    this.core.backing.syncLane();
   }
 
   /**
@@ -270,10 +271,21 @@ export class Session {
   }
 
   /** The loaded song's melody notes and name, for Save melody; null without notes. */
-  melodyForExport(): { name: string; notes: readonly LaneNote[] } | null {
+  melodyForExport(): {
+    name: string;
+    notes: readonly LaneNote[];
+    backing?: readonly LaneNote[] | null;
+  } | null {
     const notes = this.core.stems.melodyNotes();
     if (!notes) return null;
-    return { name: this.core.parts?.player.info?.name ?? 'song', notes };
+    const backing = this.core.backing.notesForExport();
+    const name = this.core.parts?.player.info?.name ?? 'song';
+    return backing ? { name, notes, backing } : { name, notes };
+  }
+
+  /** Shows or hides the backing notes (grey bars and keys) on the lane. */
+  setBackingShown(on: boolean): void {
+    this.core.backing.setShown(on);
   }
 
   /** Turns karaoke mode's note guide (a neutral nearest-note readout) on or off. */

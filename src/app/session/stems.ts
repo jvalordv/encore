@@ -102,6 +102,7 @@ export class StemsController {
     this.heldFile = null;
     this.serviceId = null;
     this.core.align.reset();
+    this.core.backing.reset();
     this.core.mix.clear();
     this.core.scoring.setKey(null, initialKey());
     this.showReference(null, initialReference());
@@ -280,6 +281,13 @@ export class StemsController {
     if (!mapped) return;
     await this.loadReference(job, client, mapped);
     if (this.isCurrent(job)) this.setKaraoke({ phase: 'ready', steps: mapped.steps });
+
+    // The backing notes come last in the service's order and are a bonus:
+    // the song is already playable, so nothing here is reported as a failure.
+    const backed = await this.settle(job, client, mapped, 'backing', 'ready');
+    if (!backed) return;
+    await this.loadBacking(job, client, backed);
+    if (this.isCurrent(job)) this.setKaraoke({ phase: 'ready', steps: backed.steps });
   }
 
   /**
@@ -290,7 +298,7 @@ export class StemsController {
     job: Job,
     client: ServiceClient,
     status: SongStatus,
-    through: 'separation' | 'key' | 'reference',
+    through: 'separation' | 'key' | 'reference' | 'backing',
     phase: KaraokeState['phase'],
   ): Promise<SongStatus | null> {
     if (settledThrough(status, through)) return status;
@@ -367,6 +375,21 @@ export class StemsController {
     if (step.state === 'skipped') return step.detail?.trim() || KEY_SKIPPED;
     if (step.state === 'failed') return step.error?.trim() || KEY_FAILED;
     return KEY_PENDING;
+  }
+
+  /** Fetches the backing notes if the step made them; otherwise there are none. */
+  private async loadBacking(job: Job, client: ServiceClient, status: SongStatus): Promise<void> {
+    if (status.steps.backing?.state !== 'done') {
+      this.core.backing.set(null);
+      return;
+    }
+    try {
+      const notes = await client.fetchBacking(status.song_id, job.controller.signal);
+      if (this.isCurrent(job)) this.core.backing.set(notes);
+    } catch (failure) {
+      if (!this.isCurrent(job) || isAbortError(failure)) return;
+      this.core.backing.set(null);
+    }
   }
 
   /** Fetches the melody and draws it, or records why there is none. */

@@ -424,6 +424,7 @@ def test_openapi_describes_the_song_routes(client: TestClient) -> None:
         "separation",
         "key",
         "reference",
+        "backing",
         "lyrics",
     ]
     assert "detail" in spec["components"]["schemas"]["StepStatus"]["properties"]

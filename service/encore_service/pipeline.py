@@ -1,6 +1,6 @@
 """The preparation steps of a song, run in order inside one queued job.
 
-`prepare` walks fetch, separation, key, reference and lyrics, recording each
+`prepare` walks fetch, separation, key, reference, backing and lyrics, recording each
 step's state in the song's status.json as it goes so the browser can poll
 progress. The work of a step is a runner registered in `RUNNERS`. A step with
 no runner yet is reported as skipped, with a note naming the ROADMAP task that
@@ -18,6 +18,7 @@ import time
 from collections.abc import Callable
 from functools import partial
 
+from encore_service.backing import transcribe_backing
 from encore_service.errors import StepSkipped
 from encore_service.fetch import fetch_source
 from encore_service.jobs import JobQueue
@@ -43,6 +44,7 @@ STEP_ORDER: tuple[StepName, ...] = (
     "separation",
     "key",
     "reference",
+    "backing",
     "lyrics",
 )
 
@@ -68,6 +70,7 @@ RUNNERS: dict[StepName, Runner | None] = {
     "separation": separate_vocals,
     "key": extract_key,
     "reference": extract_reference,
+    "backing": transcribe_backing,
     "lyrics": skip_lyrics,
 }
 
@@ -77,6 +80,7 @@ _BUILT_BY: dict[StepName, str] = {
     "separation": "P2-T2",
     "key": "W4a",
     "reference": "P2-T3",
+    "backing": "W0g",
     "lyrics": "P2-T4",
 }
 
@@ -206,7 +210,8 @@ def _is_done(
     separation whose stems have gone: with one missing the stems route would
     answer "not separated yet" for good, since adding the song again would find
     the step done and leave it be. The same goes for a key step whose key.json
-    has gone, and a reference step whose reference.json has.
+    has gone, a reference step whose reference.json has, and a backing step
+    whose backing.json has.
     """
     if getattr(status.steps, step).state != "done":
         return False
@@ -216,6 +221,8 @@ def _is_done(
         return all(store.stem_path(song_id, stem) is not None for stem in STEM_FILES)
     if step == "key":
         return store.key_path(song_id) is not None
+    if step == "backing":
+        return store.backing_path(song_id) is not None
     if step == "reference":
         # Alignment can finish this step for a karaoke song with no vocal of
         # its own; it must stay done only while the borrowed melody is there.
@@ -316,7 +323,7 @@ def _blocker(
         if status.source == "file":
             return "Source audio is missing. Add the file again."
         return "Needs fetch"
-    if step in ("key", "reference", "lyrics"):
+    if step in ("key", "reference", "backing", "lyrics"):
         # The key reads the instrumental and the reference the vocal, both
         # of which separation writes; neither waits for the other.
         return None if status.steps.separation.state == "done" else "Needs separation"

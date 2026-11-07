@@ -141,6 +141,7 @@ def test_a_link_makes_a_song_named_after_the_video(
         "separation": QUEUED,
         "key": QUEUED,
         "reference": QUEUED,
+        "backing": QUEUED,
         "lyrics": QUEUED,
     }
     assert lookups.calls == [VIDEO_ID]

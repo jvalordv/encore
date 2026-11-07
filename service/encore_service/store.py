@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 
 from encore_service.schemas import (
     AudioOrigin,
+    BackingNotes,
     KeyMap,
     Reference,
     SongSource,
@@ -61,6 +62,8 @@ AUDIO_MEDIA_TYPES = {
 
 # The key step's result, which the key route serves whole.
 KEY_FILE = "key.json"
+# The backing step's notes, which the backing route serves whole.
+BACKING_FILE = "backing.json"
 # The reference step's melody, which the reference route serves whole.
 REFERENCE_FILE = "reference.json"
 
@@ -332,6 +335,19 @@ class SongStore:
         folder = self.song_dir(song_id)
         with self._lock:
             _write_json(folder / KEY_FILE, key, indent=None)
+
+    def backing_path(self, song_id: str) -> Path | None:
+        """The finished backing notes, or None if there are none (yet)."""
+        if not is_valid_id(song_id):
+            return None
+        candidate = self.root / song_id / BACKING_FILE
+        return candidate if candidate.is_file() else None
+
+    def write_backing(self, song_id: str, backing: BackingNotes) -> None:
+        """Store a song's backing notes, whole and atomically, compact."""
+        folder = self.song_dir(song_id)
+        with self._lock:
+            _write_json(folder / BACKING_FILE, backing, indent=None)
 
     def incoming_path(self) -> Path:
         """A fresh path to stream one upload into; the file is not created."""

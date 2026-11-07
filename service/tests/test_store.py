@@ -508,7 +508,7 @@ def test_ids_waiting_to_run_lists_songs_with_a_queued_step_and_no_failure(
     partly = new_song(b"partly")
     store.update_step(partly, "separation", state="done", progress=1.0)
     settled = new_song(b"settled")
-    for step in ("separation", "key", "reference", "lyrics"):
+    for step in ("separation", "key", "reference", "backing", "lyrics"):
         store.update_step(settled, step, state="skipped")
     failed = new_song(b"failed")
     store.update_step(failed, "separation", state="failed", error="no")

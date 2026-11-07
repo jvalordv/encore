@@ -23,11 +23,11 @@ import type { MountPanel } from './panel';
 /** What the panel needs: the state to draw, and the two intents it calls. */
 export interface KaraokePanelDeps {
   store: StateStore;
-  session: Pick<Session, 'setMix' | 'setGuideLevel' | 'melodyForExport'>;
+  session: Pick<Session, 'setMix' | 'setGuideLevel' | 'melodyForExport'> & Partial<Pick<Session, 'setBackingShown'>>;
 }
 
 /** The keys of the state the panel is drawn from. */
-const WATCHED: ReadonlyArray<keyof AppState> = ['karaoke', 'reference', 'mix', 'align'];
+const WATCHED: ReadonlyArray<keyof AppState> = ['karaoke', 'reference', 'mix', 'align', 'backing'];
 
 function element<K extends keyof HTMLElementTagNameMap>(
   doc: Document,
@@ -64,10 +64,34 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
   save.title = 'Download the melody as a MIDI file, to open in any MIDI player.';
   const onSave = (): void => {
     const melodyOut = session.melodyForExport();
-    if (melodyOut) saveMelody(doc, melodyOut.name, melodyOut.notes);
+    if (!melodyOut) return;
+    if (withBacking.checked && melodyOut.backing) {
+      saveMelody(doc, melodyOut.name, melodyOut.notes, melodyOut.backing);
+    } else {
+      saveMelody(doc, melodyOut.name, melodyOut.notes);
+    }
   };
   save.addEventListener('click', onSave);
   cleanups.push(() => save.removeEventListener('click', onSave));
+
+  // The backing notes (W0g): a toggle for the lane, and a choice for the file.
+  const backingBox = element(doc, 'div', 'backing', 'karaoke-backing');
+  const showLabel = doc.createElement('label');
+  showLabel.className = 'field';
+  showLabel.title = 'The backing music as grey notes behind the melody, and grey lit keys.';
+  const showBacking = element(doc, 'input', 'backing-toggle');
+  showBacking.type = 'checkbox';
+  const onShow = (): void => session.setBackingShown?.(showBacking.checked);
+  showBacking.addEventListener('change', onShow);
+  cleanups.push(() => showBacking.removeEventListener('change', onShow));
+  showLabel.append(showBacking, doc.createTextNode(' Backing notes'));
+  const withLabel = doc.createElement('label');
+  withLabel.className = 'field';
+  withLabel.title = 'Save the backing as a second track in the .mid file.';
+  const withBacking = element(doc, 'input', 'save-with-backing');
+  withBacking.type = 'checkbox';
+  withLabel.append(withBacking, doc.createTextNode(' with backing'));
+  backingBox.append(showLabel, withLabel);
 
   const mixBox = element(doc, 'div', 'mix', 'karaoke-mix');
   const mixLabel = doc.createElement('span');
@@ -105,7 +129,7 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
   cleanups.push(() => guide.removeEventListener('input', onGuide));
   mixBox.append(mixLabel, mixButtons, guideLabel, guide);
 
-  host.append(title, lines, note, melody, matching, save, mixBox);
+  host.append(title, lines, note, melody, matching, save, backingBox, mixBox);
 
   let linesSignature = '';
   const setText = (el: HTMLElement, text: string): void => {
@@ -142,6 +166,10 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
     matching.dataset.phase = state.align.phase;
     save.hidden = state.reference.phase !== 'ready';
     save.disabled = state.reference.notes === 0;
+    backingBox.hidden = state.backing.phase !== 'ready';
+    backingBox.dataset.phase = state.backing.phase;
+    backingBox.dataset.notes = String(state.backing.notes);
+    showBacking.checked = state.backing.shown;
 
     mixBox.hidden = !view.mixVisible;
     for (const [choice, button] of buttons) {

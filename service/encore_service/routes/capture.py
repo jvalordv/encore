@@ -28,6 +28,7 @@ from encore_service.pipeline import initial_status, queue_preparation
 from encore_service.routes.songs import _receive, _title_from
 from encore_service.schemas import CaptureResponse, StepStatus
 from encore_service.store import (
+    BACKING_FILE,
     KEY_FILE,
     REFERENCE_FILE,
     STEM_FILES,
@@ -168,9 +169,9 @@ def _forget_derived(store: SongStore, song_id: str) -> None:
     fetch is queued afresh as well.
     """
     folder = store.song_dir(song_id)
-    for name in (*STEM_FILES.values(), KEY_FILE, REFERENCE_FILE):
+    for name in (*STEM_FILES.values(), KEY_FILE, REFERENCE_FILE, BACKING_FILE):
         (folder / name).unlink(missing_ok=True)
-    for step in ("separation", "key", "reference", "lyrics"):
+    for step in ("separation", "key", "reference", "backing", "lyrics"):
         store.update_step(
             song_id, step, state="queued", progress=0.0, error=None, detail=None
         )

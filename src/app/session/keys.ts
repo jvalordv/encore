@@ -5,7 +5,7 @@
  * moved by the shift in force (`lane`, `score`, `key`). The shift is chosen
  * per song and kept (src/app/key-shift.ts); it is applied to playback through
  * the Player's pitch shifter, and to the lane, keyboard, scoring, note guide
- * and MIDI export by the same number, so they cannot disagree. A song whose
+ * and MIDI export (and the backing notes, W0g) by the same number, so they cannot disagree. A song whose
  * sound cannot be moved (YouTube's own player) is not moved at all: the
  * suggestion shows, nothing else changes. Also holds the singer's range, read
  * from the learning takes' voice sections, which the lane draws on its
@@ -23,6 +23,8 @@ import {
 } from '../../analysis/key-shift';
 import type { MidiSpan } from '../../analysis/key-shift';
 import type { ScoreReference } from '../../analysis/score';
+import { transposeBacking } from '../../render/lane-backing';
+import type { LaneBacking } from '../../render/lane-backing';
 import type { LaneReference } from '../../render/lane-geometry';
 import type { KeyMap } from '../../service/types';
 import { loadShift, saveShift } from '../key-shift';
@@ -59,6 +61,7 @@ export class KeyController {
   private readonly laneMemo = new Memo(transposeLane);
   private readonly scoreMemo = new Memo(transposeScore);
   private readonly keyMemo = new Memo(transposeKey);
+  private readonly backingMemo = new Memo(transposeBacking);
 
   constructor(private readonly core: SessionCore) {
     core.store.subscribe((state, changed) => {
@@ -99,6 +102,11 @@ export class KeyController {
   key(map: KeyMap | null, shift = this.applied): KeyMap | null {
     if (map === null || shift === 0) return map;
     return shift === this.applied ? this.keyMemo.get(map, shift) : transposeKey(map, shift);
+  }
+
+  /** The backing notes moved by the shift in force, with the song (W0g). */
+  backing(notes: LaneBacking | null): LaneBacking | null {
+    return notes === null || this.applied === 0 ? notes : this.backingMemo.get(notes, this.applied);
   }
 
   /** Moves the song by whole semitones (held to -6..+6) and remembers it for the song. */
@@ -207,6 +215,7 @@ export class KeyController {
     if (target !== this.applied) {
       this.applied = target;
       core.stems.syncLane();
+      core.backing.syncLane();
     }
     this.refresh();
   }

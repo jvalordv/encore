@@ -18,8 +18,9 @@ import type { KeyValueStore } from '../storage';
 import type { TakeStore } from '../takes';
 
 /** The lane methods the Session drives; PitchLane satisfies them. */
-export type LaneSink = Pick<
-  PitchLane,
+export type LaneSink = Partial<Pick<PitchLane, 'setBacking' | 'setBackingShown'>> &
+  Pick<
+    PitchLane,
   | 'setTime'
   | 'pushFrame'
   | 'clearFrames'

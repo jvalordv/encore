@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, model_validator
 # Lifecycle of one song preparation step.
 StepState = Literal["queued", "running", "done", "failed", "skipped"]
 # The preparation steps, in the order they run.
-StepName = Literal["fetch", "separation", "key", "reference", "lyrics"]
+StepName = Literal["fetch", "separation", "key", "reference", "backing", "lyrics"]
 # How a song entered the service; only linked songs have a fetch step to run.
 SongSource = Literal["file", "youtube"]
 # Where a linked song's audio came from: recorded from the playing tab, or
@@ -118,6 +118,21 @@ class KeyMap(BaseModel):
     segments: list[KeySegment]
 
 
+class BackingNote(BaseModel):
+    """One note of the backing music: when it sounds, which key, how hard."""
+
+    onset_s: float = Field(ge=0)
+    offset_s: float = Field(gt=0)
+    midi: int = Field(ge=0, le=127)
+    velocity: int = Field(ge=1, le=127)
+
+
+class BackingNotes(BaseModel):
+    """The backing music of a song as notes, in onset order (chords overlap)."""
+
+    notes: list[BackingNote]
+
+
 class LyricWord(BaseModel):
     """One word with its timing and the lyric line it belongs to."""
 
@@ -144,7 +159,7 @@ class StepStatus(BaseModel):
 
 
 class SongSteps(BaseModel):
-    """The five preparation steps in run order; fetch is skipped for uploads.
+    """The six preparation steps in run order; fetch is skipped for uploads.
 
     A status.json written before a step existed loads with that step queued.
     """
@@ -153,6 +168,7 @@ class SongSteps(BaseModel):
     separation: StepStatus = Field(default_factory=StepStatus)
     key: StepStatus = Field(default_factory=StepStatus)
     reference: StepStatus = Field(default_factory=StepStatus)
+    backing: StepStatus = Field(default_factory=StepStatus)
     lyrics: StepStatus = Field(default_factory=StepStatus)
 
 

@@ -5,7 +5,7 @@
  * reaches a port nothing listens on (which the browser would log as an error).
  * The stand-in answers the routes the app uses: `GET /health`, `POST /songs`
  * (a dropped file) and `POST /songs/url` (a link), `GET /songs/{id}`, and
- * `GET /songs/{id}/audio`, `/stems/{vocals|no_vocals}`, `/reference` and `/key`,
+ * `GET /songs/{id}/audio`, `/stems/{vocals|no_vocals}`, `/reference`, `/key` and `/backing`,
  * `POST /songs/url/{id}/capture` (a tab capture, whose WAV it keeps), and
  * `POST /takes/analyse` (the Mic check's advice). What
  * each answers is a field of the returned object, which a test changes at its
@@ -23,6 +23,7 @@
 import { readFileSync } from 'node:fs';
 import type { BrowserContext, Request } from '@playwright/test';
 import type {
+  BackingNotes,
   CaptureResponse,
   KeyMap,
   Reference,
@@ -180,6 +181,8 @@ export interface FakeService {
   reference: Reference | 409 | 404;
   /** The answer to `GET /songs/{id}/key`: the key map, or an error status. */
   key: KeyMap | 409 | 404;
+  /** The answer to `GET /songs/{id}/backing`: the notes, or an error status. */
+  backing: BackingNotes | 409 | 404;
   /** The answer to `POST /takes/analyse`: the advice, or a refusal. */
   analysis: TakeAnalysis | Refusal;
   /** The `take` JSON of the last `POST /takes/analyse`, as received. */
@@ -328,6 +331,7 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
     stemGain: STEM_GAIN,
     reference: REFERENCE_FIXTURE,
     key: KEY_FIXTURE,
+    backing: 409,
     analysis: ANALYSIS_FIXTURE,
     analysedTake: undefined,
     songRequests: () => service.requests.filter((r) => !(r.method === 'GET' && r.path === '/health')),
@@ -349,6 +353,7 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
       service.stemGain = STEM_GAIN;
       service.reference = REFERENCE_FIXTURE;
       service.key = KEY_FIXTURE;
+      service.backing = 409;
       service.analysis = ANALYSIS_FIXTURE;
       service.analysedTake = undefined;
       service.requests.length = 0;
@@ -433,6 +438,12 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
         await json(service.reference, { detail: 'Song has no reference melody.' });
       } else {
         await json(200, service.reference);
+      }
+    } else if (method === 'GET' && /^\/songs\/[^/]+\/backing$/.test(path)) {
+      if (typeof service.backing === 'number') {
+        await json(service.backing, { detail: 'Song has no backing notes.' });
+      } else {
+        await json(200, service.backing);
       }
     } else if (method === 'GET' && /^\/songs\/[^/]+\/key$/.test(path)) {
       if (typeof service.key === 'number') {

@@ -27,6 +27,7 @@ import { STEP_NAMES } from './types';
 import type {
   AlignRequest,
   AlignmentStatus,
+  BackingNotes,
   CaptureResponse,
   KeyMap,
   Reference,
@@ -39,7 +40,7 @@ import type {
   TakeAnalysis,
 } from './types';
 import { postFile } from './upload';
-import { isKeyMap, isReference, isTakeAnalysis, parseStemGain, STEM_GAIN_HEADER } from './wire';
+import { isBackingNotes, isKeyMap, isReference, isTakeAnalysis, parseStemGain, STEM_GAIN_HEADER } from './wire';
 import type { StemDownload } from './wire';
 
 /** Longest GET /health may take before the service counts as not running. */
@@ -195,18 +196,23 @@ export function failedStep(status: SongStatus): StepName | null {
  * skipped or failed. A step that failed ends the wait early, since the ones
  * after it stay queued (a restart interrupts a song that way) and the caller
  * reads the failure from the step itself. The exception is the key, which is
- * optional: the service goes on to the melody without it.
+ * optional: the service goes on to the melody without it. `'backing'` waits
+ * for the steps through the melody and then for the backing notes, which come
+ * after the melody; a service with no such step has nothing to wait for.
  */
-export function settledThrough(status: SongStatus, upTo: StepName): boolean {
+export function settledThrough(status: SongStatus, upTo: StepName | 'backing'): boolean {
+  const last: StepName = upTo === 'backing' ? 'reference' : upTo;
   for (const name of STEP_NAMES) {
     const { state } = status.steps[name];
     // The key is optional and the service goes on to the melody without it, so
     // its failure says nothing about the steps after it.
     if (state === 'failed' && name !== 'key') return true;
     if (state === 'queued' || state === 'running') return false;
-    if (name === upTo) return true;
+    if (name === last) break;
   }
-  return true;
+  if (upTo !== 'backing') return true;
+  const backing = status.steps.backing?.state;
+  return backing !== 'queued' && backing !== 'running';
 }
 
 /**
@@ -240,7 +246,7 @@ export interface PollOptions {
    * `settledThrough`), whatever the later ones do. Without it the poll ends
    * when the audio is fetched or any step has failed.
    */
-  through?: StepName;
+  through?: StepName | 'backing';
 }
 
 /** Resolves true after `ms`, or false at once if `signal` aborts first. */
@@ -539,6 +545,18 @@ export class ServiceClient {
     const limits = { timeoutMs: this.requestTimeoutMs, signal };
     const body = await this.call(path, { method: 'GET' }, limits, readJson);
     if (!isReference(body)) throw new ServiceError('unexpected', BAD_BODY_MESSAGE);
+    return body;
+  }
+
+  /**
+   * The song's backing notes. A 409 ('not-fetched') means there are none: the
+   * step has not finished, or it was skipped (no transcription model).
+   */
+  async fetchBacking(id: string, signal?: AbortSignal): Promise<BackingNotes> {
+    const path = `/songs/${encodeURIComponent(id)}/backing`;
+    const limits = { timeoutMs: this.requestTimeoutMs, signal };
+    const body = await this.call(path, { method: 'GET' }, limits, readJson);
+    if (!isBackingNotes(body)) throw new ServiceError('unexpected', BAD_BODY_MESSAGE);
     return body;
   }
 

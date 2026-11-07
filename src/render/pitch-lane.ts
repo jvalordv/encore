@@ -1,8 +1,9 @@
 /**
  * The pitch lane canvas. Owns the <canvas>, keeps its bitmap matched to its
  * container (ResizeObserver plus devicePixelRatio) and composes the layers
- * back to front: the grid (background, semitone and octave rows, piano-key
- * gutter; lane-grid.ts), the reference melody (a tint where it has sound but
+ * the grid (background, semitone and octave rows, piano-key
+ * gutter; lane-grid.ts), the backing notes in grey when loaded and on
+ * (lane-backing.ts, which also holds the layer order), the reference melody (a tint where it has sound but
  * no note, the contour as a soft band, the target notes as bars;
  * lane-reference.ts), a band behind each phrase marked free (learning mode only;
  * lane-free.ts), one live f0 ribbon per singer (lane-ribbon.ts), the hit
@@ -26,6 +27,8 @@ import { phrasesOf } from '../analysis/free-phrases';
 import type { Span } from '../analysis/free-phrases';
 import type { Phrase } from '../analysis/phrases';
 import { SKIN_EVENT } from '../skins';
+import { drawBacking, scrollingLayers } from './lane-backing';
+import type { LaneBacking, ScrollingLayer } from './lane-backing';
 import { RedrawLoop, watchPixelRatio } from './lane-clock';
 import {
   DEFAULT_HIGH_MIDI,
@@ -110,6 +113,8 @@ export class PitchLane {
   private phrases: Phrase[] = [];
   private freeSpans: Span[] = [];
   private keyboard = true;
+  private backing: LaneBacking | null = null;
+  private backingShown = true;
   private singerRange: { lowMidi: number; highMidi: number } | null = null;
   private onPhraseClick: ((span: Span) => void) | null = null;
   private notice: string | null = null;
@@ -135,6 +140,7 @@ export class PitchLane {
     if (!ctx) throw new Error('2D canvas is not available');
     this.ctx = ctx;
     canvas.dataset.keyboard = 'on';
+    canvas.dataset.backing = 'none';
     const container = isElement(second) ? second : undefined;
     const options = (isElement(second) ? third : second) ?? {};
     this.container = container ?? canvas.parentElement ?? canvas;
@@ -217,6 +223,24 @@ export class PitchLane {
   setKeyboard(on: boolean): void {
     this.keyboard = on;
     this.canvas.dataset.keyboard = on ? 'on' : 'off';
+    this.loop.invalidate();
+  }
+
+  /**
+   * Sets the backing notes drawn grey behind the melody (and lit on the
+   * keyboard); null removes them. `data-backing` on the canvas says whether
+   * they are showing: 'none' without notes, else 'on' or 'off'.
+   */
+  setBacking(backing: LaneBacking | null): void {
+    this.backing = backing;
+    this.markBacking();
+    this.loop.invalidate();
+  }
+
+  /** Shows or hides the backing notes without forgetting them. */
+  setBackingShown(on: boolean): void {
+    this.backingShown = on;
+    this.markBacking();
     this.loop.invalidate();
   }
 
@@ -306,16 +330,21 @@ export class PitchLane {
     ctx.beginPath();
     ctx.rect(gutter, 0, width - gutter, height);
     ctx.clip();
-    drawReference(ctx, view, this.style, this.reference, gutter);
-    drawFreeBands(ctx, view, this.style, this.freeSpans, gutter);
-    drawRibbon(ctx, view, this.style, traces[0], 0, gutter);
-    drawRibbon(ctx, view, this.style, traces[1], 1, gutter);
-    drawGrades(ctx, view, this.style, traces[0], gutter);
-    drawGrades(ctx, view, this.style, traces[1], gutter);
+    const shownBacking = this.backingShown ? this.backing : null;
+    const painters: Record<ScrollingLayer, () => void> = {
+      backing: () => drawBacking(ctx, view, this.style, shownBacking, gutter),
+      reference: () => drawReference(ctx, view, this.style, this.reference, gutter),
+      free: () => drawFreeBands(ctx, view, this.style, this.freeSpans, gutter),
+      'ribbon-0': () => drawRibbon(ctx, view, this.style, traces[0], 0, gutter),
+      'ribbon-1': () => drawRibbon(ctx, view, this.style, traces[1], 1, gutter),
+      'grades-0': () => drawGrades(ctx, view, this.style, traces[0], gutter),
+      'grades-1': () => drawGrades(ctx, view, this.style, traces[1], gutter),
+    };
+    for (const layer of scrollingLayers({ backing: shownBacking !== null })) painters[layer]();
     ctx.restore();
 
     if (this.keyboard) {
-      drawKeyboard(ctx, view, this.style, this.reference?.notes, [traces[0], traces[1]], gutter, this.singerRange);
+      drawKeyboard(ctx, view, this.style, this.reference?.notes, [traces[0], traces[1]], gutter, this.singerRange, shownBacking);
     }
     drawCaption(ctx, view, this.style, this.notice, empty, gutter);
     drawPlayhead(ctx, view, this.style, gutter);
@@ -331,6 +360,11 @@ export class PitchLane {
     this.canvas.removeEventListener('click', this.onClick);
     document.fonts?.removeEventListener('loadingdone', this.onFonts);
     this.stopPixelRatio();
+  }
+
+  /** Keeps the canvas's `data-backing` in step with what is loaded and shown. */
+  private markBacking(): void {
+    this.canvas.dataset.backing = this.backing === null ? 'none' : this.backingShown ? 'on' : 'off';
   }
 
   /** Normalises and stores the range; keeps at least two rows. */

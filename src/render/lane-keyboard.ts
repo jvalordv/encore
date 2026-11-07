@@ -3,12 +3,15 @@
  * made live. The key of the melody's note lights while that note sounds at the
  * playhead, and each singer's voice is a marker at its exact, unrounded
  * height, joined to the ribbon's head by a short line, with the nearest key
- * glowing softly. The singer's comfortable range is a neutral strip along the
+ * glowing softly. The backing notes light their keys in grey under the
+ * melody's key (lane-backing.ts). The singer's comfortable range is a neutral strip along the
  * keys (both modes; it judges nothing). Karaoke frames carry no grade, so they are drawn in the
  * singer's own colour; only a graded learning frame takes a grade colour. The
  * layout and lookups are pure and tested; the drawing is thin glue.
  */
 import { hzToMidi } from '../analysis/pitch';
+import { BACKING_KEY_ALPHA, backingColour, litBackingKeys } from './lane-backing';
+import type { LaneBacking } from './lane-backing';
 import { midiToY, overlappingRange, viewX } from './lane-geometry';
 import type { LaneFrame, LaneNote, LaneView } from './lane-geometry';
 import type { LaneStyle } from './lane-style';
@@ -100,6 +103,7 @@ export function drawKeyboard(
   traces: readonly [LaneFrame[], LaneFrame[]],
   gutter: number,
   band: { lowMidi: number; highMidi: number } | null = null,
+  backing: LaneBacking | null = null,
 ): void {
   const rows = keyRows(view);
   const strip = bandRect(view, band);
@@ -115,6 +119,18 @@ export function drawKeyboard(
   }
   const rowHeight = rows[0]?.height ?? 0;
   const keyArea = (midi: number): KeyRow | undefined => rows.find((r) => r.midi === midi);
+  // The backing's keys go first, in its grey, so the melody's key is painted
+  // over them when both sound.
+  const backed = litBackingKeys(backing, view.now);
+  if (backed.length > 0) {
+    ctx.globalAlpha = BACKING_KEY_ALPHA;
+    ctx.fillStyle = backingColour(style);
+    for (const midi of backed) {
+      const row = keyArea(midi);
+      if (row) ctx.fillRect(0, row.top, gutter, row.height);
+    }
+    ctx.globalAlpha = 1;
+  }
   const lit = litKey(notes, view.now);
   const litRow = lit === null ? undefined : keyArea(lit);
   if (litRow) {

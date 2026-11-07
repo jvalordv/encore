@@ -31,7 +31,12 @@ from encore_service import youtube
 from encore_service.config import Settings
 from encore_service.jobs import JobQueue
 from encore_service.pipeline import initial_status, queue_preparation
-from encore_service.schemas import SongLinkRequest, SongStatus, SongSummary
+from encore_service.schemas import (
+    BackingNotes,
+    SongLinkRequest,
+    SongStatus,
+    SongSummary,
+)
 from encore_service.store import (
     AUDIO_MEDIA_TYPES,
     STEM_FILES,
@@ -333,4 +338,28 @@ def get_song_key(song_id: str, request: Request) -> FileResponse:
     path = store.key_path(song_id)
     if path is None:
         raise HTTPException(status_code=409, detail="Song has no key yet.")
+    return FileResponse(path, media_type="application/json")
+
+
+@router.get(
+    "/{song_id}/backing",
+    response_model=BackingNotes,
+    responses={
+        404: {"description": "No such song."},
+        409: {"description": "The song has no backing notes."},
+    },
+)
+def get_song_backing(song_id: str, request: Request) -> FileResponse:
+    """Serve the song's backing notes (the `BackingNotes` schema) as JSON.
+
+    A song has none until its backing step is done, and never has any when
+    that step was skipped (no transcription model installed); the status says
+    which.
+    """
+    store: SongStore = request.app.state.store
+    if not store.exists(song_id):
+        raise HTTPException(status_code=404, detail="No such song.")
+    path = store.backing_path(song_id)
+    if path is None:
+        raise HTTPException(status_code=409, detail="Song has no backing notes.")
     return FileResponse(path, media_type="application/json")

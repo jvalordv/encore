@@ -147,11 +147,13 @@ The browser adds a song, then polls it while the service prepares it.
 |---|---|
 | `POST /songs` | Upload an audio file as the multipart field `file` (mp3, wav, flac, m4a, ogg or opus, up to 200 MiB). The song's id is the sha256 of its bytes, so adding the same file again is a cache hit that queues whatever has not finished. Answers with the song's status. |
 | `POST /songs/url` | Add a YouTube video by link: a JSON body `{"url": "..."}`. The song's id is `yt-` and the video's id, so adding the same video again is a cache hit that asks YouTube nothing and queues whatever has not finished. Answers with the song's status. See "YouTube links". |
-| `GET /songs/{id}` | The song's status: `title`, `duration_s`, and for each step (`fetch`, `separation`, `key`, `reference`, `lyrics`) a `state` (`queued`, `running`, `done`, `failed` or `skipped`), a `progress` from 0 to 1, an `error` when it failed and a `detail` saying why it was skipped. 404 for an unknown id. |
+| `GET /songs/{id}` | The song's status: `title`, `duration_s`, and for each step (`fetch`, `separation`, `key`, `reference`, `backing`, `lyrics`) a `state` (`queued`, `running`, `done`, `failed` or `skipped`), a `progress` from 0 to 1, an `error` when it failed and a `detail` saying why it was skipped. 404 for an unknown id. |
 | `GET /songs/{id}/audio` | The stored source file, so the browser can reload a song without the original. 404 for an unknown id, 409 while the song has no source audio. |
 | `GET /songs/{id}/stems/{stem}` | One stem the separation step made, `vocals` or `no_vocals`, as 24-bit FLAC (`audio/flac`, with range requests) and the song's stem gain in the `X-Stem-Gain` header. 404 for an unknown id or any other stem name, 409 while the song has not been separated. See "Separation". |
 | `GET /songs/{id}/reference` | The song's reference melody, the `Reference` of `docs/ARCHITECTURE.md` (contour, notes, range, unpitched regions), as JSON. 404 for an unknown id, 409 while the song has none: not made yet, or the step was skipped (see its `detail`). See "Reference melody". |
 | `GET /songs/{id}/key` | The song's key map, the `KeyMap` of `docs/ARCHITECTURE.md` (a tuning offset in cents and time-ordered segments with a tonic, a mode and a confidence, or nulls where the key is unclear), as JSON. 404 for an unknown id, 409 ("Song has no key yet.") until the key step is done. See "Key". |
+
+| `GET /songs/{id}/backing` | The instrumental written out as notes, the `BackingNotes` schema (`notes` of `onset_s`, `offset_s`, `midi`, `velocity`, in onset order; chords overlap), as JSON. 404 for an unknown id, 409 ("Song has no backing notes.") while the song has none: not made yet, or the step was skipped. See "Backing notes". |
 
 Songs are prepared one at a time in a background queue, so two songs never
 compete for GPU memory. `fetch` is `skipped` for uploads, which arrive with
@@ -417,6 +419,31 @@ that installs it. It is stored as `<song_id>/reference.json` and served by
   resampler and decoder take about 15 s once); the model holds about 100 MB,
   and a chunk takes about 2 GB while it is decoded, given back afterwards.
 
+## Backing notes
+
+The `backing` step runs after the reference and writes `backing.json`: the
+instrumental stem (`no_vocals`) transcribed to notes by Basic Pitch, a
+polyphonic model, so a chord is several overlapping notes. The browser draws
+them in grey behind the melody and lights grey keys. It is optional: without
+Basic Pitch installed the step is skipped with a plain `detail`, and nothing
+else changes.
+
+Basic Pitch is not a declared extra (owner decision pending, 2026-11-07).
+`basic-pitch` declares TensorFlow and holds numpy below 2 (and resampy at
+0.4.2) whichever backend runs, so installing it into this venv would
+downgrade numpy under the `separation` and `pitch` extras, and declaring it
+as an extra made the shared `uv.lock` resolve numpy 1.26 for everyone. The
+likely route is its own environment, called by the step as a subprocess; it
+waits on the owner's go-ahead.
+
+Accuracy is rough on a dense mix. The instrumental of a real recording still
+holds drums, reverb and leaked vocal, and many instruments share a register,
+so expect missed notes, extra notes in the low end and octave slips. Treat the
+notes as a guide to the harmony, not a score. Two gates keep out the worst
+noise: a note shorter than 30 ms is dropped, and so is one whose model
+amplitude is under 0.25 (velocity is that amplitude on 1 to 127). A synthetic
+two-chord file with known notes checks the real model (`tests/test_backing.py`,
+skipped when the extra is missing).
 ## Analyse a saved take
 
 Reads a take saved by the app (its `.json`, optionally its `.wav`) and prints
