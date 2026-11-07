@@ -161,6 +161,8 @@ export interface FakeService {
   upload: SongStatus | Refusal;
   /** The answer to `GET /songs/{id}`. */
   status: SongStatus | Refusal;
+  /** The answer to `POST /songs/{id}/align`; the alignment's progress comes from `status`. */
+  align: SongStatus | Refusal;
   /** The answer to `GET /songs`, the list the Library reads. */
   songs: unknown[];
   /** The answer to `POST /songs/url/{id}/capture`. */
@@ -316,6 +318,7 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
     create: linkStatus(videoId, stepStatus('queued')),
     upload: fileStatus(UPLOAD_SONG_ID),
     status: linkStatus(videoId, stepStatus('queued')),
+    align: fileStatus(UPLOAD_SONG_ID),
     songs: [],
     capture: captureResponse(videoId),
     capturedWav: undefined,
@@ -336,6 +339,7 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
       service.create = linkStatus(id, stepStatus('queued'));
       service.upload = fileStatus(UPLOAD_SONG_ID);
       service.status = linkStatus(id, stepStatus('queued'));
+      service.align = fileStatus(UPLOAD_SONG_ID);
       service.songs = [];
       service.capture = captureResponse(id);
       service.capturedWav = undefined;
@@ -406,6 +410,8 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
       service.capturedWav = partBytesOf(request, 'audio');
       service.capturedTitle = fieldOf(request, 'title');
       await answer(service.capture);
+    } else if (method === 'POST' && /^\/songs\/[^/]+\/align$/.test(path)) {
+      await answer(service.align);
     } else if (method === 'POST' && path === '/songs/url') {
       await answer(service.create);
     } else if (method === 'GET' && /^\/songs\/[^/]+\/stems\/(vocals|no_vocals)$/.test(path)) {

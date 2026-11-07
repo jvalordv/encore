@@ -58,6 +58,16 @@ was also downloaded keeps the download as its audio and stores the capture
 beside it. The end-to-end run opens the page with `?captureFake`, which swaps
 the tab share for a tone, since a headless browser cannot pick a tab.
 
+### Scoring a karaoke video against its original
+
+A karaoke video has no melody to score against. In learning mode, press
+**Find the original**, then **Use as original** on the right result (or on a
+prepared song in the Library). The service lines the original up with the
+karaoke track by its chords, even when the karaoke is sung in another key or a
+little slower, and the song is then scored against the original's melody like
+any other. If the two arrangements differ too much it says so and Open scoring
+(on the key) stays on offer.
+
 ### End-to-end run
 
 `npm run e2e` builds the app, serves the production bundle and drives it in

@@ -8,8 +8,10 @@
  * `state.reference` and `state.mix` through `describeKaraoke`
  * (src/app/karaoke.ts); the buttons and the slider call the Session's `setMix`
  * and `setGuideLevel`. Under the melody line, Save melody (.mid) downloads the
- * notes as a MIDI file while a melody exists. Karaoke mode shows nothing here about the singing.
+ * notes as a MIDI file while a melody exists. While the song is matched to
+ * its original (src/app/align.ts) its progress and result show under the melody line. Karaoke mode shows nothing here about the singing.
  */
+import { describeAlign } from '../align';
 import { describeKaraoke } from '../karaoke';
 import { saveMelody } from '../melody-download';
 import { MIX_CHOICES, MIX_LABELS } from '../mix';
@@ -25,7 +27,7 @@ export interface KaraokePanelDeps {
 }
 
 /** The keys of the state the panel is drawn from. */
-const WATCHED: ReadonlyArray<keyof AppState> = ['karaoke', 'reference', 'mix'];
+const WATCHED: ReadonlyArray<keyof AppState> = ['karaoke', 'reference', 'mix', 'align'];
 
 function element<K extends keyof HTMLElementTagNameMap>(
   doc: Document,
@@ -52,6 +54,9 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
   note.setAttribute('role', 'status');
   note.setAttribute('aria-live', 'polite');
   const melody = element(doc, 'p', 'reference-status', 'karaoke-note song-meta');
+  const matching = element(doc, 'p', 'align-progress', 'karaoke-note song-meta');
+  matching.setAttribute('role', 'status');
+  matching.setAttribute('aria-live', 'polite');
 
   const save = element(doc, 'button', 'save-melody');
   save.type = 'button';
@@ -100,7 +105,7 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
   cleanups.push(() => guide.removeEventListener('input', onGuide));
   mixBox.append(mixLabel, mixButtons, guideLabel, guide);
 
-  host.append(title, lines, note, melody, save, mixBox);
+  host.append(title, lines, note, melody, matching, save, mixBox);
 
   let linesSignature = '';
   const setText = (el: HTMLElement, text: string): void => {
@@ -130,6 +135,11 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
     melody.hidden = view.melody === '';
     melody.dataset.phase = state.reference.phase;
     melody.dataset.notes = String(state.reference.notes);
+    // Refusals and failures are said in the learning notice, beside Open.
+    const working = state.align.phase === 'working' || state.align.phase === 'done';
+    setText(matching, working ? describeAlign(state.align) : '');
+    matching.hidden = !working;
+    matching.dataset.phase = state.align.phase;
     save.hidden = state.reference.phase !== 'ready';
     save.disabled = state.reference.notes === 0;
 

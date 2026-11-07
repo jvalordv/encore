@@ -303,6 +303,20 @@ export class Session {
     this.core.search.findOriginal(video);
   }
 
+  /**
+   * Takes a video as the original of the karaoke song in use: the service
+   * prepares it and aligns the karaoke song to its melody, so Strict scoring
+   * applies. The song in use stays the karaoke song.
+   */
+  useVideoAsOriginal(videoId: string): Promise<void> {
+    return this.core.align.useVideo(videoId);
+  }
+
+  /** Takes a prepared Library song as the original of the karaoke song in use. */
+  useAsOriginal(songId: string): Promise<void> {
+    return this.core.align.useSong(songId);
+  }
+
   /** Loads a search result as the song, as a pasted link would be. */
   pickResult(videoId: string): Promise<void> {
     return this.core.search.pick(videoId);

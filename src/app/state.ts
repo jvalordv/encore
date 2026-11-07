@@ -29,6 +29,8 @@ import { initialMix } from './mix';
 import type { MixState } from './mix';
 import { initialCapture } from './capture';
 import type { CaptureState } from './capture';
+import { initialAlign } from './align';
+import type { AlignState } from './align';
 import { initialPrepare } from './prepare';
 import type { PrepareState } from './prepare';
 import { initialReference } from './reference';
@@ -109,6 +111,8 @@ export interface AppState {
   mix: MixState;
   /** The reference melody the lane draws, or why there is none. */
   reference: ReferenceState;
+  /** Matching a karaoke track to its original's melody: progress and result. */
+  align: AlignState;
   /** The song search: the chip, the words, the results, what to tell. */
   search: SearchState;
   /** The Library of loaded songs and the favorites playlist. */
@@ -191,6 +195,7 @@ export function initialState(): AppState {
     karaoke: initialKaraoke(),
     mix: initialMix(DEFAULT_GUIDE_LEVEL),
     reference: initialReference(),
+    align: initialAlign(),
     search: initialSearch('karaoke', false),
     library: initialLibrary(),
     mode: 'karaoke',

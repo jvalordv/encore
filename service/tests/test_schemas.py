@@ -70,6 +70,15 @@ def test_song_status_round_trips() -> None:
                 "detail": "Not built yet (ROADMAP P2-T4)",
             },
         },
+        "alignment": {
+            "state": "refused",
+            "progress": 0.0,
+            "original_id": "ab12",
+            "key_offset": 2,
+            "confidence": 0.3,
+            "reason": "The arrangement differs.",
+        },
+        "capture_offset_s": 1.5,
     }
     status = SongStatus.model_validate(raw)
     assert status.steps.reference.progress == 0.4

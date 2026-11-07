@@ -115,6 +115,32 @@ reference, a karaoke track). In both styles: phrases the singer marks
 free. The card shows the share on the melody, the share of freestyle in
 key, and each off-key note with how far off and a jump-to.
 
+## Scoring a karaoke track against its original (WL3b)
+
+A karaoke video has no vocal, so no melody of its own. The singer can name
+its original (Find the original, then Use as original on a result, or Use as
+original on a prepared Library song with a melody) and the service borrows
+that melody: it aligns the original's backing (the `no_vocals` stem when it
+has one) to the karaoke audio by chroma and dynamic time warping, finds the
+key shift between them (karaoke tracks are often sung a few semitones off),
+and writes the original's contour and notes into the karaoke song's reference,
+moved onto the karaoke's clock and shifted by that many semitones. The
+reference carries `aligned_from`, `key_offset` and `confidence`. Strict then
+scores the take against it like any song; the notice that a karaoke track has
+no melody goes, and the song panel says the shift and the match in plain
+words ("2 semitones higher than the original, match 87%").
+
+It refuses rather than guesses. The match has a confidence from three checks:
+how close the two backings are frame by frame, how steady the tempo ratio of
+the warp is (it must stay between 0.8 and 1.25 over most of the song; a
+re-recorded arrangement at another tempo or with a different structure fails
+this), and how much of the karaoke the path covers. Under 0.5 nothing is
+written, the card says "the arrangement differs too much; Open scoring uses
+the key instead", and the notice offers Switch to Open as before. The
+thresholds were set on synthetic chord progressions; real songs are the
+owner's to try, and the floor is a constant (`CONFIDENCE_FLOOR` in
+`service/encore_service/align.py`).
+
 ## Tips (learning mode, on request)
 
 Each rule is a pure function from the take's measurements to zero or one

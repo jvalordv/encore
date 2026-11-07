@@ -279,6 +279,18 @@ def load_crepe(name: str, device: str) -> PitchTracker:
 # --- the step ----------------------------------------------------------------
 
 
+def _is_aligned(store: SongStore, song_id: str) -> bool:
+    """Whether the song's reference was borrowed from an original."""
+    path = store.reference_path(song_id)
+    if path is None:
+        return False
+    try:
+        borrowed = Reference.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return borrowed.aligned_from is not None
+
+
 def extract_reference(store: SongStore, song_id: str, report: Report) -> None:
     """Make `reference.json` for a song from its vocal stem.
 
@@ -286,6 +298,10 @@ def extract_reference(store: SongStore, song_id: str, report: Report) -> None:
     not installed, and when the track holds no steady pitch; and PitchError,
     reading "<what failed>: <why>", on any failure.
     """
+    if _is_aligned(store, song_id):
+        # A melody borrowed from the original by alignment is the song's
+        # melody; the karaoke's own near-silent vocal must not replace it.
+        return
     settings = Settings.from_env()
     vocals = store.stem_path(song_id, "vocals")
     if vocals is None:

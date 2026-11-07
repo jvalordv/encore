@@ -54,6 +54,32 @@ export interface SongStatus {
   /** Set once a linked song has audio; absent from older services. */
   audio_source?: AudioOrigin | null;
   steps: SongSteps;
+  /** The latest alignment to an original, if one was asked for. */
+  alignment?: AlignmentStatus | null;
+  /** Seconds the capture's audio lags the download's, when both exist and matched. */
+  capture_offset_s?: number | null;
+}
+
+/** How aligning a karaoke song to an original is going, or how it ended. */
+export type AlignState = 'queued' | 'running' | 'done' | 'refused' | 'failed';
+
+/** The alignment of a karaoke song to an original (service/encore_service/schemas.py). */
+export interface AlignmentStatus {
+  state: AlignState;
+  /** 0 to 1. */
+  progress: number;
+  original_id: string;
+  /** Semitones the original's melody was shifted by to meet the karaoke. */
+  key_offset?: number | null;
+  /** 0 to 1: how sure the match is. */
+  confidence?: number | null;
+  /** Plain words for a refusal or a failure. */
+  reason?: string | null;
+}
+
+/** Body of `POST /songs/{id}/align`: the original to take the melody from. */
+export interface AlignRequest {
+  original_id: string;
 }
 
 /** One line of `GET /songs`: a stored song and the steps it has finished. */
@@ -107,6 +133,12 @@ export interface Reference {
   range: { low_midi: number; high_midi: number };
   /** Stretches [start_s, end_s] where something sounds but no note was sung. */
   unpitched_regions: Array<[number, number]>;
+  /** Set when the melody was borrowed from this original by alignment. */
+  aligned_from?: string | null;
+  /** Semitones the borrowed melody was shifted by. */
+  key_offset?: number | null;
+  /** 0 to 1: how sure the alignment was. */
+  confidence?: number | null;
 }
 
 /** Which stem `GET /songs/{id}/stems/{stem}` serves. */

@@ -16,6 +16,7 @@ import type { LibraryStore } from '../library';
 import type { StateStore } from '../state';
 import type { KeyValueStore } from '../storage';
 import type { TakeStore } from '../takes';
+import { AlignController } from './align';
 import { DeviceController } from './devices';
 import { FrameBus } from './frame-bus';
 import { InputController } from './input';
@@ -83,6 +84,7 @@ export class SessionCore {
   readonly latency: LatencyController;
   readonly mix: MixController;
   readonly stems: StemsController;
+  readonly align: AlignController;
   readonly search: SearchController;
   readonly library: LibraryController;
   readonly loop: TickLoop;
@@ -111,6 +113,7 @@ export class SessionCore {
     this.latency = new LatencyController(this);
     this.mix = new MixController(this);
     this.stems = new StemsController(this);
+    this.align = new AlignController(this);
     this.search = new SearchController(this, init.search);
     this.library = new LibraryController(this, init.library ?? Promise.resolve(memoryLibraryStore()));
     this.loop = new TickLoop(this);

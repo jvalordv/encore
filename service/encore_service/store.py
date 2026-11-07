@@ -214,6 +214,25 @@ class SongStore:
             _write_json(folder / STATUS_FILE, status)
             return status
 
+    def update_status(self, song_id: str, **changes: Any) -> SongStatus:
+        """Merge top-level fields into the status as a locked read-modify-write.
+
+        For the fields that are not a step: the alignment and the capture's
+        offset. Raises ValueError for an unknown field or invalid value and
+        FileNotFoundError when the song has no status.
+        """
+        folder = self.song_dir(song_id)
+        unknown = changes.keys() - SongStatus.model_fields.keys()
+        if unknown:
+            raise ValueError(f"Unknown status fields: {sorted(unknown)}")
+        with self._lock:
+            status = _load(folder / STATUS_FILE, SongStatus)
+            if status is None:
+                raise FileNotFoundError(f"No status stored for song {song_id}")
+            merged = SongStatus.model_validate({**status.model_dump(), **changes})
+            _write_json(folder / STATUS_FILE, merged)
+            return merged
+
     def read_meta(self, song_id: str) -> SongMeta | None:
         """The stored meta; None for an unknown or invalid id."""
         if not is_valid_id(song_id):

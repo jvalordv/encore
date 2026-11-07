@@ -21,6 +21,7 @@ import soundfile as sf
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from encore_service import youtube
+from encore_service.align_job import queue_capture_check
 from encore_service.config import Settings
 from encore_service.jobs import JobQueue
 from encore_service.pipeline import initial_status, queue_preparation
@@ -115,6 +116,7 @@ def _install(
         # The incoming folder is on the cache's volume, so the move is atomic.
         part.replace(store.song_dir(song_id) / CAPTURE_FILE)
         status = queue_preparation(store, jobs, song_id)
+        queue_capture_check(store, jobs, song_id)
         return CaptureResponse(
             **status.model_dump(),
             alongside=True,

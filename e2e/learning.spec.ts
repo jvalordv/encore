@@ -23,7 +23,7 @@
 import { expect, test } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
 import type { AppState } from '../src/app/state';
-import { fileStatus, skippedStep, stepStatus, stubService } from './fake-service';
+import { REFERENCE_FIXTURE, fileStatus, skippedStep, stepStatus, stubService } from './fake-service';
 import type { FakeService } from './fake-service';
 import { readAppState } from './fake-youtube';
 import { PORT, SONG_FILE } from './fixtures';
@@ -362,4 +362,45 @@ test('6. a karaoke track offers Switch to Open, which switches the style and cha
 
   await page.getByTestId('scoring-strict').click();
   await expect(page.getByTestId('learning-notice-text')).toHaveText(NOTICE);
+});
+
+test('7. a karaoke track matched to its original is scored against the original melody', async () => {
+  await freshPage();
+  service.upload = fileStatus(SONG_ID, {
+    separation: stepStatus('done', 1),
+    key: stepStatus('done', 1),
+    reference: skippedStep('No singing found: the vocal is audible in only 3% of this track.'),
+  });
+  service.reference = 409;
+  await page.getByTestId('mode-learning').click();
+  await page.getByTestId('scoring-strict').click();
+  await dropAndWait();
+  await expect(page.getByTestId('learning-notice-text')).toHaveText(NOTICE);
+
+  // The service matches the song to the original and now holds its melody,
+  // moved onto the karaoke track's time.
+  service.status = {
+    ...KEYED_SONG(),
+    alignment: { state: 'done', progress: 1, original_id: 'original1', key_offset: 2, confidence: 0.92 },
+  };
+  service.reference = { ...REFERENCE_FIXTURE, aligned_from: 'original1', key_offset: 2, confidence: 0.92 };
+  await page.evaluate(() => window.encore!.session.useAsOriginal('original1'));
+  await page.waitForFunction(() => window.encore!.store.state.reference.alignedFrom === 'original1');
+
+  expect(service.requests.find((r) => r.method === 'POST' && r.path === `/songs/${SONG_ID}/align`)?.body).toEqual({
+    original_id: 'original1',
+  });
+  const aligned = await appState();
+  expect(aligned.align).toMatchObject({ phase: 'done', keyOffset: 2 });
+  await expect(page.getByTestId('align-progress')).toContainText('2 semitones higher than the original');
+  // It is no longer a track without a melody: the notice goes.
+  await expect(page.getByTestId('learning-notice')).toHaveCount(0);
+
+  await openFakeMic();
+  await recordUntil(3.7);
+  await expect(page.getByTestId('report-card')).toBeVisible();
+  await expect(page.getByTestId('report-card')).toHaveAttribute('data-style', 'strict');
+  const report = (await appState()).takes[0].report;
+  expect(report?.noMelody).toBeFalsy();
+  expect(report?.style).toBe('strict');
 });

@@ -19,6 +19,7 @@ import { isMarked } from '../../analysis/free-phrases';
 import type { Span } from '../../analysis/free-phrases';
 import { tipsFor } from '../../coach/tips';
 import type { Tip } from '../../coach/tips';
+import { describeAlign } from '../align';
 import { karaokeTrackNotice, openReport, openSwitchOffer, originalQueryFor } from '../learning';
 import { describeReport, jumpTarget } from '../report';
 import type { MomentView, ReportView } from '../report';
@@ -33,6 +34,7 @@ const WATCHED: ReadonlyArray<keyof AppState> = [
   'song',
   'pickedResult',
   'reference',
+  'align',
   'takes',
   'reportTakeId',
   'recording',
@@ -253,6 +255,11 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
     const box = el('div', 'learning-notice', 'learning-notice');
     box.setAttribute('role', 'status');
     box.append(el('p', 'learning-notice-text', '', text));
+    // Why matching the original did not work sits beside the way out of it.
+    const { align } = state;
+    if (align.phase === 'refused' || align.phase === 'failed') {
+      box.append(el('p', 'align-status', '', describeAlign(align)));
+    }
     const offer = openSwitchOffer(state);
     if (offer !== null) box.append(el('p', 'learning-notice-offer', '', offer));
     const actions = el('div', 'learning-actions', 'learning-actions');

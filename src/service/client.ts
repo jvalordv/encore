@@ -25,6 +25,8 @@
  */
 import { STEP_NAMES } from './types';
 import type {
+  AlignRequest,
+  AlignmentStatus,
   CaptureResponse,
   KeyMap,
   Reference,
@@ -381,6 +383,56 @@ export class ServiceClient {
     const path = `/songs/${encodeURIComponent(id)}`;
     const limits = { timeoutMs: this.requestTimeoutMs, signal };
     return this.statusOf(await this.call(path, { method: 'GET' }, limits, readJson));
+  }
+
+  /**
+   * Asks the service to take `originalId`'s melody for the karaoke song `id`.
+   * It answers with the karaoke song's status, whose alignment is queued;
+   * `pollAlignment` follows it. A 409 ('not-fetched') says a song has no audio
+   * or the original no melody; its plain reason is the message.
+   */
+  async alignSong(id: string, originalId: string, signal?: AbortSignal): Promise<SongStatus> {
+    const body: AlignRequest = { original_id: originalId };
+    const init: RequestInit = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    };
+    const limits = { timeoutMs: this.requestTimeoutMs, signal };
+    return this.statusOf(await this.call(`/songs/${encodeURIComponent(id)}/align`, init, limits, readJson));
+  }
+
+  /**
+   * Polls the song's status until its alignment is done, refused or failed,
+   * with the same growing wait as `pollSong`. Null when `signal` aborts first
+   * or the status has no alignment to wait for.
+   */
+  async pollAlignment(
+    id: string,
+    options: { signal?: AbortSignal; onUpdate?: (alignment: AlignmentStatus) => void } = {},
+  ): Promise<AlignmentStatus | null> {
+    const { signal, onUpdate } = options;
+    let unanswered = 0;
+    for (let attempt = 0; ; attempt += 1) {
+      if (!(await sleep(pollDelayMs(attempt), signal))) return null;
+      let status: SongStatus;
+      try {
+        status = await this.getSong(id, signal);
+      } catch (error) {
+        if (signal?.aborted || isAbortError(error)) return null;
+        unanswered += 1;
+        const dropped = error instanceof ServiceError && error.kind === 'unreachable';
+        if (dropped && unanswered < POLL_MAX_UNANSWERED) continue;
+        throw error;
+      }
+      unanswered = 0;
+      const alignment = status.alignment;
+      if (!alignment) return null;
+      onUpdate?.(alignment);
+      if (alignment.state === 'done' || alignment.state === 'refused' || alignment.state === 'failed') {
+        return alignment;
+      }
+    }
   }
 
   /** Every song the service holds, newest first; rows that cannot be read are left out. */

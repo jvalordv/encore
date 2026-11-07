@@ -3,7 +3,8 @@
  * (newest first, or the favorites in playlist order), reached from the
  * header's Library button. A row has a star, the title (click to load), a grey
  * line of source, length, last played, prepared badge and takes, and Remove
- * (two presses, since the entry cannot be recovered; its takes are kept). The
+ * (two presses, since the entry cannot be recovered; its takes are kept), and
+ * Use as original on a song with a melody while the song in use has none. The
  * Favorites view adds up and down, Play from here, Play from top, the
  * auto-advance box and export and import of the list as a JSON file. Uploads
  * only the service holds appear under "On the service". Two small pieces sit
@@ -21,7 +22,7 @@ import type { MountPanel } from './panel';
 /** A first Remove press waits this long for a confirming second press. */
 const REMOVE_ARM_MS = 3000;
 /** The keys of the state the panel is drawn from. */
-const WATCHED: ReadonlyArray<keyof AppState> = ['library', 'song'];
+const WATCHED: ReadonlyArray<keyof AppState> = ['library', 'song', 'karaoke', 'reference'];
 
 /** What the panel needs: the state, the intents and the buttons it works with. */
 export interface LibraryPanelDeps {
@@ -32,6 +33,7 @@ export interface LibraryPanelDeps {
     | 'setLibraryView'
     | 'loadLibraryEntry'
     | 'loadServiceSong'
+    | 'useAsOriginal'
     | 'toggleFavorite'
     | 'moveFavorite'
     | 'removeLibraryEntry'
@@ -49,6 +51,12 @@ export interface LibraryPanelDeps {
   star: HTMLButtonElement;
   /** The song panel's Previous, Next and Stop while the playlist runs. */
   bar: HTMLElement;
+}
+
+/** True when the song in use lacks a melody of its own and `id` is another song. */
+function offersOriginal(state: AppState, id: string): boolean {
+  if (state.song === null || state.song.hash === id || state.karaoke.phase !== 'ready') return false;
+  return state.reference.phase !== 'ready' || Boolean(state.reference.alignedFrom);
 }
 
 /** Builds the drawer into `host`; the returned function takes it down. */
@@ -180,6 +188,13 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
       down.disabled = index === count - 1;
       down.dataset.focus = `${entry.id}:down`;
       actions.append(up, down, button('Play from here', 'library-play-from', () => void session.playFavorites(entry.id)));
+    }
+    // A prepared song with a melody can stand in as the original of a
+    // karaoke track that has none of its own.
+    if (entry.melody && offersOriginal(state, entry.id)) {
+      actions.append(
+        button('Use as original', 'library-use-original', () => void session.useAsOriginal(entry.id)),
+      );
     }
     const armed = armedId === entry.id;
     const remove = button(armed ? 'Sure?' : 'Remove', 'library-remove', () => {

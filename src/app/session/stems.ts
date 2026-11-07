@@ -64,6 +64,8 @@ export class StemsController {
   private laneReference: LaneReference | null = null;
   // The Mic check's own melody, shown and compared in place of the song's.
   private transientReference: LaneReference | null = null;
+  // The service's id for the song in use, once it has answered for it.
+  private serviceId: string | null = null;
   // The lane's rows before the Mic check fitted them to its melody.
   private savedRange: { midiLow: number; midiHigh: number } | null = null;
 
@@ -98,6 +100,8 @@ export class StemsController {
     this.job?.controller.abort();
     this.job = null;
     this.heldFile = null;
+    this.serviceId = null;
+    this.core.align.reset();
     this.core.mix.clear();
     this.core.scoring.setKey(null, initialKey());
     this.showReference(null, initialReference());
@@ -111,6 +115,32 @@ export class StemsController {
   checkService(): void {
     const file = this.heldFile;
     if (file && this.core.store.state.karaoke.phase === 'unavailable') void this.runFile(file);
+  }
+
+  /** The service's id for the song in use; null before it has answered. */
+  songId(): string | null {
+    return this.serviceId;
+  }
+
+  /**
+   * The service has written a melody (and perhaps a key) for the song in use
+   * by alignment to its original: fetches them and shows them. False when
+   * the song changed meanwhile or the melody could not be fetched.
+   */
+  async adoptAligned(songId: string): Promise<boolean> {
+    if (this.serviceId !== songId) return false;
+    const job = this.begin();
+    const client = new ServiceClient(this.clientOptions());
+    const step = { state: 'done', progress: 1 } as const;
+    const steps: SongSteps = { fetch: step, separation: step, key: step, reference: step, lyrics: step };
+    const status: SongStatus = { song_id: songId, source: 'file', steps };
+    await this.guarded(job, async () => {
+      // A key the karaoke track already has is its own measurement; only a
+      // missing one is filled from the original's.
+      if (this.core.store.state.key.phase === 'missing') await this.loadKey(job, client, status);
+      await this.loadReference(job, client, status);
+    });
+    return this.isCurrent(job) && this.core.store.state.reference.phase === 'ready';
   }
 
   /** The song's own melody notes, for saving as MIDI; null without a melody. */
@@ -222,6 +252,7 @@ export class StemsController {
 
   /** The common road: separation, the stems, the melody. */
   private async carryOn(job: Job, client: ServiceClient, first: SongStatus): Promise<void> {
+    this.serviceId = first.song_id;
     this.setKaraoke({ phase: 'preparing', steps: first.steps, message: '' });
     const separated = await this.settle(job, client, first, 'separation', 'preparing');
     if (!separated) return;
@@ -350,7 +381,12 @@ export class StemsController {
       if (!this.isCurrent(job)) return;
       this.showReference(
         laneReferenceOf(reference),
-        { phase: 'ready', notes: reference.notes.length, message: '' },
+        {
+          phase: 'ready',
+          notes: reference.notes.length,
+          message: '',
+          ...(reference.aligned_from ? { alignedFrom: reference.aligned_from } : {}),
+        },
         scoreReferenceOf(reference),
       );
       return;

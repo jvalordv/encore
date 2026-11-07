@@ -23,7 +23,7 @@ export interface SearchPanelDeps {
   store: StateStore;
   session: Pick<
     Session,
-    'searchSongs' | 'findOriginal' | 'pickResult' | 'setSearchFilter' | 'setSearchOpen' | 'setSearchKey'
+    'searchSongs' | 'findOriginal' | 'pickResult' | 'setSearchFilter' | 'setSearchOpen' | 'setSearchKey' | 'useVideoAsOriginal'
   >;
   /** The button in the song panel that brings the search back over a loaded song. */
   toggle: HTMLButtonElement;
@@ -232,6 +232,16 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
       original.textContent = 'Find the original';
       listen(original, 'click', () => session.findOriginal(result));
       foot.append(original);
+    }
+    // Looking for a karaoke video's original: the pick can be matched to it
+    // without becoming the song in use.
+    if (store.state.search.originalOf !== null && store.state.song !== null) {
+      const use = element(doc, 'button', 'search-use-original', 'compact');
+      use.type = 'button';
+      use.textContent = 'Use as original';
+      use.title = "Score the song in use against this one's melody";
+      listen(use, 'click', () => void session.useVideoAsOriginal(result.videoId));
+      foot.append(use);
     }
     item.append(pick, foot);
     return item;

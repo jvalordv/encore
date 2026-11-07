@@ -30,11 +30,14 @@ export const FREE_PHRASE_HINT = 'Shift+click a phrase on the lane to mark it fre
 
 /**
  * True when the song in use is a karaoke track: the search result that became
- * it carries the Karaoke badge, or the service found no singer in its vocal.
+ * it carries the Karaoke badge, or the service found no singer in its vocal;
+ * unless its melody was borrowed from the original (WL3b), when it is scored.
  */
 export function isKaraokeTrack(state: Pick<AppState, 'song' | 'pickedResult' | 'reference'>): boolean {
   const { song, pickedResult } = state;
   if (song === null) return false;
+  // A melody borrowed from the original is a melody to score against.
+  if (state.reference.alignedFrom) return false;
   const picked = pickedResult !== null && song.hash === `yt-${pickedResult.videoId}`;
   return (picked && pickedResult.kind === 'karaoke') || skippedForNoVocal(state.reference);
 }

@@ -206,7 +206,7 @@ def _is_done(
     separation whose stems have gone: with one missing the stems route would
     answer "not separated yet" for good, since adding the song again would find
     the step done and leave it be. The same goes for a key step whose key.json
-    has gone.
+    has gone, and a reference step whose reference.json has.
     """
     if getattr(status.steps, step).state != "done":
         return False
@@ -216,6 +216,10 @@ def _is_done(
         return all(store.stem_path(song_id, stem) is not None for stem in STEM_FILES)
     if step == "key":
         return store.key_path(song_id) is not None
+    if step == "reference":
+        # Alignment can finish this step for a karaoke song with no vocal of
+        # its own; it must stay done only while the borrowed melody is there.
+        return store.reference_path(song_id) is not None
     return True
 
 

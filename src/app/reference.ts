@@ -24,6 +24,11 @@ export interface ReferenceState {
   notes: number;
   /** Why there is none when phase is 'skipped' or 'failed'; empty otherwise. */
   message: string;
+  /**
+   * The id of the original this melody was borrowed from by alignment (a
+   * karaoke track scored against its original); absent for the song's own.
+   */
+  alignedFrom?: string | null;
 }
 
 /** The state of a song with no melody asked for yet. */

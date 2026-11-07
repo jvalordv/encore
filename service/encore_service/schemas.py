@@ -77,6 +77,12 @@ class Reference(BaseModel):
     notes: list[Note]
     range: MidiRange
     unpitched_regions: list[tuple[float, float]] = Field(default_factory=list)
+    # Set only on a melody borrowed from another song by alignment (a karaoke
+    # track scored against its original): the original's id, the semitones the
+    # melody was shifted by, and how sure the alignment was, 0 to 1.
+    aligned_from: str | None = None
+    key_offset: int | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
 
 
 class KeySegment(BaseModel):
@@ -150,6 +156,31 @@ class SongSteps(BaseModel):
     lyrics: StepStatus = Field(default_factory=StepStatus)
 
 
+# Lifecycle of aligning a karaoke song to its original; refused means the
+# arrangements differ too much, which is an answer, not a failure.
+AlignState = Literal["queued", "running", "done", "refused", "failed"]
+
+
+class AlignmentStatus(BaseModel):
+    """How aligning a song to an original is going, or how it ended.
+
+    `reason` says in plain words why it was refused or failed.
+    """
+
+    state: AlignState = "queued"
+    progress: float = Field(default=0.0, ge=0, le=1)
+    original_id: str
+    key_offset: int | None = None  # semitones the original was shifted by
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    reason: str | None = None
+
+
+class AlignRequest(BaseModel):
+    """Body of POST /songs/{id}/align: the original to take the melody from."""
+
+    original_id: str
+
+
 class SongStatus(BaseModel):
     """Preparation status of one song, polled by the browser."""
 
@@ -159,6 +190,11 @@ class SongStatus(BaseModel):
     source: SongSource = "file"
     audio_source: AudioOrigin | None = None
     steps: SongSteps = Field(default_factory=SongSteps)
+    # The latest alignment to an original, if one was asked for.
+    alignment: AlignmentStatus | None = None
+    # Seconds the capture's audio lags the download's (negative: leads), when
+    # a song holds both and they matched well enough to say.
+    capture_offset_s: float | None = None
 
 
 class SongSummary(BaseModel):

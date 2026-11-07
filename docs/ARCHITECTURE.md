@@ -531,6 +531,37 @@ so learning mode when it is up. Scoring and tips run in the browser.
     PATH (Node here). Without one yt-dlp falls back to a reduced mode that
     still worked for the test video but offers fewer formats; failures then
     carry a note saying no runtime was found.
+  - *Align step* (WL3b: `align.py`, `align_reference.py`, `align_job.py`,
+    `routes/align.py`; browser `src/app/align.ts`, `src/app/session/align.ts`).
+    Not a preparation step but a job on the same queue, run on request:
+    `POST /songs/{karaoke_id}/align` with `{original_id}` (422 with a plain
+    reason when a song has no audio or the original no melody). `align.py` is
+    numpy only: 12-bin chroma (STFT window 186 ms, hop 46 ms, band 65 Hz to
+    2.1 kHz, log-compressed, unit length per frame, silence flat), a search
+    of the 12 circular key shifts at about 1200 frames, then banded DTW
+    (Sakoe-Chiba, half width 20 % of the longer side, +0.2 on non-diagonal
+    steps, free start and end on either axis, filled by anti-diagonals so
+    it is vectorised; inputs over 6000 frames are pooled) at full resolution
+    for the winning shift. The result is a monotone time map karaoke seconds
+    to original seconds, `key_offset` (semitones to raise the original,
+    -6..5) and a confidence: fit (mean frame cost, 0.3 good to 0.7 bad)
+    times tempo (share of 10 s windows with slope in 0.8 to 1.25, 0.6 for
+    full marks) times coverage (0.6 of the karaoke for full marks). The floor
+    is 0.5. `align_reference.py` maps the original's contour (resampled onto
+    the karaoke clock, unvoiced outside the map), notes, regions and range
+    through the map, shifts pitches by the offset, and rotates the key map's
+    tonics (written only when the karaoke song has no key of its own).
+    `SongStatus.alignment` (`queued|running|done|refused|failed`, progress,
+    `original_id`, `key_offset`, `confidence`, `reason`) is what the browser
+    polls (`pollAlignment`); on `done` it fetches the reference again and
+    `state.reference.alignedFrom` makes the track one to score
+    (`isKaraokeTrack`). A refusal writes nothing.
+  - *Capture cross-check* (WL3b). When a song has `source.*` and
+    `capture.wav`, `check_capture` runs the same chroma alignment (no key
+    search) as a job queued by the capture route and records
+    `capture_offset_s` in the status: the median of capture time minus
+    download time, set only at confidence 0.6 or more. The browser does not
+    use it yet; it is there for suggesting an `embedOffsetS`.
   - *Karaoke uploads* download fine but contain no vocal. The reference
     step reports `skipped` with a reason when `vocals.flac` holds no
     singing (the reference step) instead of drawing a flat contour. Measured: a global
@@ -554,7 +585,8 @@ Note         { onset_s, offset_s, midi: number,              // fractional
                cents_mean, cents_std, scoop_cents, vibrato?: Vibrato }
 Vibrato      { rate_hz, extent_cents, regularity }
 Reference    { contour: Contour, notes: Note[], range: {low_midi, high_midi},
-               unpitched_regions: [start_s, end_s][] }
+               unpitched_regions: [start_s, end_s][],
+               aligned_from?, key_offset?, confidence? }  // WL3b: borrowed
 KeyMap       { tuning_cents: number,         // [-50, 50): the instrumental's
                                                // offset from A=440 equal temperament
                segments: KeySegment[] }       // time order, contiguous, 0 to the
@@ -567,9 +599,12 @@ KeySegment   { start_s, end_s, tonic: 0..11 | null,  // C = 0, C# = 1 ... B = 11
 Lyrics       { lines: {start_s, text}[], source: lrclib|pasted }  // W6,
                browser only
 SongStatus   { song_id, title?, duration_s?, source: file|youtube,
-               steps: {fetch|separation|key|reference|lyrics:
+               audio_source?, steps: {fetch|separation|key|reference|lyrics:
                {state: queued|running|done|failed|skipped, progress, error?,
-                detail?}} }                       // detail: why it skipped
+                detail?}},                        // detail: why it skipped
+               alignment?: {state: queued|running|done|refused|failed,
+               progress, original_id, key_offset?, confidence?, reason?},
+               capture_offset_s? }                // WL3b
 ```
 
 `TakeAnalysis`, `Features`, `Recommendation` and `DuetSplit` were planned
