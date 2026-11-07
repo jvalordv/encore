@@ -52,9 +52,10 @@ webcam or USB mic.
   and Open scoring), W3 (learning mode), W2 (search and the karaoke core)
   and W1 (the reference step and the browser seams); older work in
   `docs/HISTORY.md`.
-- **In progress (2026-11-07, overnight, owner asleep):** W6 (imported
-  lyrics) in a worktree. Landed tonight: WL1, W0f, WL2 and WL3a
-  (capture). The downloader fix waits on the owner (WL3).
+- **In progress (2026-11-07, overnight, owner asleep):** WL3b (aligning
+  the original's melody to a karaoke video) in the main checkout. Landed
+  tonight: WL1, W0f, WL2, WL3a (capture) and W6 (lyrics). The downloader
+  fix waits on the owner (WL3).
 - **Next:** **WL2** (progress over time), **WL3** (a
   melody for YouTube songs: capture while it plays, plus the downloader
   as a backup, both used together where possible), then **W0f** (library and
@@ -1123,7 +1124,7 @@ Tracks inside a wave share no files and may run in parallel.
     call quality (its label says "Hands-Free" on Windows).
   - Done when the checks and e2e are green (two fake mics). Owner test
     with a second person: one mic with turns, then two mics if available.
-- [ ] **W6: Synced lyrics** (small, optional).
+- [x] **W6: Synced lyrics** (small, optional).
   - Synced lyrics on request: look the song up on LRCLIB (lrclib.net,
     free, no key) by title and artist (from the file's tags, the video
     title, or typed), or paste an `.lrc` file or plain text. Show the
@@ -1135,6 +1136,21 @@ Tracks inside a wave share no files and may run in parallel.
     karaoke videos already show lyrics, so the lyrics line is off by
     default for a Karaoke-badged video and on for others when lines
     exist.
+  - Built (2026-11-07):
+    - Code: `src/lyrics/{lrc,title,lrclib,store,controller}.ts`,
+      `src/app/panels/lyrics.ts`, and `src/lyrics.css`.
+    - Lookup: LRCLIB on request only, sending the title, artist and
+      length (`/get`, then `/search`, preferring synced lyrics). Paste or
+      drop an `.lrc` file or plain text, up to 1 MB.
+    - Display: the current and next line ride the lane at the same song
+      time as the melody bars. A ±0.1 s nudge per song is cached in
+      IndexedDB, and the show/hide choice is remembered per song.
+    - Review fixes: the time base, empty synced text, plain-only
+      results, a late duration, the remembered choice, and the size cap.
+  - Follow-up: there is no ID3 tag parsing, so title and artist are
+    guessed from the file or video name.
+  - Follow-up: lyrics do not follow a take played solo. W5's turns
+    following the lines are still to do with W5.
 - [ ] **W6b: Range and key** (owner pulled it in from Later, 2026-11-06).
   - Range: estimate the singer's comfortable range from takes (a robust
     low and high, e.g. the 5th and 95th percentile of voiced, gated
@@ -1264,6 +1280,7 @@ were.
 | W0f Library and favorites (measured, worktree) | 0.6 | 0.45 M | 10 min |
 | WL2 Progress over time (measured) | 0.5 | 0.35 M | 10 min |
 | WL3a Capture for learning (measured, worktree) | 0.8 | 0.47 M | 10 min |
+| W6 Imported lyrics (measured, worktree) | 0.5 | 0.33 M | 5 min |
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |

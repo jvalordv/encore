@@ -21,10 +21,14 @@
 import { isRunning } from '../audio/transport';
 import { domEmbedHost } from '../audio/youtube-transport';
 import { parseYouTubeUrl } from '../audio/youtube-url';
+import { LyricsController } from '../lyrics/controller';
+import { createLrclibClient } from '../lyrics/lrclib';
+import { lazyLyricsStore } from '../lyrics/store';
 import { mountCapturePanel } from './panels/capture';
 import { mountKaraokePanel } from './panels/karaoke';
 import { mountKeyboardPanel } from './panels/keyboard';
 import { mountLibraryPanel } from './panels/library';
+import { mountLyricsPanel } from './panels/lyrics';
 import { mountMicCheckPanel } from './panels/mic-check';
 import { mountMicHealthPanel } from './panels/mic-health';
 import { mountModePanel } from './panels/mode';
@@ -396,6 +400,13 @@ export function mountUI(session: Session, root: Document = document): UI {
     mountNoteGuidePanel(get('note-guide'), { store, session, readoutHost: get('pitch-lane') }),
   );
   cleanups.push(mountKeyboardPanel(get('keyboard'), { store, session }));
+  cleanups.push(
+    mountLyricsPanel(get('lyrics'), {
+      store,
+      controller: new LyricsController(lazyLyricsStore(), createLrclibClient()),
+      lineHost: get('lyrics-line'),
+    }),
+  );
   cleanups.push(
     mountMicCheckPanel(get('mic-check'), { store, session, toggle: get<HTMLButtonElement>('mic-check-button') }),
   );

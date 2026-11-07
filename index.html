@@ -109,6 +109,9 @@
         <!-- Learning mode only: the karaoke-track notice before a take and the
              report card after it. Built by src/app/panels/report.ts; hidden
              in karaoke mode and whenever there is nothing to say. -->
+        <!-- Synced lyrics: look-up on LRCLIB, paste or drop an .lrc file, nudge
+             and show/hide. Built by src/app/panels/lyrics.ts. -->
+        <section id="lyrics" class="panel-group lyrics" data-testid="lyrics" aria-label="Lyrics" hidden></section>
         <section id="report" class="panel-group report" data-testid="report" aria-label="Learning mode" hidden></section>
 
         <!-- Learning mode only: trends over the saved takes. Built by
@@ -191,6 +194,8 @@
 
         <main id="pitch-lane" aria-label="Pitch lane">
           <canvas id="lane-canvas" data-testid="lane-canvas"></canvas>
+          <!-- The current and next lyric lines; drawn by panels/lyrics.ts. -->
+          <div id="lyrics-line" class="lyrics-line" data-testid="lyrics-line" aria-live="off" hidden></div>
           <div id="pitch-readout" class="pitch-readout" data-testid="pitch-readout" hidden>
             <div class="pitch-note"><span id="pitch-note" data-testid="pitch-note"></span> <span id="pitch-cents" class="pitch-cents"></span></div>
             <div class="tuner" aria-hidden="true"><div id="tuner-marker" class="tuner-marker"></div></div>
