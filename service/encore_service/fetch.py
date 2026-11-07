@@ -100,3 +100,4 @@ def _install(store: SongStore, song_id: str, path: Path, duration_s: float) -> N
     """Move the finished file into place and record the length it really has."""
     store.install_source(song_id, path, SOURCE_EXT)
     store.set_duration(song_id, duration_s)
+    store.set_audio_source(song_id, "download")

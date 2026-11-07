@@ -25,6 +25,7 @@
  */
 import { STEP_NAMES } from './types';
 import type {
+  CaptureResponse,
   KeyMap,
   Reference,
   SongLinkRequest,
@@ -425,6 +426,42 @@ export class ServiceClient {
       throw failureFrom(result.status, body);
     }
     return this.statusOf(body);
+  }
+
+  /**
+   * Sends the audio recorded from a playing YouTube tab as the song for
+   * `videoId` (see "Capture for learning" in docs/ARCHITECTURE.md). Answers
+   * with the status, which the normal prepared-link flow then follows;
+   * `alongside` says the song already had audio, which stays the source. A
+   * refusal (empty, over the size limit, not usable audio, a bad id) carries
+   * the service's own plain reason.
+   */
+  async uploadCapture(
+    videoId: string,
+    wav: File,
+    options: UploadCallOptions & { title?: string } = {},
+  ): Promise<CaptureResponse> {
+    const url = `${this.baseUrl}/songs/url/${encodeURIComponent(videoId)}/capture`;
+    const result = await postFile(url, 'audio', wav, {
+      onProgress: options.onProgress,
+      signal: options.signal,
+      timeoutMs: this.uploadTimeoutMs,
+      xhr: this.xhrFactory,
+      fields: options.title ? { title: options.title } : undefined,
+    });
+    if (result.kind === 'aborted') throw abortError();
+    if (result.kind === 'network') throw new ServiceError('unreachable', UNREACHABLE_MESSAGE);
+    const body = parseJson(result.text);
+    if (result.status < 200 || result.status >= 300) {
+      if ([400, 413, 422].includes(result.status)) {
+        const fallback = `The service refused the capture (HTTP ${result.status}).`;
+        throw new ServiceError('rejected', plainDetail(body, fallback), result.status);
+      }
+      throw failureFrom(result.status, body);
+    }
+    if (!isSongStatus(body)) throw new ServiceError('unexpected', BAD_BODY_MESSAGE);
+    const extra = body as unknown as Partial<CaptureResponse>;
+    return { ...body, alongside: extra.alongside === true, message: extra.message ?? '' };
   }
 
   /**

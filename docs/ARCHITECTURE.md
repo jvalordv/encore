@@ -125,6 +125,25 @@ so learning mode when it is up. Scoring and tips run in the browser.
   - *Echo.* Whether Chrome's echo cancellation references the embed's audio
     in speaker mode is unverified; it needs the owner's real speakers
     before the mode is advertised for YouTube songs.
+  - *Capture for learning* (WL3a: `src/audio/tab-capture.ts`,
+    `src/audio/capture-assembler.ts`, `src/app/capture.ts`,
+    `src/app/session/capture.ts`; service `routes/capture.py`). The route
+    into the same prepare path when yt-dlp is blocked. Opt-in: the button
+    asks for a tab share (`getDisplayMedia`, audio on), drops the video
+    track at once, seeks the embed to 0 and plays it. The tab's audio runs
+    through the capture worklet as PCM; each block is placed at its video
+    time (the embed clock's position minus the block's age) only while the
+    state is `playing`, so an ad, buffering or a pause adds nothing, and a
+    seek writes at the new position. The assembler reports coverage and the
+    largest gap; the video ending, or Stop at 90% or more, encodes a 16-bit
+    WAV and posts it to `POST /songs/url/{id}/capture`, which stores it as
+    `yt-<id>` with `audio_source: "capture"` and the fetch step done. The
+    browser then runs the ordinary prepared-link flow, which finds that song
+    in the cache. A song that already has a download keeps it as the source
+    and the capture is stored as `capture.wav` beside it (the response says
+    `alongside`), for a later cross-check. The capture is the tab's output,
+    not the mic, and is never routed to the speakers. Tests use
+    `?captureFake` (a tone in place of the share).
   - *Prepared mode, as built* (P2-T1d: `src/service/client.ts`,
     `src/app/prepare.ts`, `src/audio/embed-follower.ts`). Opt-in: loading
     a link sends only `GET /health` (no link data); the link goes to

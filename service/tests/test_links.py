@@ -149,6 +149,7 @@ def test_a_link_makes_a_song_named_after_the_video(
     folder = tmp_path / SONG_ID
     assert json.loads((folder / "meta.json").read_text("utf-8")) == {
         "source": "youtube",
+        "audio_source": None,
         "title": "Big Buck Bunny",
         "url": URL,
         "duration_s": 635.0,

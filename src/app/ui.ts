@@ -21,6 +21,7 @@
 import { isRunning } from '../audio/transport';
 import { domEmbedHost } from '../audio/youtube-transport';
 import { parseYouTubeUrl } from '../audio/youtube-url';
+import { mountCapturePanel } from './panels/capture';
 import { mountKaraokePanel } from './panels/karaoke';
 import { mountKeyboardPanel } from './panels/keyboard';
 import { mountLibraryPanel } from './panels/library';
@@ -385,6 +386,7 @@ export function mountUI(session: Session, root: Document = document): UI {
   const loadLink = (text: string): void => void session.loadLink(text);
 
   // The song's karaoke track and its mix are a panel of their own.
+  cleanups.push(mountCapturePanel(get('capture'), { store, session }));
   cleanups.push(mountKaraokePanel(get('karaoke'), { store, session }));
   // The mode toggle, the takes list and learning mode's notice and report card.
   cleanups.push(mountModePanel(get('mode'), { store, session }));

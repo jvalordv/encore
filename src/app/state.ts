@@ -27,6 +27,8 @@ import { initialMicCheck } from './mic-check';
 import type { MicCheckState } from './mic-check';
 import { initialMix } from './mix';
 import type { MixState } from './mix';
+import { initialCapture } from './capture';
+import type { CaptureState } from './capture';
 import { initialPrepare } from './prepare';
 import type { PrepareState } from './prepare';
 import { initialReference } from './reference';
@@ -96,6 +98,8 @@ export interface AppState {
    * song panel says about it. Phase 'none' while no video is the song.
    */
   prepare: PrepareState;
+  /** Capture for learning: the tab recording of the linked video. */
+  capture: CaptureState;
   /**
    * Where the song stands on the way to its karaoke track (upload, the
    * service's steps, the stems), whatever the song's source.
@@ -183,6 +187,7 @@ export function initialState(): AppState {
     embed: null,
     embedOffsetS: 0,
     prepare: initialPrepare(),
+    capture: initialCapture(),
     karaoke: initialKaraoke(),
     mix: initialMix(DEFAULT_GUIDE_LEVEL),
     reference: initialReference(),

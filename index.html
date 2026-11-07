@@ -98,6 +98,9 @@
           <ul id="prepare-steps" class="prepare-steps song-meta" data-testid="prepare-steps" hidden></ul>
           <p id="prepare-note" class="song-meta" data-testid="prepare-note" role="status" aria-live="polite"></p>
         </div>
+        <!-- Capture for learning: records the video's sound from this tab. Built
+             by src/app/panels/capture.ts; shown for an unprepared video. -->
+        <div id="capture" class="prepare capture" data-testid="capture" role="group" aria-label="Capture for learning" hidden></div>
 
         <!-- The song's karaoke track: upload and service progress, the melody
              and the mix. Built by src/app/panels/karaoke.ts; hidden until a

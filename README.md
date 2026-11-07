@@ -42,6 +42,22 @@ recording is kept. It talks about the mic and the room only, never your
 singing, and works in karaoke mode. To watch it quickly in a test build, open
 the page with `?micCheckScale=0.2` to shorten every step to a fifth.
 
+### Capture for learning
+
+When the downloader cannot fetch a YouTube video (YouTube often answers
+yt-dlp with a bot check), the song panel's **Capture for learning** records
+the video's own sound from this tab instead. Press it, choose this tab in the
+share dialog with "Share tab audio" on, and let the video play through once;
+Stop is on offer once 90% has been heard. The sound is recorded as PCM (no
+lossy step), placed by the video's clock so ads, buffering and pauses add
+nothing, and sent to the local service, which prepares it like any linked song
+for the melody and key. It needs Chrome or Edge and the service. It is opt-in
+and in the same policy category as Prepare: it uses the video's audio beyond
+YouTube's player, and the README makes no claim that it complies. A song that
+was also downloaded keeps the download as its audio and stores the capture
+beside it. The end-to-end run opens the page with `?captureFake`, which swaps
+the tab share for a tone, since a headless browser cannot pick a tab.
+
 ### End-to-end run
 
 `npm run e2e` builds the app, serves the production bundle and drives it in

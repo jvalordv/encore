@@ -98,6 +98,7 @@ def test_upload_returns_a_status_named_by_the_hash(
     assert (folder / "source.wav").read_bytes() == WAV
     assert json.loads((folder / "meta.json").read_text("utf-8")) == {
         "source": "file",
+        "audio_source": None,
         "title": "tone",
         "url": None,
         "duration_s": body["duration_s"],

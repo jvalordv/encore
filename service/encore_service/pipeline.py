@@ -107,6 +107,7 @@ def initial_status(song_id: str, meta: SongMeta) -> SongStatus:
         title=meta.title,
         duration_s=meta.duration_s,
         source=meta.source,
+        audio_source=meta.audio_source,
         steps=steps,
     )
 

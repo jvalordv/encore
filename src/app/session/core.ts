@@ -22,6 +22,7 @@ import { InputController } from './input';
 import { LibraryController } from './library';
 import { LatencyController } from './latency';
 import { TickLoop } from './loop';
+import { CaptureController } from './capture';
 import { MicCheckController } from './mic-check';
 import { MicHealthController } from './mic-health';
 import { MixController } from './mix';
@@ -74,6 +75,7 @@ export class SessionCore {
   readonly songs: SongController;
   readonly playback: PlaybackController;
   readonly prepare: PrepareController;
+  readonly capture: CaptureController;
   readonly input: InputController;
   readonly health: MicHealthController;
   readonly micCheck: MicCheckController;
@@ -101,6 +103,7 @@ export class SessionCore {
     this.songs = new SongController(this, init.youtubeApi);
     this.playback = new PlaybackController(this);
     this.prepare = new PrepareController(this);
+    this.capture = new CaptureController(this);
     this.health = new MicHealthController(this);
     this.micCheck = new MicCheckController(this);
     this.input = new InputController(this);

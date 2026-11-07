@@ -198,7 +198,24 @@ export class Session {
 
   /** Has the service fetch the linked song's audio and switches to it. */
   prepare(): Promise<void> {
+    // The capture holds the song until it has been handed to the service.
+    if (this.core.capture.busy) return Promise.resolve();
     return this.core.prepare.prepare();
+  }
+
+  /** True when this browser can share a tab with its sound. */
+  get captureSupported(): boolean {
+    return this.core.capture.supported;
+  }
+
+  /** Records the linked video's sound from this tab as it plays, opt-in. */
+  startCapture(): Promise<void> {
+    return this.core.capture.start();
+  }
+
+  /** Ends a capture early, once most of the video has been heard. */
+  stopCapture(): Promise<void> {
+    return this.core.capture.stop();
   }
 
   /** Asks the service again whether it runs, if it was found not to. */

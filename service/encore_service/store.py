@@ -28,6 +28,7 @@ from typing import Any, TypeVar, get_args
 from pydantic import BaseModel, Field
 
 from encore_service.schemas import (
+    AudioOrigin,
     KeyMap,
     Reference,
     SongSource,
@@ -99,6 +100,7 @@ class SongMeta(BaseModel):
     url: str | None = None  # the link a youtube song came from; None for files
     duration_s: float | None = None
     video_id: str | None = None  # None for files
+    audio_source: AudioOrigin | None = None  # capture or download; see schemas
     # What both stems were multiplied by so that neither clips, 1.0 when they
     # were not scaled. Divide a stem by it for its level on the song's own
     # scale; the original times it is the level to mix a stem against, which
@@ -447,6 +449,20 @@ class SongStore:
             status.duration_s = duration_s
             _write_json(folder / STATUS_FILE, status)
             return status
+
+    def set_audio_source(self, song_id: str, origin: AudioOrigin) -> None:
+        """Record where a linked song's audio came from, in meta and status."""
+        folder = self.song_dir(song_id)
+        with self._lock:
+            status = _load(folder / STATUS_FILE, SongStatus)
+            if status is None:
+                raise FileNotFoundError(f"No status stored for song {song_id}")
+            meta = _load(folder / META_FILE, SongMeta)
+            if meta is not None:
+                meta.audio_source = origin
+                _write_json(folder / META_FILE, meta)
+            status.audio_source = origin
+            _write_json(folder / STATUS_FILE, status)
 
     def recover_interrupted(self) -> list[str]:
         """Fail every step a stopped service left running; returns song ids.

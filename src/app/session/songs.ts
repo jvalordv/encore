@@ -135,6 +135,7 @@ export class SongController {
     // so is a preparation under way: both would race this load for the player.
     this.discardLoadingEmbed();
     this.core.prepare.cancelAttempt();
+    this.core.capture.cancel();
     if (store.state.recording) await takes.finishRecording();
     store.setStatus(`Loading ${label}…`);
     let info: SongInfo;
@@ -196,6 +197,7 @@ export class SongController {
     // of the video in use: if this load fails that video stays, unprepared.
     this.discardLoadingEmbed();
     prepare.cancelAttempt();
+    this.core.capture.cancel();
     if (store.state.recording) await takes.finishRecording();
     store.setStatus('Loading the YouTube video…');
     // The player's own error cannot tell a blocked video from a missing one,

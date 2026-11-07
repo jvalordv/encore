@@ -22,6 +22,8 @@ export interface UploadOptions {
   signal?: AbortSignal;
   /** Longest the whole exchange may take. */
   timeoutMs: number;
+  /** Plain text fields sent in the form beside the file. */
+  fields?: Record<string, string>;
   /** Builds the request; the page's own XMLHttpRequest by default. */
   xhr?: () => XMLHttpRequest;
 }
@@ -61,6 +63,7 @@ export function postFile(
 
     const form = new FormData();
     form.append(field, file, file.name);
+    for (const [name, value] of Object.entries(options.fields ?? {})) form.append(name, value);
     request.open('POST', url);
     request.send(form);
   });

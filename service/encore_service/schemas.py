@@ -19,6 +19,9 @@ StepState = Literal["queued", "running", "done", "failed", "skipped"]
 StepName = Literal["fetch", "separation", "key", "reference", "lyrics"]
 # How a song entered the service; only linked songs have a fetch step to run.
 SongSource = Literal["file", "youtube"]
+# Where a linked song's audio came from: recorded from the playing tab, or
+# fetched by the downloader. None until a source is installed.
+AudioOrigin = Literal["capture", "download"]
 # General judges a take alone; match judges it against the original vocal.
 RecommendationMode = Literal["general", "match"]
 # How loudly the report card presents a recommendation.
@@ -154,6 +157,7 @@ class SongStatus(BaseModel):
     title: str | None = None
     duration_s: float | None = None
     source: SongSource = "file"
+    audio_source: AudioOrigin | None = None
     steps: SongSteps = Field(default_factory=SongSteps)
 
 
@@ -167,6 +171,17 @@ class SongSummary(BaseModel):
     steps_done: list[StepName] = Field(default_factory=list)
     has_audio: bool = False  # the source file is held, so the song can reload
     updated_at: float = 0.0  # epoch seconds of the last status write
+
+
+class CaptureResponse(SongStatus):
+    """Answer to POST /songs/url/{video_id}/capture: the status, and what happened.
+
+    `alongside` is true when the song already had audio, so the capture was
+    stored next to it and the existing source was kept.
+    """
+
+    alongside: bool = False
+    message: str = ""
 
 
 class SongLinkRequest(BaseModel):

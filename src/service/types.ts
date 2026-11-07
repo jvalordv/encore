@@ -19,6 +19,9 @@ export type StepName = 'fetch' | 'separation' | 'key' | 'reference' | 'lyrics';
 /** How a song entered the service; only a linked one has a fetch to run. */
 export type SongSource = 'file' | 'youtube';
 
+/** Where a linked song's audio came from: the playing tab, or the downloader. */
+export type AudioOrigin = 'capture' | 'download';
+
 /** The step names in run order, for code that walks them. */
 export const STEP_NAMES: readonly StepName[] = ['fetch', 'separation', 'key', 'reference', 'lyrics'];
 
@@ -48,6 +51,8 @@ export interface SongStatus {
   title?: string | null;
   duration_s?: number | null;
   source: SongSource;
+  /** Set once a linked song has audio; absent from older services. */
+  audio_source?: AudioOrigin | null;
   steps: SongSteps;
 }
 
@@ -61,6 +66,13 @@ export interface SongSummary {
   /** True when the source file is held, so the song can be loaded again. */
   has_audio: boolean;
   updated_at: number;
+}
+
+/** Answer of `POST /songs/url/{video_id}/capture`: the status and what happened. */
+export interface CaptureResponse extends SongStatus {
+  /** True when the song already had audio, so the capture was kept beside it. */
+  alongside: boolean;
+  message: string;
 }
 
 /** Body of `POST /songs/url`: the link, as the person pasted it. */

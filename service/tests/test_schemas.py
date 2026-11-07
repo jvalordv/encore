@@ -42,6 +42,7 @@ def test_song_status_round_trips() -> None:
         "title": "Tone",
         "duration_s": 212.5,
         "source": "youtube",
+        "audio_source": None,
         "steps": {
             "fetch": {"state": "done", "progress": 1.0, "error": None, "detail": None},
             "separation": {

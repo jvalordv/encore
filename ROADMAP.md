@@ -52,9 +52,9 @@ webcam or USB mic.
   and Open scoring), W3 (learning mode), W2 (search and the karaoke core)
   and W1 (the reference step and the browser seams); older work in
   `docs/HISTORY.md`.
-- **In progress (2026-11-07, overnight, owner asleep):** WL3a (capture)
-  in a worktree, being fixed after review. Landed tonight: WL1, W0f and
-  WL2.
+- **In progress (2026-11-07, overnight, owner asleep):** W6 (imported
+  lyrics) in a worktree. Landed tonight: WL1, W0f, WL2 and WL3a
+  (capture). The downloader fix waits on the owner (WL3).
 - **Next:** **WL2** (progress over time), **WL3** (a
   melody for YouTube songs: capture while it plays, plus the downloader
   as a backup, both used together where possible), then **W0f** (library and
@@ -652,6 +652,39 @@ Tracks inside a wave share no files and may run in parallel.
   Policy flag).
   - Likely two waves (WL3a capture and the downloader fix, WL3b the
     karaoke-to-original alignment); split when it is briefed.
+  - **WL3a, capture, built (2026-11-07).** The downloader fix waits on
+    the owner, above.
+    - Service: `POST /songs/url/{video_id}/capture`
+      (`service/encore_service/routes/capture.py`) stores song
+      `yt-{id}` with `source.wav` and the fetch step done, so the
+      existing prepared-link flow runs separation, key and reference
+      unchanged. `audio_source` (`capture` or `download`) is on the song
+      record. A download keeps its place, and the capture goes beside it
+      as `capture.wav`. A second capture replaces the first and re-runs
+      the steps.
+    - Browser:
+      - Files: `src/audio/{capture-assembler,tab-capture}.ts`,
+        `src/app/capture.ts`, `src/app/session/capture.ts`,
+        `src/app/panels/capture.ts`.
+      - Capture: the tab is shared with `getDisplayMedia` and recorded
+        as PCM. Blocks are placed at their video time, only while the
+        video plays.
+      - Sending: Stop needs 90 % coverage; a video that ends needs 50 %.
+      - Refusals: a share stopped from Chrome's bar fails the capture,
+        and silent audio is refused.
+      - Song change: changing songs cancels a capture or an upload.
+    - Test seam: `?captureFake`.
+  - Follow-up: the owner should try the real tab share once. Headless
+    Chromium cannot pick a tab, so only the seam is tested end to end.
+  - Follow-up: the offset between the tab audio and the embed clock is
+    not calibrated. That is fine for separation, not for timing; WL3b's
+    cross-check can measure it.
+  - Follow-up: a playback rate other than 1 is not guarded, and a reload
+    mid-capture loses it.
+  - **WL3b, still to do:** align the original's melody to a karaoke
+    video by chroma DTW (with a key offset and a confidence check,
+    falling back to Open), and cross-check a capture against a download
+    when both exist.
 
 - [x] **W0f: Library and favorites** (owner, 2026-11-06: "create a
   playlist of favorites, which would be the youtube links if they're from
@@ -1230,6 +1263,7 @@ were.
 | WL1 Learning feedback on any song (measured) | 0.6 | 0.42 M | 20 min |
 | W0f Library and favorites (measured, worktree) | 0.6 | 0.45 M | 10 min |
 | WL2 Progress over time (measured) | 0.5 | 0.35 M | 10 min |
+| WL3a Capture for learning (measured, worktree) | 0.8 | 0.47 M | 10 min |
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |

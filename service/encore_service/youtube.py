@@ -164,6 +164,11 @@ def _first_param(query: str, name: str) -> str | None:
     return None
 
 
+def is_video_id(text: str) -> bool:
+    """True when `text` is shaped like a YouTube video id."""
+    return _ID_PATTERN.fullmatch(text) is not None and text not in _NOT_VIDEO_IDS
+
+
 def canonical_url(video_id: str) -> str:
     """The one URL yt-dlp is ever given for a video; ValueError for a bad id."""
     if _ID_PATTERN.fullmatch(video_id) is None:

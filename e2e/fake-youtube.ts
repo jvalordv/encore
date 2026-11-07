@@ -79,7 +79,19 @@ export const FAKE_IFRAME_API = `(function () {
       if (this.state === STATE.PLAYING && next !== STATE.PLAYING) this.baseS = this.getCurrentTime();
       if (next === STATE.PLAYING && this.state !== STATE.PLAYING) this.startedAtMs = performance.now();
       this.state = next;
+      this.armEnd();
       this.fire('onStateChange', { data: next });
+    },
+    armEnd: function () {
+      // Only when the config asks (autoEnd): the video ends where its length
+      // says, as a real one does; otherwise the clock runs on for ever.
+      var self = this;
+      clearTimeout(this.endTimer);
+      if (!registry.config.autoEnd || this.state !== STATE.PLAYING || this.ad) return;
+      var leftS = registry.config.durationS - this.getCurrentTime();
+      this.endTimer = setTimeout(function () {
+        if (!self.destroyed && self.state === STATE.PLAYING) self.setState(STATE.ENDED);
+      }, Math.max(0, leftS) * 1000);
     },
     getCurrentTime: function () {
       if (this.ad) return (performance.now() - this.ad.startedAtMs) / 1000;
@@ -122,6 +134,7 @@ export const FAKE_IFRAME_API = `(function () {
       this.calls.push('seekTo:' + seconds);
       this.baseS = seconds;
       this.startedAtMs = performance.now();
+      this.armEnd();
       if (cold) this.playVideo();
     },
     cueVideoById: function (options) {

@@ -6,7 +6,8 @@
  * The stand-in answers the routes the app uses: `GET /health`, `POST /songs`
  * (a dropped file) and `POST /songs/url` (a link), `GET /songs/{id}`, and
  * `GET /songs/{id}/audio`, `/stems/{vocals|no_vocals}`, `/reference` and `/key`,
- * and `POST /takes/analyse` (the Mic check's advice). What
+ * `POST /songs/url/{id}/capture` (a tab capture, whose WAV it keeps), and
+ * `POST /takes/analyse` (the Mic check's advice). What
  * each answers is a field of the returned object, which a test changes at its
  * own pace, so a test can hold a song at "running 45%" for as long as it likes
  * and move it on when it has looked; the health checks and the upload can be
@@ -21,7 +22,15 @@
  */
 import { readFileSync } from 'node:fs';
 import type { BrowserContext, Request } from '@playwright/test';
-import type { KeyMap, Reference, SongStatus, StepState, StepStatus, TakeAnalysis } from '../src/service/types';
+import type {
+  CaptureResponse,
+  KeyMap,
+  Reference,
+  SongStatus,
+  StepState,
+  StepStatus,
+  TakeAnalysis,
+} from '../src/service/types';
 import { NO_VOCALS_FILE, SONG_FILE, VOCALS_FILE } from './fixtures';
 
 /** The default `serviceUrl` setting. */
@@ -109,6 +118,23 @@ export const ANALYSIS_FIXTURE: TakeAnalysis = {
   notes: ['Run the check again after moving the mic.'],
 };
 
+/** The bytes of the multipart part named `name`, or undefined if absent. */
+function partBytesOf(request: Request, name: string): Buffer | undefined {
+  const body = request.postDataBuffer();
+  const boundary = /boundary=([^;]+)/.exec(request.headers()['content-type'] ?? '')?.[1];
+  if (!body || !boundary) return undefined;
+  const at = body.indexOf(`name="${name}"`);
+  if (at < 0) return undefined;
+  const start = body.indexOf('\r\n\r\n', at) + 4;
+  const end = body.indexOf(`\r\n--${boundary}`, start);
+  return end < 0 ? undefined : body.subarray(start, end);
+}
+
+/** The text of the multipart field `name`, or undefined if absent. */
+function fieldOf(request: Request, name: string): string | undefined {
+  return partBytesOf(request, name)?.toString('utf8');
+}
+
 /** The JSON of the `take` part of a multipart body, or undefined if absent. */
 function takePartOf(request: Request): unknown {
   const raw = request.postDataBuffer()?.toString('latin1') ?? '';
@@ -137,6 +163,11 @@ export interface FakeService {
   status: SongStatus | Refusal;
   /** The answer to `GET /songs`, the list the Library reads. */
   songs: unknown[];
+  /** The answer to `POST /songs/url/{id}/capture`. */
+  capture: CaptureResponse | Refusal;
+  /** The WAV of the last capture upload, and its `title` field. */
+  capturedWav: Buffer | undefined;
+  capturedTitle: string | undefined;
   /** The answers to `GET /songs/{id}/audio`, in turn; the last one repeats. */
   audio: AudioAnswer[];
   /** The answer to `GET /songs/{id}/stems/{stem}`. */
@@ -203,6 +234,16 @@ export function linkStatus(
       lyrics: nothing,
       ...later,
     },
+  };
+}
+
+/** What the service answers a capture upload: the song, its fetch already done. */
+export function captureResponse(videoId: string): CaptureResponse {
+  return {
+    ...linkStatus(videoId, stepStatus('done', 1)),
+    audio_source: 'capture',
+    alongside: false,
+    message: "Capture stored as the song's audio; preparing it.",
   };
 }
 
@@ -276,6 +317,9 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
     upload: fileStatus(UPLOAD_SONG_ID),
     status: linkStatus(videoId, stepStatus('queued')),
     songs: [],
+    capture: captureResponse(videoId),
+    capturedWav: undefined,
+    capturedTitle: undefined,
     audio: ['ok'],
     stems: 'ok',
     stemGain: STEM_GAIN,
@@ -293,6 +337,9 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
       service.upload = fileStatus(UPLOAD_SONG_ID);
       service.status = linkStatus(id, stepStatus('queued'));
       service.songs = [];
+      service.capture = captureResponse(id);
+      service.capturedWav = undefined;
+      service.capturedTitle = undefined;
       service.audio = ['ok'];
       service.stems = 'ok';
       service.stemGain = STEM_GAIN;
@@ -355,6 +402,10 @@ export async function stubService(context: BrowserContext, videoId: string): Pro
       service.analysedTake = takePartOf(request);
       const what = service.analysis;
       await ('detail' in what ? json(what.status, { detail: what.detail }) : json(200, what));
+    } else if (method === 'POST' && /^\/songs\/url\/[^/]+\/capture$/.test(path)) {
+      service.capturedWav = partBytesOf(request, 'audio');
+      service.capturedTitle = fieldOf(request, 'title');
+      await answer(service.capture);
     } else if (method === 'POST' && path === '/songs/url') {
       await answer(service.create);
     } else if (method === 'GET' && /^\/songs\/[^/]+\/stems\/(vocals|no_vocals)$/.test(path)) {
