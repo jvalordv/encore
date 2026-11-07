@@ -16,7 +16,7 @@
  * - `gradeFrameOpen`: one live frame to a grade for the lane, `free` for a
  *   freestyle frame and `miss` only for one well outside a clear key.
  * - `StyledScorer`: the frame-bus subscriber that picks between W3's grade,
- *   the Open grade and no grade, for the lane.
+ *   the Open grade, the tuner grade (no melody) and no grade, for the lane.
  */
 import type { KeyMap } from '../service/types';
 import { inSpans, noteInSpan } from './free-phrases';
@@ -46,6 +46,7 @@ import type {
 } from './score';
 import { segmentTake } from './take-notes';
 import type { SungNote } from './take-notes';
+import { gradeFrameTuner, measureVoice } from './voice';
 
 /** A sung note must overlap a melody note this long to count as sung on it. */
 const MATCH_OVERLAP_S = 0.05;
@@ -153,9 +154,11 @@ function scoreOpen(frames: readonly PitchFrame[], ref: ScoreReference | null, o:
 }
 
 function scoreStrict(frames: readonly PitchFrame[], ref: ScoreReference | null, o: TakeScoreOptions): TakeReport {
-  const melody = ref ?? NO_MELODY;
+  const melody = ref !== null && ref.notes.length > 0 ? ref : NO_MELODY;
   const free = o.freeSpans.filter((span) => melody.notes.some((n) => noteInSpan(n, span)));
-  if (free.length === 0) return { ...reportTake(frames, melody, o.octaveInvariant, 'strict'), style: 'strict' };
+  // A take with no melody has only the voice section to give.
+  const none = melody === NO_MELODY ? { noMelody: true as const } : {};
+  if (free.length === 0) return { ...reportTake(frames, melody, o.octaveInvariant, 'strict'), style: 'strict', ...none };
   // Indices of the notes that stay, so the report still points into the full melody.
   const kept: number[] = [];
   melody.notes.forEach((n, i) => {
@@ -186,11 +189,13 @@ function scoreStrict(frames: readonly PitchFrame[], ref: ScoreReference | null, 
 
 /**
  * Measures a take. `ref` is the melody, or null for a song without one (Open
- * then scores everything as freestyle; Strict has nothing to measure). Strict
- * with no free phrase gives exactly `reportTake`'s numbers, with `style` set.
+ * then scores everything as freestyle; Strict has only the voice section).
+ * Strict with no free phrase gives exactly `reportTake`'s numbers, with `style`
+ * set. Every take also gets its voice section (voice.ts).
  */
 export function scoreTake(frames: readonly PitchFrame[], ref: ScoreReference | null, o: TakeScoreOptions): TakeReport {
-  return o.style === 'open' ? scoreOpen(frames, ref, o) : scoreStrict(frames, ref, o);
+  const report = o.style === 'open' ? scoreOpen(frames, ref, o) : scoreStrict(frames, ref, o);
+  return { ...report, voice: measureVoice(frames, o.key) };
 }
 
 /**
@@ -214,7 +219,7 @@ export function gradeFrameOpen(frame: PitchFrame, ref: ScoreReference | null, ke
 
 /** What the live scorer reads from the session each frame. */
 export interface StyledScorerSource {
-  /** False while nothing is graded (karaoke mode, or Strict without a melody). */
+  /** False while nothing is graded (karaoke mode, the Mic check). */
   scoring(): boolean;
   /** The melody, or null for a song with none. */
   reference(): ScoreReference | null;
@@ -242,6 +247,8 @@ export class StyledScorer {
     if (source.style() === 'open' || inSpans(source.freeSpans(), frame.t)) {
       return gradeFrameOpen(frame, source.reference(), source.key());
     }
+    // With no melody Strict colours the ribbon by cents from the nearest tone.
+    if (source.reference() === null) return gradeFrameTuner(frame, source.key());
     return this.strict.grade(frame);
   }
 

@@ -13,8 +13,8 @@ the singer can jump to the moment and hear it.
 Learning mode needs the original singer to compare against. On a karaoke
 track (no vocal) it says so before the take, in plain words: "Learning
 mode compares your singing with the original singer's. This is a karaoke
-track, so there is no singer in it to compare against: you're on your own
-for this one." It offers to find the original recording instead, and,
+track, so there is no melody in it to compare with: the card measures your voice on
+its own (Open can also score it against the key)." It offers to find the original recording instead, and,
 from W4, to switch to Open, which scores the take on the song's key.
 
 Scoring runs in the browser on the live tracker's frames (W3), aligned by
@@ -37,8 +37,34 @@ Now (W3), from the live frames against `reference.json`:
 | Range | song range | low/high MIDI of the reference |
 | | sung range | p10–p90 of the singer's MIDI in this take |
 
-Later, with service analysis: drift, vibrato (rate, extent, regularity),
-dynamics (envelope, phrase-end fade, range), timbre (brightness,
+### Your voice (WL1): the singing alone, no melody needed
+
+Learning mode measures the singing itself on every take, with a melody or
+without one, so a YouTube karaoke video (no vocal to take a melody from) gets
+feedback too. The notes are the take's own (segmentation rule below, plus: a
+piece under 150 ms that steps up into a longer note within 40 ms is a scoop
+and joins it). The `voice` section of the report holds, per note and per take:
+
+| Feature | How |
+|---|---|
+| Reference | each note's cents from the nearest tone of the song's key (the service's `KeyMap`, tuning taken off) when every judged note has a clear key; else of a key estimated from the sung notes; else the nearest semitone at A = 440 Hz. The card says which. |
+| Estimated key | Krumhansl-Schmuckler: Pearson correlation of the duration-weighted pitch classes (notes ≥ 150 ms) with the 24 rotated Krumhansl-Kessler profiles. Needs ≥ 6 notes over ≥ 5 pitch classes, a correlation ≥ 0.75 and a lead of ≥ 0.05 over the best key that is not the winner's relative; otherwise "no clear key" and the semitone fallback. |
+| Intonation | signed cents of each judged note (≥ 150 ms, its median pitch) from its tone; the take's median is the bias; the shares within ±25 c and ±50 c. |
+| Stability | on notes over 650 ms (the 150 ms scoop window plus the 2 cycles vibrato needs at the slowest rate, 4 Hz, so a shorter note's vibrato could not be taken out and is not scored as spread), the std of cents after the first 150 ms with a straight line and, where found, the vibrato removed, so vibrato and drift are never called a wobble. |
+| Scoop | median of the steady part minus median of the first 150 ms; positive is a slide up into the note. |
+| Drift | on notes over 600 ms, the slope in cents per second of the same fit. |
+| Vibrato | on notes over 500 ms, a sinusoid fitted together with the line over 3 to 9 Hz; it is vibrato when the best rate is 4 to 8 Hz, the amplitude (extent, cents either side) is ≥ 25 c, it explains ≥ 50 % of the variance (regularity), the note holds ≥ 2 cycles and the best rate explains at least 10 points more of the variance than the best rate 1 Hz or more away (a peak, not a plateau of wander). |
+| Range | p10 to p90 of the voiced frames. |
+| Phrases | notes joined while the silence between them is ≤ 250 ms; longer silences are breaths. Count, median and longest length, median breath. |
+
+The voice is judged against concert pitch when there is no key map, so a
+karaoke track tuned off A = 440 reads as the singer's bias; the card says what
+the notes were judged against. In Strict with no melody, and on a karaoke
+track, the take gets the voice section alone and the lane is coloured like a
+tuner (25 c hit, 50 c okay, beyond that off, from the nearest tone). Open keeps
+its freestyle colours. Karaoke mode computes none of it.
+
+Later, with service analysis: dynamics (envelope, phrase-end fade, range), timbre (brightness,
 breathiness, vowel shape), breath (phrasing gaps).
 
 Notes are segmented from a contour by: voiced run ≥ 80 ms, split where the
@@ -107,10 +133,19 @@ than a wall of red.
 | out_of_range | general | song high > sung p90 + 2 semitones | This song sits above where your voice is comfortable today. Ease off the top notes rather than forcing them. |
 | held_shorter | match | duration < 0.7 × reference on > 30 % of long notes | The original holds these notes longer. Keep the air going to the end. |
 | off_key | open | > 25 % of freestyle notes off key, at least 4 notes | Some of your free notes land outside the song's key. Build ad-libs from notes of the melody or the bass line, and keep outside notes short, as passing notes. |
+| drift | voice | \|slope\| > 20 c/s on > 40 % of notes over 600 ms, at least 3 notes | Long notes drift away from where they start. Set the pitch before you open the note and keep the air steady to the end. |
+| vibrato_wide | voice | median vibrato extent > 80 c either side, at least 3 notes | Your vibrato swings wide. Relax the jaw and throat and let it narrow to a gentle pulse. |
+| vibrato_irregular | voice | median vibrato regularity < 70 %, at least 3 notes | Your vibrato wanders in speed. Keep the air steady and let it settle into an even pulse. |
+| short_phrases | voice | median phrase < 1.5 s, at least 4 phrases | You break lines into short pieces. Take a low breath and plan where you breathe, at the ends of lines. |
 
 `general` rules run in both styles (`flat_bias` and `sharp_bias` on
 melody notes only), `match` rules in Strict, and `open` rules on
-freestyle notes, in Open and in free phrases.
+freestyle notes, in Open and in free phrases. `voice` rules read the voice
+section on every take. With no melody the `general` rules `flat_bias`,
+`sharp_bias`, `scoop` and `unstable_sustain` read the voice notes instead
+(cents from the nearest tone, same thresholds, the evidence names what the
+tone was); with a melody they read the melody's notes as before. Every tip
+names its numbers.
 
 Later, with service analysis: `vibrato_wider`, `vibrato_slower`,
 `softer_here`, `brighter`, `phrase_fade`.
@@ -125,5 +160,12 @@ Later, with service analysis: `vibrato_wider`, `vibrato_slower`,
 - In key means a note fits the song, not that it is the right note or a
   good line. Blues bends and chromatic lines are not wrong: they show as
   off key with their distance, and only `off_key` comments on them.
+- An estimated key is a guess from what was sung: a singer who is off key
+  all night can point to the wrong key. It is labelled as estimated with its
+  fit, and with no clear key notes are judged against the nearest semitone.
+- Vibrato is called only in the 4 to 8 Hz band at 25 c or more and only where
+  it peaks at one rate; a slower or smaller swing is counted in the note's
+  spread. A note under 500 ms is not searched for vibrato and one under 650 ms
+  gets no spread, since a vibrato in it could not be fitted.
 - Reference vocals with doubles or harmonies confuse the tracker; frames
   with low confidence are excluded and the region is marked in the lane.

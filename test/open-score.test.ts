@@ -17,7 +17,7 @@ import {
   scoreFrame,
   SCORING_STYLES,
 } from '../src/analysis/score';
-import type { ScoreNote, ScoreReference } from '../src/analysis/score';
+import type { ScoreNote, ScoreReference, TakeReport } from '../src/analysis/score';
 import type { KeyMap } from '../src/service/types';
 
 const HOP = 0.01;
@@ -88,6 +88,12 @@ describe('the two styles\' windows', () => {
   });
 });
 
+/** A report without its voice section, which Strict's melody numbers do not include. */
+function withoutVoice(report: TakeReport): Omit<TakeReport, 'voice'> {
+  const { voice: _voice, ...rest } = report;
+  return rest;
+}
+
 describe('Strict with no free phrase', () => {
   const frames = take(
     [
@@ -100,9 +106,9 @@ describe('Strict with no free phrase', () => {
 
   it('gives exactly the W3 report, with only the style named', () => {
     const w3 = reportTake(frames, MELODY, false);
-    expect(scoreTake(frames, MELODY, opts({ style: 'strict' }))).toEqual({ ...w3, style: 'strict' });
+    expect(withoutVoice(scoreTake(frames, MELODY, opts({ style: 'strict' })))).toEqual({ ...w3, style: 'strict' });
     const folded = reportTake(frames, MELODY, true);
-    expect(scoreTake(frames, MELODY, opts({ style: 'strict', octaveInvariant: true }))).toEqual({
+    expect(withoutVoice(scoreTake(frames, MELODY, opts({ style: 'strict', octaveInvariant: true })))).toEqual({
       ...folded,
       style: 'strict',
     });
@@ -110,7 +116,7 @@ describe('Strict with no free phrase', () => {
 
   it('is not changed by a free span that covers no melody note, or by the key', () => {
     const w3 = { ...reportTake(frames, MELODY, false), style: 'strict' };
-    expect(scoreTake(frames, MELODY, opts({ style: 'strict', freeSpans: [[7, 8]], key: null }))).toEqual(w3);
+    expect(withoutVoice(scoreTake(frames, MELODY, opts({ style: 'strict', freeSpans: [[7, 8]], key: null })))).toEqual(w3);
   });
 });
 
@@ -340,7 +346,9 @@ describe('the live scorer', () => {
 
   it('grades nothing when nothing is scored, and Open without a melody as freestyle', () => {
     expect(scorer({ scoring: () => false }).grade(at(1, 60))).toBeNull();
-    expect(scorer({ reference: () => null }).grade(at(1, 60))).toBeNull();
+    // With no melody Strict colours like a tuner: cents from the nearest semitone.
+    expect(scorer({ reference: () => null }).grade(at(1, 60))).toBe('hit');
+    expect(scorer({ reference: () => null }).grade(at(1, 60.4))).toBe('okay');
     expect(scorer({ reference: () => null, style: () => 'open' }).grade(at(1, 62))).toBe('free');
   });
 

@@ -5,7 +5,8 @@
  * with), the notice that says so before the singer starts, what to search for
  * to find the original, which take's report card is open, and the Strict and
  * Open style choices. A karaoke track has no original singer to compare with,
- * so Strict says so and offers Open, which scores it on the song's key. Karaoke
+ * so Strict says so and offers Open, which scores it on the song's key; either
+ * way the take's own voice is measured and shown. Karaoke
  * mode never reaches any of this: every function answers "nothing" there.
  */
 import type { TakeReport } from '../analysis/score';
@@ -18,7 +19,8 @@ import type { TakeSummary } from './takes';
 /** Said before the take, verbatim (docs/COACHING.md), on a karaoke track. */
 export const KARAOKE_TRACK_NOTICE =
   "Learning mode compares your singing with the original singer's. This is a karaoke track, " +
-  "so there is no singer in it to compare against: you're on your own for this one.";
+  'so there is no melody in it to compare with: the card measures your voice on its own ' +
+  '(Open can also score it against the key).';
 
 /** Offered beside the notice, in Strict, with a button that switches to Open. */
 export const OPEN_SWITCH_OFFER = "Switch to Open to be scored on the song's key instead.";
@@ -88,8 +90,8 @@ export function originalQueryFor(state: Pick<AppState, 'song' | 'pickedResult'>)
 
 /**
  * The take whose report card is shown, with its report. Null in karaoke mode
- * (even for a take that has a report), for a take without a report, and on a
- * karaoke track unless the take was scored in Open, which scores such a track.
+ * (even for a take that has a report) and for a take without a report. On a
+ * karaoke track the card has the voice section alone (or Open's freestyle).
  */
 export function openReport(
   state: Pick<AppState, 'mode' | 'song' | 'pickedResult' | 'reference' | 'takes' | 'reportTakeId'>,
@@ -97,7 +99,6 @@ export function openReport(
   if (state.mode !== 'learning' || state.reportTakeId === null) return null;
   const take = state.takes.find((t) => t.id === state.reportTakeId);
   if (!take?.report) return null;
-  if (isKaraokeTrack(state) && take.report.style !== 'open') return null;
   return { take, report: take.report };
 }
 

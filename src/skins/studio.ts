@@ -42,6 +42,12 @@ export const studio: CompleteSkin = {
     off_key:
       "Some of your free notes land outside the song's key. Build ad-libs from notes of the melody or the " +
       'bass line, and keep outside notes short, as passing notes.',
+    drift:
+      'Long notes drift away from where they start. Set the pitch before you open the note and keep the air steady to the end.',
+    vibrato_wide: 'Your vibrato swings wide. Relax the jaw and throat and let it narrow to a gentle pulse.',
+    vibrato_irregular: 'Your vibrato wanders in speed. Keep the air steady and let it settle into an even pulse.',
+    short_phrases:
+      'You break lines into short pieces. Take a low breath and plan where you breathe, at the ends of lines.',
     softer_here: 'They sing this phrase softer.',
     brighter: 'Their tone is darker; try a rounder vowel.',
   },

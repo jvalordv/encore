@@ -9,8 +9,9 @@
  * phrases, its Tips button gives at most three tips, and switching back to
  * karaoke hides the card; on a karaoke track (the service found no singer) the
  * notice appears before the singer starts, word for word, with a Find the
- * original button that searches for the original, a take there gets no card,
- * and karaoke mode does not show the notice. Then the two scoring styles: the
+ * original button that searches for the original, a take there gets a card with
+ * the voice section alone ("Your voice"), and karaoke mode shows neither the
+ * notice nor the card. Then the two scoring styles: the
  * Strict / Open selector shows only in learning mode and survives a reload; an
  * Open take over the melody opens a card with the share on the melody and a
  * freestyle line (the key comes from the stand-in's /key route), and a
@@ -33,7 +34,8 @@ const VIDEO = 'dQw4w9WgXcQ';
 const SONG_ID = 'file-fake';
 const NOTICE =
   "Learning mode compares your singing with the original singer's. This is a karaoke track, " +
-  "so there is no singer in it to compare against: you're on your own for this one.";
+  'so there is no melody in it to compare with: the card measures your voice on its own ' +
+  '(Open can also score it against the key).';
 
 let context: BrowserContext;
 let page: Page;
@@ -179,7 +181,7 @@ test('2. learning mode: a take over the melody opens a report card, with tips on
   expect((await appState()).takes[0].report).toBeDefined();
 });
 
-test('3. a karaoke track says so before the take, offers the original, and gets no card', async () => {
+test('3. a karaoke track says so before the take, offers the original, and gets the voice alone', async () => {
   await freshPage();
   service.upload = fileStatus(SONG_ID, {
     separation: stepStatus('done', 1),
@@ -217,14 +219,25 @@ test('3. a karaoke track says so before the take, offers the original, and gets 
   await page.getByTestId('mode-learning').click();
   await expect(notice).toHaveText(NOTICE);
 
-  // A take on a karaoke track is not scored.
+  // A take on a karaoke track has no melody to be scored against, but the card
+  // still measures the voice alone: no melody lines, a "Your voice" section.
   await openFakeMic();
   const count = await recordUntil(1.5);
   await expect(page.getByTestId('take-item')).toHaveCount(count);
+  await expect(page.getByTestId('report-card')).toBeVisible();
+  await expect(page.getByTestId('report-headline')).toContainText('measures your voice on its own');
+  await expect(page.getByTestId('report-voice-title')).toHaveText('Your voice');
+  await expect(page.getByTestId('report-timing')).toHaveCount(0);
+  await expect(page.getByTestId('report-voice-intonation')).toBeVisible();
+  const taken = (await appState()).takes[0].report;
+  expect(taken?.noMelody).toBe(true);
+  expect(taken?.voice).toBeDefined();
+
+  // Karaoke mode shows none of it, though the take keeps its report.
+  await page.getByTestId('mode-karaoke').click();
   await expect(page.getByTestId('report-card')).toHaveCount(0);
-  // The earlier take, from test 2, still has its Report button; the new one has none.
-  await expect(page.getByTestId('take-item').first().getByTestId('take-report')).toHaveCount(0);
-  expect((await appState()).takes[0].report).toBeUndefined();
+  await expect(page.getByTestId('report-voice-title')).toHaveCount(0);
+  await expect(page.getByTestId('take-report')).toHaveCount(0);
 });
 
 /** A finished song with its key and melody, as the service reports it. */

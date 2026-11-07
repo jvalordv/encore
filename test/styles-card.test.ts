@@ -98,9 +98,9 @@ describe('which card opens', () => {
     expect(openReport(stateWith(base(take('open'))))?.take.id).toBe('a');
   });
 
-  it('still hides a Strict take, or one with no style, on a karaoke track', () => {
-    expect(openReport(stateWith(base(take('strict'))))).toBeNull();
-    expect(openReport(stateWith(base(take())))).toBeNull();
+  it('shows a Strict take, or one with no style, on a karaoke track: its voice section', () => {
+    expect(openReport(stateWith(base(take('strict'))))?.take.id).toBe('a');
+    expect(openReport(stateWith(base(take())))?.take.id).toBe('a');
   });
 
   it('shows nothing in karaoke mode, even for an Open take', () => {

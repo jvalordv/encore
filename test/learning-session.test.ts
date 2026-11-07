@@ -119,11 +119,13 @@ describe('grading frames for the lane', () => {
     for (const [frame] of lane.pushFrame.mock.calls) expect('grade' in frame).toBe(false);
   });
 
-  it('puts none on a karaoke track, which has no singer to compare with', async () => {
+  it('colours a karaoke track like a tuner, as it has no singer to compare with', async () => {
     const { h, lane } = await playing({ mode: 'learning' });
     h.store.patch({ reference: { phase: 'skipped', notes: 0, message: 'No singing found: only 3% of this track.' } });
     sing(h, 1.05, 440);
-    expect('grade' in lastFrame(lane)).toBe(false);
+    expect(lastFrame(lane).grade).toBe('hit');
+    sing(h, 1.06, 440 * 2 ** (0.4 / 12));
+    expect(lastFrame(lane).grade).toBe('okay');
   });
 
   it('grades the octave above as a hit only when the setting folds octaves', async () => {
@@ -180,17 +182,19 @@ describe('the report of a take', () => {
     expect(openReport(h.store.state)).not.toBeNull();
   });
 
-  it('is not made without a melody, nor for a karaoke track', async () => {
+  it('is the voice section alone without a melody, or for a karaoke track', async () => {
     const none = await ready({ mode: 'learning' });
     await recordTake(none.h, 440);
-    expect('report' in none.h.store.state.takes[0]).toBe(false);
+    expect(none.h.store.state.takes[0].report?.noMelody).toBe(true);
+    expect(none.h.store.state.takes[0].report?.voice).toBeDefined();
 
     const karaoke = await ready({ mode: 'learning' });
     karaoke.h.core.scoring.setReference(MELODY);
     karaoke.h.store.patch({ reference: { phase: 'skipped', notes: 0, message: 'No singing found: only 3%.' } });
     await recordTake(karaoke.h, 440);
-    expect('report' in karaoke.h.store.state.takes[0]).toBe(false);
-    expect(karaoke.h.store.state.reportTakeId).toBeNull();
+    expect(karaoke.h.store.state.takes[0].report?.noMelody).toBe(true);
+    expect(karaoke.h.store.state.takes[0].report?.voice).toBeDefined();
+    expect(karaoke.h.store.state.reportTakeId).toBe(karaoke.h.store.state.takes[0].id);
   });
 
   it('closes when another song takes over, and opens and closes on request', async () => {

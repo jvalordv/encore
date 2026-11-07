@@ -61,7 +61,8 @@ describe('the karaoke-track rule', () => {
   it('says so, verbatim, in learning mode and only there', () => {
     expect(KARAOKE_TRACK_NOTICE).toBe(
       "Learning mode compares your singing with the original singer's. This is a karaoke track, " +
-        "so there is no singer in it to compare against: you're on your own for this one.",
+        'so there is no melody in it to compare with: the card measures your voice on its own ' +
+        '(Open can also score it against the key).',
     );
     const s = stateWith({ song: song('hash-file'), reference: SKIPPED_NO_VOCAL, mode: 'learning' });
     expect(karaokeTrackNotice(s)).toBe(KARAOKE_TRACK_NOTICE);
@@ -109,10 +110,11 @@ describe('which report card is open', () => {
     expect(openReport(stateWith({ ...base, mode: 'karaoke' }))).toBeNull();
   });
 
-  it('shows none for a take without one, none chosen, or a karaoke track', () => {
+  it('shows none for a take without one or none chosen, and the card on a karaoke track', () => {
     expect(openReport(stateWith({ ...base, reportTakeId: 'b' }))).toBeNull();
     expect(openReport(stateWith({ ...base, reportTakeId: null }))).toBeNull();
-    expect(openReport(stateWith({ ...base, reference: SKIPPED_NO_VOCAL }))).toBeNull();
+    // A karaoke track's take carries the voice section alone, which the card shows.
+    expect(openReport(stateWith({ ...base, reference: SKIPPED_NO_VOCAL }))?.take.id).toBe('a');
   });
 });
 

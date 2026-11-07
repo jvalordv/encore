@@ -9,13 +9,16 @@
  * style. An Open take (and a Strict one with free phrases) adds the freestyle
  * block: how many free notes were in the song's key, each one that was not
  * with how far off it was, and a plain word when the key was unclear or missing
- * and those notes were judged on steadiness only.
+ * and those notes were judged on steadiness only. Every take also carries the
+ * "Your voice" section (src/app/voice-report.ts).
  */
 import type { Span } from '../analysis/free-phrases';
 import { SCORING_STYLES } from '../analysis/score';
 import type { FreestyleReport, NoteResult, OffKeyNote, PhraseResult, ScoringStyle, TakeReport } from '../analysis/score';
 import { noteName } from '../render/lane-geometry';
 import { formatClock } from './state';
+import { describeVoice } from './voice-report';
+import type { VoiceView } from './voice-report';
 
 /** Seconds of song heard before a jump or a replay lands on a phrase. */
 export const JUMP_LEAD_S = 1;
@@ -81,6 +84,8 @@ export interface ReportView {
   freestyle: FreestyleView | null;
   /** Strict: the phrases left out of the measures as free, each to unmark. */
   freePhrases: PhraseRowView[];
+  /** The "Your voice" section; null for a take stored before it existed. */
+  voice: VoiceView | null;
 }
 
 function percent(share: number): string {
@@ -190,6 +195,9 @@ function describeFreestyle(block: FreestyleReport | undefined, style: ScoringSty
 }
 
 function headlineFor(report: TakeReport, style: ScoringStyle): string {
+  if (report.noMelody && style === 'strict') {
+    return 'This song has no melody to follow, so this card measures your voice on its own.';
+  }
   if (report.noMelody) {
     return "This song has no melody to follow, so everything you sang was judged against the song's key.";
   }
@@ -243,5 +251,6 @@ export function describeReport(report: TakeReport): ReportView {
     range: report.noMelody ? '' : rangeLine(report),
     freestyle: describeFreestyle(report.freestyle, style),
     freePhrases: freeRows,
+    voice: report.voice ? describeVoice(report.voice) : null,
   };
 }

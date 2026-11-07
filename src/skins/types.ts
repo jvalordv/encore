@@ -39,6 +39,10 @@ export const COPY_KEYS = [
   'vibrato_slower',
   'held_shorter',
   'off_key',
+  'drift',
+  'vibrato_wide',
+  'vibrato_irregular',
+  'short_phrases',
   'softer_here',
   'brighter',
 ] as const;

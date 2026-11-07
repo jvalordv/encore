@@ -9,12 +9,16 @@
  * both scoring styles (the bias rules on melody notes only, the early and late
  * rules at the style's own threshold), the `match` rule `held_shorter` in Strict
  * only, and the `open` rule `off_key` on freestyle notes, in Open and in free
- * phrases. Per-skin phrasing is later. Comments in the table say what each
- * number means.
+ * phrases. The voice rules (`drift`, `vibrato_wide`, `vibrato_irregular`,
+ * `short_phrases`, and the bias, scoop and wobble rules reading the voice
+ * section when the song has no melody) run over `report.voice`, so a take with
+ * no melody still gets tips. Per-skin phrasing is later. Comments in the table
+ * say what each number means.
  */
 import { LONG_NOTE_S, SCORING_STYLES } from '../analysis/score';
 import type { NoteResult, TakeReport } from '../analysis/score';
 import { median } from '../analysis/take-notes';
+import type { VoiceNote } from '../analysis/voice';
 import { noteName } from '../render/lane-geometry';
 
 /** The rules this wave has, in the order ties are broken. */
@@ -27,7 +31,11 @@ export type TipId =
   | 'early_onsets'
   | 'out_of_range'
   | 'held_shorter'
-  | 'off_key';
+  | 'off_key'
+  | 'drift'
+  | 'vibrato_wide'
+  | 'vibrato_irregular'
+  | 'short_phrases';
 
 /** Every threshold a rule uses. A rule fires only strictly past its number. */
 export const TIP_THRESHOLDS = {
@@ -57,6 +65,20 @@ export const TIP_THRESHOLDS = {
   offKeyShare: 0.25,
   /** ...and at least this many judged (in key plus off key). */
   minFreestyle: 4,
+  /** A long note drifts when its slope is over this many cents per second, either way... */
+  driftCps: 20,
+  /** ...and the tip needs more than this share of the notes over 600 ms to drift. */
+  driftShare: 0.4,
+  /** Vibrato is wide when its median extent is over this many cents either side of centre. */
+  vibratoWideCents: 80,
+  /** Vibrato is irregular when its median regularity (variance a steady swing explains) is under this. */
+  vibratoRegularity: 0.7,
+  /** Vibrato notes needed before a vibrato rule trusts its numbers. */
+  minVibratoNotes: 3,
+  /** Phrases are short when their median length is under this many seconds... */
+  phraseS: 1.5,
+  /** ...and the tip needs at least this many phrases. */
+  minPhrases: 4,
 } as const;
 
 /** The advice for each rule, in plain words (docs/COACHING.md). */
@@ -73,6 +95,12 @@ export const TIP_MESSAGES: Record<TipId, string> = {
   off_key:
     "Some of your free notes land outside the song's key. Build ad-libs from notes of the melody or the " +
     'bass line, and keep outside notes short, as passing notes.',
+  drift:
+    'Long notes drift away from where they start. Set the pitch before you open the note and keep the air steady to the end.',
+  vibrato_wide: 'Your vibrato swings wide. Relax the jaw and throat and let it narrow to a gentle pulse.',
+  vibrato_irregular: 'Your vibrato wanders in speed. Keep the air steady and let it settle into an even pulse.',
+  short_phrases:
+    'You break lines into short pieces. Take a low breath and plan where you breathe, at the ends of lines.',
 };
 
 /** One tip: the advice, what it rests on, where to hear it, how strong it is. */
@@ -210,19 +238,137 @@ function offKeyRule(report: TakeReport): Tip | null {
   return tip('off_key', evidence, worst.onsetS, share / t.offKeyShare);
 }
 
+/** What a voice rule reads: the voice section's notes, when there is no melody. */
+function voiceOf(report: TakeReport): VoiceNote[] {
+  return report.voice && report.noMelody === true ? report.voice.notes : [];
+}
+
+function toneName(report: TakeReport): string {
+  const v = report.voice;
+  if (v?.reference === 'chromatic') return 'the nearest semitone';
+  if (v?.reference === 'estimated_key') return `the nearest note of ${v.keyName ?? 'the estimated key'}`;
+  return 'the nearest note of the key';
+}
+
+function voiceNameAt(n: VoiceNote): string {
+  return `${noteName(n.midi)} at ${clock(n.onsetS)}`;
+}
+
+/** The flat or sharp rule over the voice section: `sign` is -1 for flat, +1 for sharp. */
+function voiceBiasRule(report: TakeReport, sign: -1 | 1): Tip | null {
+  const t = TIP_THRESHOLDS;
+  const sung = voiceOf(report).filter((n) => n.centsOff !== null);
+  if (sung.length < t.minNotes) return null;
+  const limit = sign < 0 ? t.flatCents : t.sharpCents;
+  const off = sung.filter((n) => (sign < 0 ? (n.centsOff ?? 0) < limit : (n.centsOff ?? 0) > limit));
+  const share = off.length / sung.length;
+  if (!(share > t.biasShare)) return null;
+  const worst = maxBy(off, (n) => Math.abs(n.centsOff ?? 0));
+  const way = sign < 0 ? 'under' : 'over';
+  const evidence =
+    `${off.length} of ${sung.length} notes sat more than ${Math.abs(limit)} c ${way} ${toneName(report)}; ` +
+    `the worst was ${voiceNameAt(worst)}, ${Math.round(Math.abs(worst.centsOff ?? 0))} c ${way}.`;
+  return tip(sign < 0 ? 'flat_bias' : 'sharp_bias', evidence, worst.onsetS, share / t.biasShare);
+}
+
+function voiceScoopRule(report: TakeReport): Tip | null {
+  const t = TIP_THRESHOLDS;
+  const measured = voiceOf(report).filter((n) => n.scoopCents !== null);
+  if (measured.length < t.minNotes) return null;
+  const typical = median(measured.map((n) => n.scoopCents ?? 0));
+  if (!(typical > t.scoopCents)) return null;
+  const worst = maxBy(measured, (n) => n.scoopCents ?? 0);
+  const evidence =
+    `Your first 150 ms sat a median of ${Math.round(typical)} c under the rest of the note; ` +
+    `the biggest slide was ${voiceNameAt(worst)}, ${Math.round(worst.scoopCents ?? 0)} c.`;
+  return tip('scoop', evidence, worst.onsetS, typical / t.scoopCents);
+}
+
+function voiceWobbleRule(report: TakeReport): Tip | null {
+  const t = TIP_THRESHOLDS;
+  const measured = voiceOf(report).filter((n) => n.stdCents !== null);
+  if (measured.length < t.minLongNotes) return null;
+  const wobbly = measured.filter((n) => (n.stdCents ?? 0) > t.wobbleCents);
+  const share = wobbly.length / measured.length;
+  if (!(share > t.wobbleShare)) return null;
+  const worst = maxBy(wobbly, (n) => n.stdCents ?? 0);
+  const evidence =
+    `${wobbly.length} of ${measured.length} long notes wandered more than ${t.wobbleCents} c ` +
+    `(vibrato and drift taken out); the worst was ${voiceNameAt(worst)}, spread ${Math.round(worst.stdCents ?? 0)} c.`;
+  return tip('unstable_sustain', evidence, worst.onsetS, share / t.wobbleShare);
+}
+
+function driftRule(report: TakeReport): Tip | null {
+  const t = TIP_THRESHOLDS;
+  const measured = (report.voice?.notes ?? []).filter((n) => n.driftCps !== null);
+  if (measured.length < t.minLongNotes) return null;
+  const drifting = measured.filter((n) => Math.abs(n.driftCps ?? 0) > t.driftCps);
+  const share = drifting.length / measured.length;
+  if (!(share > t.driftShare)) return null;
+  const worst = maxBy(drifting, (n) => Math.abs(n.driftCps ?? 0));
+  const slope = Math.round(Math.abs(worst.driftCps ?? 0));
+  const evidence =
+    `${drifting.length} of ${measured.length} notes over 600 ms drifted more than ${t.driftCps} c a second; ` +
+    `the worst was ${voiceNameAt(worst)}, ${slope} c/s ${(worst.driftCps ?? 0) < 0 ? 'flat' : 'sharp'}.`;
+  return tip('drift', evidence, worst.onsetS, share / t.driftShare);
+}
+
+/** The vibrato rules: `wide` when the swing is too big, else the irregular one. */
+function vibratoRule(report: TakeReport, wide: boolean): Tip | null {
+  const t = TIP_THRESHOLDS;
+  const vib = (report.voice?.notes ?? []).filter((n) => n.vibrato !== null);
+  if (vib.length < t.minVibratoNotes) return null;
+  const extent = median(vib.map((n) => n.vibrato?.extentCents ?? 0));
+  const regularity = median(vib.map((n) => n.vibrato?.regularity ?? 0));
+  if (wide) {
+    if (!(extent > t.vibratoWideCents)) return null;
+    const worst = maxBy(vib, (n) => n.vibrato?.extentCents ?? 0);
+    const evidence =
+      `Your vibrato on ${vib.length} notes swung a median of ${Math.round(extent)} c either side; ` +
+      `the widest was ${voiceNameAt(worst)}, ${Math.round(worst.vibrato?.extentCents ?? 0)} c.`;
+    return tip('vibrato_wide', evidence, worst.onsetS, extent / t.vibratoWideCents);
+  }
+  if (!(regularity < t.vibratoRegularity)) return null;
+  const worst = maxBy(vib, (n) => 1 - (n.vibrato?.regularity ?? 1));
+  const evidence =
+    `Your vibrato on ${vib.length} notes was a median ${Math.round(regularity * 100)}% regular ` +
+    `(a steady swing is over ${Math.round(t.vibratoRegularity * 100)}%); the least even was ` +
+    `${voiceNameAt(worst)}, ${Math.round((worst.vibrato?.regularity ?? 0) * 100)}%.`;
+  return tip('vibrato_irregular', evidence, worst.onsetS, t.vibratoRegularity / Math.max(regularity, 0.01));
+}
+
+function phraseRule(report: TakeReport): Tip | null {
+  const t = TIP_THRESHOLDS;
+  const voice = report.voice;
+  const typical = voice?.summary.phraseMedianS;
+  if (!voice || typical == null || voice.summary.phraseCount < t.minPhrases) return null;
+  if (!(typical < t.phraseS)) return null;
+  const shortest = voice.phrases.reduce((a, b) => (b[1] - b[0] < a[1] - a[0] ? b : a));
+  const evidence =
+    `Your ${voice.summary.phraseCount} phrases ran a median of ${typical.toFixed(1)} s between breaths; ` +
+    `the shortest was at ${clock(shortest[0])}, ${(shortest[1] - shortest[0]).toFixed(1)} s.`;
+  return tip('short_phrases', evidence, shortest[0], t.phraseS / typical);
+}
+
 /** The tips a take earns: the rules that fire, strongest first, at most three. */
 export function tipsFor(report: TakeReport): Tip[] {
+  // With no melody the voice section stands in for the melody's notes.
+  const alone = report.noMelody === true;
   const fired = [
-    biasRule(report, -1),
-    biasRule(report, 1),
-    scoopRule(report),
-    wobbleRule(report),
+    alone ? voiceBiasRule(report, -1) : biasRule(report, -1),
+    alone ? voiceBiasRule(report, 1) : biasRule(report, 1),
+    alone ? voiceScoopRule(report) : scoopRule(report),
+    alone ? voiceWobbleRule(report) : wobbleRule(report),
     onsetRule(report, 1),
     onsetRule(report, -1),
     rangeRule(report),
     // The original's lengths mean nothing to a singer who may ad-lib freely.
     (report.style ?? 'strict') === 'strict' ? heldRule(report) : null,
     offKeyRule(report),
+    driftRule(report),
+    vibratoRule(report, true),
+    vibratoRule(report, false),
+    phraseRule(report),
   ].filter((t): t is Tip => t !== null);
   // Array sort is stable, so equal strengths keep the table's order.
   return fired.sort((a, b) => b.strength - a.strength).slice(0, MAX_TIPS);

@@ -8,11 +8,12 @@
  * free of hit colours. Nothing in karaoke mode is computed, stored or shown: no
  * melody is scored, no band is drawn and a take gets no report.
  *
- * Strict needs the original singer, so a karaoke track (a result with the
- * Karaoke badge, or a track the service found no singer in) is not scored in
- * Strict; the panel says so before the take (src/app/learning.ts). Open scores
- * it anyway, as all freestyle against the song's key, and scores any song
- * without a melody the same way.
+ * Strict needs the original singer, so on a karaoke track (a result with the
+ * Karaoke badge, or a track the service found no singer in) and on a song with
+ * no melody it has nothing to compare with; the panel says so before the take
+ * (src/app/learning.ts), and the take is measured on the voice alone (the lane
+ * coloured like a tuner, the card's "Your voice"). Open scores such a song as
+ * all freestyle against the song's key, and gives the voice section too.
  */
 import { sameSpan, withSpan } from '../../analysis/free-phrases';
 import type { Span } from '../../analysis/free-phrases';
@@ -123,7 +124,8 @@ export class ScoringController {
 
   /**
    * The report for a take just recorded, or null when none is due: karaoke
-   * mode, Strict without a melody, or Strict on a karaoke track.
+   * mode or the Mic check. A song with no melody (or a karaoke track) gets the
+   * voice section alone.
    */
   reportFor(frames: readonly PitchFrame[]): TakeReport | null {
     return this.isScoring() ? this.scoreIn(frames, this.core.current.scoring) : null;
@@ -146,18 +148,16 @@ export class ScoringController {
     const take = await takes.get(takeId);
     if (!take?.report || take.songHash !== core.store.state.song?.hash) return;
     const report = this.scoreIn(take.frames, take.report.style ?? 'strict');
-    if (report === null) return;
     await takes.setReport(takeId, report);
     await core.takes.refreshTakes();
   }
 
-  /** True while the singing is being scored: learning mode, with something to score against. */
+  /** True while the singing is being measured: learning mode, whatever the song. */
   private isScoring(): boolean {
     const { core } = this;
     // The Mic check measures the mic and never grades the singing.
     if (core.micCheck.active) return false;
-    if (core.current.mode !== 'learning') return false;
-    return core.current.scoring === 'open' || this.activeReference() !== null;
+    return core.current.mode === 'learning';
   }
 
   /** The melody, unless the song is a karaoke track, which has no original singer. */
@@ -165,10 +165,8 @@ export class ScoringController {
     return isKaraokeTrack(this.core.store.state) ? null : this.reference;
   }
 
-  private scoreIn(frames: readonly PitchFrame[], style: ScoringStyle): TakeReport | null {
-    const reference = this.activeReference();
-    if (style === 'strict' && reference === null) return null;
-    return scoreTake(frames, reference, {
+  private scoreIn(frames: readonly PitchFrame[], style: ScoringStyle): TakeReport {
+    return scoreTake(frames, this.activeReference(), {
       style,
       octaveInvariant: this.core.current.octaveInvariant,
       key: this.key,

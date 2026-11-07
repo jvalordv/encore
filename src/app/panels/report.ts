@@ -9,8 +9,9 @@
  * only when asked, from src/coach/tips.ts. An Open take (or a Strict one with
  * free phrases) adds the freestyle block: the share on the melody, the share of
  * free notes in the song's key, and each note off key with a Jump. On a karaoke
- * track Strict says it cannot score and offers Switch to Open, which scores the
- * track on the song's key. Drawn from the state through `karaokeTrackNotice` and
+ * track Strict has no melody to compare with and offers Switch to Open, which
+ * scores the track on the song's key. Every card ends with "Your voice"
+ * (voice-block.ts), which stands alone when there is no melody. Drawn from the state through `karaokeTrackNotice` and
  * `openReport` (src/app/learning.ts), which answer nothing in karaoke mode, so
  * this panel is then hidden.
  */
@@ -24,6 +25,7 @@ import type { MomentView, ReportView } from '../report';
 import type { Session } from '../session';
 import type { AppState, StateStore } from '../state';
 import type { MountPanel } from './panel';
+import { voiceBlock } from './voice-block';
 
 /** The keys of the state the panel is drawn from. */
 const WATCHED: ReadonlyArray<keyof AppState> = [
@@ -203,6 +205,14 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
     }
 
     root.append(...freestyleBlock(view, busy));
+    root.append(
+      ...voiceBlock(
+        doc,
+        view.voice,
+        { seek: (s) => session.seek(s), replay: (s) => void session.playTake(take.id, s) },
+        busy,
+      ),
+    );
     if (view.freePhrases.length > 0) {
       root.append(el('h4', 'report-free-title', 'report-sub', 'Free phrases'));
       root.append(

@@ -24,7 +24,11 @@ webcam or USB mic.
 
 ## Current state
 
-- **Last done:** **W0e** (2026-11-06): a live keyboard over the lane's
+- **Last done:** **WL1** (2026-11-07): learning mode now gives measured
+  feedback on any song, including a YouTube karaoke video with no melody:
+  intonation, stability, scoops, drift, vibrato, range and phrasing in a
+  "Your voice" card, a tuner-style live lane, and new tips. Before it
+  **W0e** (2026-11-06): a live keyboard over the lane's
   gutter, with the melody's key lit, a voice marker at the exact pitch
   joined to the ribbon, a Keyboard toggle, and "Save melody (.mid)". The
   YouTube player also moved to youtube.com so the sign-in clears the bot
@@ -48,9 +52,9 @@ webcam or USB mic.
   and Open scoring), W3 (learning mode), W2 (search and the karaoke core)
   and W1 (the reference step and the browser seams); older work in
   `docs/HISTORY.md`.
-- **In progress:** none.
-- **Next:** **WL1** (learning feedback on any song, with no melody
-  needed: the owner's priority), **WL2** (progress over time), **WL3** (a
+- **In progress (2026-11-07, overnight, owner asleep):** WL3a (capture)
+  and W0f (library) in worktrees, to be merged one at a time.
+- **Next:** **WL2** (progress over time), **WL3** (a
   melody for YouTube songs: capture while it plays, plus the downloader
   as a backup, both used together where possible), then **W0f** (library and
   favorites), **W0g** (backing music as
@@ -517,7 +521,7 @@ Tracks inside a wave share no files and may run in parallel.
   - Follow-up: the keyboard has not been looked at in the three skins or
     a narrow window.
 
-- [ ] **WL1: Learning feedback on any song** (owner, 2026-11-06: "get
+- [x] **WL1: Learning feedback on any song** (owner, 2026-11-06: "get
   the learning mode built out so we can get some feedback; that's the
   whole point of this in the first place"). Today learning mode scores
   only against a prepared song's melody. A YouTube link cannot be prepared
@@ -554,6 +558,39 @@ Tracks inside a wave share no files and may run in parallel.
     card with "Your voice".
   - Owner test: sing a YouTube karaoke video in learning mode and say
     which tips ring true.
+  - Built (2026-11-07):
+    - Modules: `src/analysis/{voice,contour-fit,key-estimate}.ts`,
+      `src/app/voice-report.ts`, `src/app/panels/voice-block.ts`.
+    - Report: `TakeReport.voice` is optional, and `noMelody: true` when
+      there is no reference or it is a karaoke track in Strict.
+    - Key: the reference is the key map when clear, else an estimated
+      key (Krumhansl-Kessler: at least 6 notes, at least 5 pitch
+      classes, r ≥ 0.75, a lead of ≥ 0.05 over the best non-relative),
+      else the nearest semitone. Both fallbacks are at A = 440 Hz, and
+      the card says so.
+    - Note fit: one joint least-squares fit per note (level, line,
+      sine).
+    - Stability: only on notes over 0.65 s, long enough to fit a 4 Hz
+      vibrato, so vibrato never counts as wobble.
+    - Vibrato: 4–8 Hz, extent ≥ 25 c, regularity ≥ 0.5, a peak margin of
+      0.1 over rates 1 Hz away, and at least 2 cycles.
+    - Live: with no melody the lane grades like a tuner (25 c hit, 50 c
+      okay).
+    - New tips: `drift`, `vibrato_wide`, `vibrato_irregular` and
+      `short_phrases`. Thresholds are in `TIP_THRESHOLDS` and
+      docs/COACHING.md.
+    - Review fixes: stability vs vibrato length, vibrato false
+      positives, the basis line, and the karaoke-track notice.
+  - Follow-up: with no key map the voice is judged at A = 440 Hz, so a
+    karaoke track tuned away from 440 shows as the singer's bias. WL3's
+    capture gives a key map with tuning and closes this for captured
+    songs.
+  - Follow-up: `VIBRATO_NOTE_S` (0.5 s, the "looked for vibrato" count)
+    disagrees with the 0.65 s that a 4 Hz vibrato needs.
+  - Follow-up: drift over about 25 c/s can be cut by the 80 c
+    segmentation rule, so extreme drift is under-reported.
+  - Follow-up: Open freestyle on a track with no melody still shows the
+    'free' colour live. Tuner colours there are untried.
 - [ ] **WL2: Progress over time.** Each learning take stores its summary
   (it already does). A Progress view shows per song and overall trends:
   in-tune share, bias, stability, scoops, range. Show the best and the
@@ -1137,6 +1174,7 @@ were.
 | W0c Take analysis (measured) | 0.4 | 0.44 M | 10 min |
 | W0d Mic check in the app (measured) | 1 | 0.75 M | 15 min |
 | W0e Keyboard and melody MIDI (measured) | 0.4 | 0.31 M | 10 min |
+| WL1 Learning feedback on any song (measured) | 0.6 | 0.42 M | 20 min |
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |

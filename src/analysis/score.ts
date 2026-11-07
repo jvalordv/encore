@@ -32,8 +32,10 @@ import { hzToMidi } from './pitch';
 import type { PitchFrame } from './pitch';
 import { MERGE_GAP_S, median, segmentTake } from './take-notes';
 import type { NoteFrame, SungNote } from './take-notes';
+import type { VoiceReport } from './voice';
 
 export type { FreestyleReport, OffKeyNote } from './key-fit';
+export type { VoiceReport } from './voice';
 
 /** How a frame did against the note under it. */
 export type Grade = 'hit' | 'okay' | 'miss';
@@ -287,6 +289,8 @@ export interface TakeReport {
   freestyle?: FreestyleReport;
   /** Strict: the free phrases left out of the melody's measures, as [start, end]. */
   freeSpans?: Array<[number, number]>;
+  /** The voice alone, measured with or without a melody; absent before it existed. */
+  voice?: VoiceReport;
 }
 
 /** The p-th percentile (0..1) of numbers, interpolating between ranks. */
