@@ -19,6 +19,8 @@ import { sanitizeTuning } from '../analysis/mic-tuning';
 import type { MicTuning } from '../analysis/mic-tuning';
 import type { ScoringStyle } from '../analysis/score';
 import type { MonitorMode } from '../audio/mic';
+import { defaultDuet, sanitizeDuet } from '../duet/settings';
+import type { DuetSettings } from '../duet/settings';
 import { normalizeApiKey } from '../search/key';
 import { SEARCH_PROVIDER_IDS } from '../search/types';
 import type { SearchProviderId } from '../search/types';
@@ -89,6 +91,8 @@ export interface Settings {
    * It stays in this browser's storage and goes nowhere but Google.
    */
   youtubeApiKey: string;
+  /** The second singer: on or off, names, colours and the second mic. */
+  duet: DuetSettings;
 }
 
 /** Key inside the key-value store; the localStorage adapter adds `encore.`. */
@@ -122,6 +126,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   keyboard: true,
   searchProvider: 'youtube',
   youtubeApiKey: '',
+  duet: Object.freeze(defaultDuet()) as DuetSettings,
 });
 
 /** The offset limited to plus or minus MAX_EMBED_OFFSET_S; NaN reads as 0. */
@@ -248,6 +253,7 @@ export function sanitizeSettings(value: unknown): Settings {
     keyboard: typeof raw.keyboard === 'boolean' ? raw.keyboard : DEFAULT_SETTINGS.keyboard,
     searchProvider: searchProviderId(raw.searchProvider),
     youtubeApiKey: apiKey(raw.youtubeApiKey),
+    duet: sanitizeDuet(raw.duet),
   };
 }
 

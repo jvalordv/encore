@@ -53,6 +53,7 @@ import type { MicTuning } from '../analysis/mic-tuning';
 import type { MelodyRange } from '../analysis/test-melody';
 import type { MonitorMode } from '../audio/mic';
 import type { Transport } from '../audio/transport';
+import type { DuetController } from '../duet/controller';
 import type { EmbedHost } from '../audio/youtube-transport';
 import type { LaneNote } from '../render/lane-geometry';
 import type { SearchFilter, SearchResult } from '../search';
@@ -120,6 +121,11 @@ export class Session {
     return this.core.devices.deviceLists;
   }
 
+  /** The second singer: names, colours, its mic and the turns (src/duet). */
+  get duet(): DuetController {
+    return this.core.duet;
+  }
+
   /** The active transport (audio player or YouTube); null without Web Audio. */
   get transport(): Transport | null {
     return this.core.songs.active;
@@ -142,6 +148,7 @@ export class Session {
     this.core.scoring.syncLane();
     this.core.keys.syncLane();
     this.core.backing.syncLane();
+    this.core.duet.syncLane();
   }
 
   /**
@@ -174,6 +181,7 @@ export class Session {
     this.core.search.dispose();
     this.core.songs.dispose();
     this.core.input.dispose();
+    this.core.duet.dispose();
   }
 
   /** Subscribes to device list changes; returns the unsubscribe function. */

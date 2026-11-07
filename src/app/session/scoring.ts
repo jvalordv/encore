@@ -20,6 +20,8 @@ import type { Span } from '../../analysis/free-phrases';
 import { scoreTake, StyledScorer } from '../../analysis/open-score';
 import type { PitchFrame } from '../../analysis/pitch';
 import type { ScoreReference, ScoringStyle, TakeReport } from '../../analysis/score';
+import { captureOf, scoreDuetTake } from '../../duet/take';
+import type { DuetCapture, DuetTake } from '../../duet/take';
 import type { KeyMap } from '../../service/types';
 import { loadFreePhrases, saveFreePhrases } from '../free-store';
 import { initialKey } from '../key-state';
@@ -27,6 +29,7 @@ import type { KeyState } from '../key-state';
 import { isKaraokeTrack } from '../learning';
 import { filterForMode } from '../search';
 import type { PracticeMode } from '../settings';
+import type { TakeFrame } from '../take-trace';
 import type { SessionCore } from './core';
 
 /** Scores the singing against the melody and the key, in learning mode only. */
@@ -48,16 +51,20 @@ export class ScoringController {
     });
     // After the take recorder's subscriber, as the take is recorded before the
     // lane draws the frame.
-    this.live.attach(core.bus, ({ frame, gated }, grade) => {
+    this.live.attach(core.bus, (message, grade) => {
+      const { frame, gated } = message;
+      // Each mic's frames go to its singer's ribbon; on one mic shared by two,
+      // learning mode puts them on the ribbon of whoever's turn it is.
+      const singer = core.duet.laneSinger(message);
       // While a take replays, its own trace owns the lane.
       if (core.store.state.playingTakeId !== null) return;
       // A frame under the level gate is a gap, not jitter.
       if (gated) {
-        core.lane?.pushFrame({ t: frame.t, f0: 0, clarity: frame.clarity });
+        this.draw({ t: frame.t, f0: 0, clarity: frame.clarity }, singer);
         return;
       }
       const drawn = { t: frame.t, f0: frame.f0, clarity: frame.clarity };
-      core.lane?.pushFrame(grade === null ? drawn : { ...drawn, grade });
+      this.draw(grade === null ? drawn : { ...drawn, grade }, singer);
     });
     // A card, and the phrases marked free, belong to the song they were made for.
     core.store.subscribe((state, changed) => {
@@ -69,6 +76,12 @@ export class ScoringController {
       this.free = hash === null ? [] : loadFreePhrases(core.settingsStore, hash);
       this.publishFree();
     });
+  }
+
+  /** Draws a frame on a singer's ribbon; singer A's is the lane's default. */
+  private draw(frame: Parameters<NonNullable<SessionCore['lane']>['pushFrame']>[0], singer: 0 | 1): void {
+    if (singer === 1) this.core.lane?.pushFrame(frame, 1);
+    else this.core.lane?.pushFrame(frame);
   }
 
   /** The melody to score against; null when the song has none. */
@@ -131,6 +144,14 @@ export class ScoringController {
     return this.isScoring() ? this.scoreIn(frames, this.core.current.scoring) : null;
   }
 
+  /**
+   * Both singers' reports for a duet take just recorded, or null when none is
+   * due (karaoke mode, the Mic check). Singer A's is the take's own report.
+   */
+  duetReportsFor(capture: DuetCapture, frames: readonly TakeFrame[]): { report: TakeReport; duet: DuetTake } | null {
+    return this.isScoring() ? this.scoreDuet(capture, frames, this.core.current.scoring) : null;
+  }
+
   /** Marks or unmarks the phrase under a Shift+click; only while learning. */
   togglePhrase(span: Span): void {
     if (this.core.current.mode !== 'learning' || this.reference === null) return;
@@ -147,7 +168,16 @@ export class ScoringController {
     const takes = await core.takesReady;
     const take = await takes.get(takeId);
     if (!take?.report || take.songHash !== core.store.state.song?.hash) return;
-    const report = this.scoreIn(take.frames, take.report.style ?? 'strict', take.shiftSemitones ?? 0);
+    const style = take.report.style ?? 'strict';
+    if (take.duet) {
+      // A duet take is scored again for both singers, from what each sang.
+      const capture = captureOf(take.duet, take.duetFramesB);
+      const both = this.scoreDuet(capture, take.frames, style, take.shiftSemitones ?? 0);
+      await takes.setReport(takeId, both.report, both.duet);
+      await core.takes.refreshTakes();
+      return;
+    }
+    const report = this.scoreIn(take.frames, style, take.shiftSemitones ?? 0);
     await takes.setReport(takeId, report);
     await core.takes.refreshTakes();
   }
@@ -169,6 +199,21 @@ export class ScoringController {
   /** Scores frames sung with the song moved by `shift` (the shift in force when left out). */
   private scoreIn(frames: readonly PitchFrame[], style: ScoringStyle, shift?: number): TakeReport {
     return scoreTake(frames, this.activeReference(shift), {
+      style,
+      octaveInvariant: this.core.current.octaveInvariant,
+      key: this.core.keys.key(this.key, shift),
+      freeSpans: this.free,
+    });
+  }
+
+  /** Both singers' reports of `frames` and the capture, in `style`. */
+  private scoreDuet(
+    capture: DuetCapture,
+    frames: readonly TakeFrame[],
+    style: ScoringStyle,
+    shift?: number,
+  ): { report: TakeReport; duet: DuetTake } {
+    return scoreDuetTake(capture, frames, this.activeReference(shift), {
       style,
       octaveInvariant: this.core.current.octaveInvariant,
       key: this.core.keys.key(this.key, shift),

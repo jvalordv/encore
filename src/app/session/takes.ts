@@ -10,6 +10,8 @@ import type { PitchFrame } from '../../analysis/pitch';
 import type { TakeRecording } from '../../audio/recorder';
 import type { ClockKind, TrackInfo, Transport } from '../../audio/transport';
 import { decodeWav, encodeWavBlob, songTimeOfSample } from '../../audio/wav';
+import { framesFor } from '../../duet/split';
+import type { DuetCapture } from '../../duet/take';
 import { formatClock } from '../state';
 import { captureMicSettings, takeExportJson, takeFileName } from '../take-export';
 import type { TakeFileKind } from '../take-export';
@@ -89,8 +91,9 @@ export class TakeController {
   constructor(private readonly core: SessionCore) {
     // The recorder's half of the frame bus: every frame goes into the take,
     // with the raw reading and the gate's verdict beside the scored fields.
-    core.bus.subscribe(({ frame, rawF0, gateReason }) => {
-      if (!this.takeFrames) return;
+    core.bus.subscribe(({ singer, frame, rawF0, gateReason }) => {
+      // Singer B's frames are kept by the duet controller, for B's own report.
+      if (!this.takeFrames || singer !== 0) return;
       this.takeFrames.push(toTakeFrame(frame, rawF0, gateReason));
       this.trace.sampleHealth(frame.t, core.store.state);
     });
@@ -353,6 +356,8 @@ export class TakeController {
     );
     this.recording = { song, startedPlayback, clock: transport.clock, mic, environment, sections };
     this.takeFrames = [];
+    // The Mic check measures singer A's mic alone; a song take may be a duet.
+    if (!sections) this.core.duet.beginTake();
     this.trace.start(store.state);
     store.patch({ recording: true });
   }
@@ -391,12 +396,13 @@ export class TakeController {
     if (!parts || !meta || !store.state.recording) return Promise.resolve();
     const frames = this.takeFrames ?? [];
     this.takeFrames = null;
+    const duet = this.core.duet.endTake();
     // Copied now: the log stops here, but the next take reuses the recorder.
     const tracks = { events: [...this.trace.events], health: [...this.trace.health] };
     store.setStatus('Saving take…');
     this.finishing = (async () => {
       try {
-        await this.saveTake(await parts.recorder.stop(), frames, meta, tracks);
+        await this.saveTake(await parts.recorder.stop(), frames, meta, tracks, duet);
       } catch (error) {
         store.setStatus(`Could not save the take: ${messageOf(error)}`, 'error');
       } finally {
@@ -430,6 +436,7 @@ export class TakeController {
     frames: TakeFrame[],
     meta: Recording,
     tracks: Pick<TakeTrace, 'events' | 'health'>,
+    duetCapture: DuetCapture | null,
   ): Promise<void> {
     const { song, clock, mic } = meta;
     if (rec.pcm.length === 0) {
@@ -438,7 +445,9 @@ export class TakeController {
     }
     const takes = await this.core.takesReady;
     // Learning mode's measurements; none in karaoke mode or without a melody.
-    const report = this.core.scoring.reportFor(frames);
+    // A duet take has a report per singer: A's is the take's own, B's rides in `duet`.
+    const both = duetCapture ? this.core.scoring.duetReportsFor(duetCapture, frames) : null;
+    const report = both ? both.report : this.core.scoring.reportFor(frames);
     const trace = this.buildTrace(rec, meta, tracks);
     const id = await takes.save({
       trace,
@@ -455,11 +464,15 @@ export class TakeController {
       mic,
       ...(meta.sections ? { kind: 'mic-check' as const } : {}),
       ...(this.core.keys.shift !== 0 && !meta.sections ? { shiftSemitones: this.core.keys.shift } : {}),
-      voicedFrames: frames.filter((f) => f.f0 > 0 && Number.isFinite(f.f0)).length,
+      // On one mic shared by two, only A's turns count toward A's streak.
+      voicedFrames: (duetCapture?.mode === 'one-mic' ? framesFor(frames, duetCapture.turns, 0) : frames).filter(
+        (f) => f.f0 > 0 && Number.isFinite(f.f0),
+      ).length,
       // Frames are on song time with the latency already taken off.
       frames,
       wav: encodeWavBlob(rec.pcm, rec.sampleRate, 16),
       ...(report ? { report } : {}),
+      ...(both && duetCapture ? { duet: both.duet, ...(duetCapture.framesB.length ? { duetFramesB: duetCapture.framesB } : {}) } : {}),
     });
     this.lastSavedId = id;
     await this.refreshTakes();

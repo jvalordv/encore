@@ -9,6 +9,7 @@
 import { PitchTracker } from '../../analysis/pitch-tracker';
 import { PcmCapture } from '../../audio/capture';
 import type { YouTubeApi } from '../../audio/youtube-api';
+import { DuetController } from '../../duet/controller';
 import { saveSettings } from '../settings';
 import type { Settings } from '../settings';
 import { memoryLibraryStore } from '../library';
@@ -37,7 +38,7 @@ import type { SearchOptions } from './search';
 import { SongController } from './songs';
 import { StemsController } from './stems';
 import { TakeController } from './takes';
-import type { LaneSink, SessionParts } from './types';
+import type { LaneSink, SecondParts, SessionParts } from './types';
 
 /** What the core is built from; the Session facade fills it from its options. */
 export interface SessionCoreInit {
@@ -55,6 +56,8 @@ export interface SessionCoreInit {
   search?: SearchOptions;
   /** Overrides the worklet support check; tests set it for fake parts. */
   trackerSupported?: boolean;
+  /** Builds singer B's mic and tracker; tests hand fakes, the default is real. */
+  secondParts?: () => SecondParts | null;
 }
 
 /** The store, the parts, the settings and the controllers, in one place. */
@@ -91,6 +94,7 @@ export class SessionCore {
   readonly backing: BackingController;
   readonly search: SearchController;
   readonly library: LibraryController;
+  readonly duet: DuetController;
   readonly loop: TickLoop;
 
   constructor(init: SessionCoreInit) {
@@ -122,6 +126,7 @@ export class SessionCore {
     this.keys = new KeyController(this);
     this.search = new SearchController(this, init.search);
     this.library = new LibraryController(this, init.library ?? Promise.resolve(memoryLibraryStore()));
+    this.duet = new DuetController(this, init.secondParts);
     this.loop = new TickLoop(this);
 
     const sinkCapable = typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;

@@ -105,6 +105,17 @@ describe('initialState', () => {
         micState: 'nothing',
         bleed: { state: 'unknown', reason: 'off' },
       },
+      duet: {
+        secondSinger: false,
+        names: ['Singer A', 'Singer B'],
+        colours: [null, null],
+        deviceIdB: null,
+        kind: 'off',
+        turns: [],
+        turnSource: 'none',
+        latencyBS: null,
+        calibratingB: false,
+      },
       singers: [
         {
           id: 0,

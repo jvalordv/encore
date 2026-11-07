@@ -124,6 +124,8 @@
           <h3 class="group-title">Devices</h3>
           <label class="field" for="input-select">Microphone</label>
           <select id="input-select" data-testid="input-select"></select>
+          <!-- Shown beside a Bluetooth Hands-Free mic (src/duet/hands-free.ts). -->
+          <p id="input-hands-free" class="song-meta" data-testid="input-hands-free" data-kind="warn" hidden></p>
           <span id="monitor-label" class="field">Monitoring</span>
           <div id="monitor-mode" class="segmented" data-testid="monitor-mode" role="group" aria-labelledby="monitor-label">
             <button type="button" id="monitor-headphones" data-testid="monitor-headphones" data-mode="headphones" aria-pressed="true">Headphones</button>
@@ -144,6 +146,10 @@
             <button type="button" id="mic-toggle" data-testid="mic-toggle">Open mic</button>
           </div>
         </section>
+
+        <!-- Names, colours and the second singer's mic; built by
+             src/app/panels/singers.ts. -->
+        <section id="singers" class="panel-group singers" data-testid="singers" aria-label="Singers"></section>
 
         <section class="panel-group" aria-label="Timing and voicing">
           <h3 class="group-title">Latency</h3>

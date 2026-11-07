@@ -1154,3 +1154,32 @@ button[aria-pressed='true'] {
     animation: none;
   }
 }
+
+/* Two singers (src/app/panels/singers.ts): a row each, B's mic below. */
+.singer-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.singer-row input[type='color'] {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  flex: none;
+}
+
+.singer-row input[type='text'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.singer-row[hidden] {
+  display: none;
+}
+
+.singers [data-kind='warn'],
+#input-hands-free[data-kind='warn'] {
+  color: var(--color-miss);
+}

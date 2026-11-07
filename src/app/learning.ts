@@ -10,6 +10,8 @@
  * mode never reaches any of this: every function answers "nothing" there.
  */
 import type { TakeReport } from '../analysis/score';
+import { singerReports } from '../duet/take';
+import type { SingerReport } from '../duet/take';
 import type { KeyState } from './key-state';
 import { skippedForNoVocal } from './reference';
 import type { PracticeMode, ScoringStyle } from './settings';
@@ -103,6 +105,19 @@ export function openReport(
   const take = state.takes.find((t) => t.id === state.reportTakeId);
   if (!take?.report) return null;
   return { take, report: take.report };
+}
+
+/**
+ * The cards of the take whose report is shown, one per singer (A's, and B's
+ * for a duet take); empty in karaoke mode and for a take without a report.
+ */
+export function openReports(
+  state: Pick<AppState, 'mode' | 'song' | 'pickedResult' | 'reference' | 'takes' | 'reportTakeId'>,
+): { take: TakeSummary; cards: SingerReport[] } | null {
+  if (state.mode !== 'learning' || state.reportTakeId === null) return null;
+  const take = state.takes.find((t) => t.id === state.reportTakeId);
+  const cards = take ? singerReports(take) : [];
+  return take && cards.length > 0 ? { take, cards } : null;
 }
 
 /** The two modes as the header toggle labels them. */

@@ -20,6 +20,9 @@
 import { isMarked } from '../../analysis/free-phrases';
 import type { Span } from '../../analysis/free-phrases';
 import { personalBest, takeStars } from '../../analysis/stars';
+import { isSharedPhrase } from '../../duet/split';
+import { takesOfSinger } from '../../duet/take';
+import type { SingerReport } from '../../duet/take';
 import { tipsFor } from '../../coach/tips';
 import type { Tip } from '../../coach/tips';
 import { describeAlign } from '../align';
@@ -28,11 +31,12 @@ import { CARD_FAILED, drawCard, renderCardPng } from '../card-image';
 import { cardFileName, localDateString } from '../card-layout';
 import { downloadBlob } from '../download';
 import { activeSkin, personalBestText, starGlyphs, starsLineFor } from '../fun';
-import { karaokeTrackNotice, openReport, openSwitchOffer, originalQueryFor } from '../learning';
+import { karaokeTrackNotice, openReports, openSwitchOffer, originalQueryFor } from '../learning';
 import { describeReport, jumpTarget } from '../report';
 import type { MomentView, ReportView } from '../report';
 import type { Session } from '../session';
 import type { AppState, StateStore } from '../state';
+import type { TakeSummary } from '../takes';
 import type { MountPanel } from './panel';
 import { voiceBlock } from './voice-block';
 
@@ -154,24 +158,34 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
     return parts;
   }
 
-  function card(state: AppState, open: NonNullable<ReturnType<typeof openReport>>): HTMLElement {
-    const { take, report } = open;
+  /**
+   * One singer's card. A take with two singers has two, each with its own
+   * title, stars, best and tips, and the stretches both sang marked shared.
+   */
+  function card(state: AppState, take: TakeSummary, who: SingerReport, multi: boolean): HTMLElement {
+    const { report } = who;
+    const key = `${take.id}:${who.singer}`;
     const busy = state.recording || state.calibrating;
     const view = describeReport(report);
     const root = el('div', 'report-card', 'report-card');
     root.dataset.takeId = take.id;
+    root.dataset.singer = String(who.singer);
     root.dataset.style = view.style;
 
     const head = el('div', 'report-head', 'report-head');
     head.append(
-      el('h3', 'report-title', 'group-title', 'Take report'),
+      el('h3', 'report-title', 'group-title', multi ? `Take report: ${who.name}` : 'Take report'),
       button('Close', 'report-close', () => session.showReport(null)),
     );
     root.append(head, el('p', 'report-headline', 'report-headline', view.headline));
     const skin = activeSkin(doc);
     const stars = takeStars(report);
     const starLine = starsLineFor(report, skin);
-    const best = personalBest(take, state.takes);
+    // Each singer's best is among their own takes, so the two never mix.
+    const best =
+      who.singer === 0
+        ? personalBest(take, state.takes)
+        : personalBest({ ...take, report }, takesOfSinger(state.takes, 1));
     const bestLine = best === null ? '' : personalBestText(best, skin);
     if (starLine) {
       const row = el('p', 'report-stars', 'report-stars', `${starGlyphs(stars)} ${starLine}`);
@@ -214,6 +228,10 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
               );
               const span = view.phraseSpans[i];
               row.append(freeToggle(take.id, span, isMarked(state.freePhrases, span), busy, 'phrase-free'));
+              if (isSharedPhrase(who.shared, span[0], span[1])) {
+                row.dataset.shared = 'true';
+                row.append(el('span', 'phrase-shared', 'song-meta', 'shared'));
+              }
               return row;
             }),
             'report-phrases',
@@ -256,7 +274,7 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
         cardStatus.textContent = '';
         const content = cardContentOf({
           view,
-          songName: take.songName,
+          songName: multi ? `${take.songName} (${who.name})` : take.songName,
           createdAt: take.createdAt,
           stars: starLine,
           personalBest: bestLine,
@@ -264,15 +282,15 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
         });
         void drawCard(renderCardPng, doc, content).then((blob) => {
           if (blob === null) cardStatus.textContent = CARD_FAILED;
-          else downloadBlob(doc, blob, cardFileName(take.songName, localDateString(take.createdAt)));
+          else downloadBlob(doc, blob, cardFileName(multi ? `${take.songName} ${who.name}` : take.songName, localDateString(take.createdAt)));
         });
       }),
       cardStatus,
     );
-    const asked = tipsShownFor === take.id;
+    const asked = tipsShownFor === key;
     root.append(
       button('Tips', 'report-tips', () => {
-        tipsShownFor = take.id;
+        tipsShownFor = key;
         render(store.state);
       }, asked),
     );
@@ -310,12 +328,15 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
 
   function render(state: AppState): void {
     const text = karaokeTrackNotice(state);
-    const open = openReport(state);
+    const open = openReports(state);
     host.hidden = text === null && open === null;
     if (open === null) tipsShownFor = null;
     const parts: HTMLElement[] = [];
     if (text !== null) parts.push(notice(text, state));
-    if (open !== null) parts.push(card(state, open));
+    if (open !== null) {
+      const multi = open.cards.length > 1;
+      for (const who of open.cards) parts.push(card(state, open.take, who, multi));
+    }
     host.replaceChildren(...parts);
   }
 

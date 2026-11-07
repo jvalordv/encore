@@ -13,6 +13,7 @@
  */
 import type { TakeReport } from '../analysis/score';
 import type { MonitorMode } from '../audio/mic';
+import type { DuetTake } from '../duet/take';
 import type { MixChoice } from './mix';
 import type { TakeFrame, TakeTrace } from './take-trace';
 
@@ -83,6 +84,11 @@ export interface TakeSummary {
   shiftSemitones?: number;
   /** Frames the tracker called voiced; the streak counts only real singing. */
   voicedFrames?: number;
+  /**
+   * A duet take: singer B's report, the names and the turns. `report` stays
+   * singer A's, so a take without this is singer A's alone (src/duet/take.ts).
+   */
+  duet?: DuetTake;
 }
 
 /** What a take is: a song sung over, or the Mic check's test track. */
@@ -96,6 +102,8 @@ export function takeClockOf(take: Pick<TakeSummary, 'clock'>): TakeClock {
 /** A stored take with its payloads. */
 export interface TakeRecord extends TakeSummary {
   frames: TakeFrame[];
+  /** Two mics: singer B's frames on song time, kept to re-score B. */
+  duetFramesB?: TakeFrame[];
   wav: Blob;
   /**
    * Everything kept for analysis (raw readings live on the frames; this holds
@@ -116,8 +124,11 @@ export interface TakeStore {
   get(id: string): Promise<TakeRecord | null>;
   /** Deletes a take; an unknown id is not an error. */
   remove(id: string): Promise<void>;
-  /** Replaces a take's report (a re-score); an unknown id is not an error. */
-  setReport(id: string, report: TakeReport): Promise<void>;
+  /**
+   * Replaces a take's report (a re-score), and a duet take's record with it
+   * when given; an unknown id is not an error.
+   */
+  setReport(id: string, report: TakeReport, duet?: DuetTake): Promise<void>;
 }
 
 /** Database name, version, store and index, fixed by the storage design. */
@@ -165,6 +176,7 @@ function toSummary(record: TakeRecord): TakeSummary {
   if (record.mic !== undefined) summary.mic = record.mic;
   if (record.kind !== undefined) summary.kind = record.kind;
   if (record.voicedFrames !== undefined) summary.voicedFrames = record.voicedFrames;
+  if (record.duet !== undefined) summary.duet = record.duet;
   return summary;
 }
 
@@ -202,9 +214,9 @@ export function memoryTakeStore(): TakeStore {
     async remove(id) {
       records.delete(id);
     },
-    async setReport(id, report) {
+    async setReport(id, report, duet) {
       const record = records.get(id);
-      if (record) records.set(id, { ...record, report });
+      if (record) records.set(id, { ...record, report, ...(duet ? { duet } : {}) });
     },
   };
 }
@@ -298,14 +310,14 @@ export async function idbTakeStore(factory: IDBFactory, name: string = DB_NAME):
       tx.objectStore(STORE).delete(id);
       await done;
     },
-    async setReport(id, report) {
+    async setReport(id, report, duet) {
       const tx = db.transaction(STORE, 'readwrite');
       const done = committed(tx);
       const store = tx.objectStore(STORE);
       const request = store.get(id);
       request.onsuccess = () => {
         const record = request.result as TakeRecord | undefined;
-        if (record) store.put({ ...record, report });
+        if (record) store.put({ ...record, report, ...(duet ? { duet } : {}) });
       };
       await done;
     },

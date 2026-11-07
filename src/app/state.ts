@@ -17,6 +17,8 @@ import type { GuideNote } from '../analysis/note-guide';
 import { hzToMidi } from '../analysis/pitch';
 import type { PitchFrame } from '../analysis/pitch';
 import type { MonitorMode } from '../audio/mic';
+import { initialDuet } from '../duet/state';
+import type { DuetState } from '../duet/state';
 import type { ClockKind, LoopRegion, TrackInfo, TransportState } from '../audio/transport';
 import { noteName } from '../render/lane-geometry';
 import { initialBacking } from './backing';
@@ -77,7 +79,7 @@ export interface InputState {
   bleed: BleedCheck;
 }
 
-/** One singer: today just the mic; scoring and a second mic hang off this. */
+/** One singer's mic; singer B's exists once a second mic has been chosen. */
 export interface SingerState {
   /** Position in `AppState.singers`; the id frames on the bus carry. */
   id: number;
@@ -154,10 +156,13 @@ export interface AppState {
   durationS: number;
   input: InputState;
   /**
-   * The singers, one entry for now. Entry 0 shares its `input` object with
+   * The singers: entry 0 always, entry 1 once singer B's second mic is chosen.
+   * Entry 0 shares its `input` object with
    * the field above, which the store keeps in step (patchSection).
    */
   singers: SingerState[];
+  /** The second singer: names, colours, how they are heard, the turns (W5). */
+  duet: DuetState;
   output: { deviceId: string | null; label: string; selectable: boolean };
   /** Round-trip latency for the current device pair; null when not set. */
   latencyS: number | null;
@@ -222,6 +227,7 @@ export function initialState(): AppState {
     durationS: 0,
     input,
     singers: [{ id: 0, input }],
+    duet: initialDuet(),
     output: { deviceId: null, label: '', selectable: false },
     latencyS: null,
     calibrating: false,

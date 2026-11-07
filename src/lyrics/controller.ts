@@ -81,6 +81,15 @@ export class LyricsController {
     return viewAt(this.lines, t + (record?.nudgeS ?? 0));
   }
 
+  /**
+   * The synced lines as song time has them, nudge included, for the turns of
+   * two singers on one mic to follow; empty for plain or missing lyrics.
+   */
+  syncedLines(): LyricLine[] {
+    const nudgeS = this.current.record?.nudgeS ?? 0;
+    return this.lines.map((line) => ({ t: Math.max(0, line.t - nudgeS), text: line.text }));
+  }
+
   /** The plain lyrics to show unfollowed, or [] when the text is synced. */
   plainLines(): string[] {
     const record = this.current.record;

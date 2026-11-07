@@ -11,7 +11,7 @@ import { memoryLibraryStore } from '../src/app/library';
 import type { LibraryStore } from '../src/app/library';
 import { SessionCore } from '../src/app/session/core';
 import type { SearchOptions } from '../src/app/session/search';
-import type { LaneSink, SessionParts } from '../src/app/session/types';
+import type { LaneSink, SecondParts, SessionParts } from '../src/app/session/types';
 import { loadSettings } from '../src/app/settings';
 import { StateStore } from '../src/app/state';
 import { memoryStore } from '../src/app/storage';
@@ -224,6 +224,8 @@ export function fakeLane(): LaneSink & {
   setPhraseClick: ReturnType<typeof vi.fn>;
   setKeyboard: ReturnType<typeof vi.fn>;
   setSingerRange: ReturnType<typeof vi.fn>;
+  setTurns: ReturnType<typeof vi.fn>;
+  setTurnClick: ReturnType<typeof vi.fn>;
 } {
   return {
     setTime: vi.fn(),
@@ -238,6 +240,8 @@ export function fakeLane(): LaneSink & {
     setPhraseClick: vi.fn(),
     setKeyboard: vi.fn(),
     setSingerRange: vi.fn(),
+    setTurns: vi.fn(),
+    setTurnClick: vi.fn(),
   };
 }
 
@@ -253,6 +257,9 @@ export interface Harness {
   mic: FakeMic;
   tracker: FakeTracker;
   recorder: FakeRecorder;
+  /** Singer B's mic and tracker (built when the duet asks for them). */
+  micB: FakeMic;
+  trackerB: FakeTracker;
 }
 
 /**
@@ -270,6 +277,8 @@ export function makeHarness(saved?: Record<string, unknown>, search?: SearchOpti
   const mic = new FakeMic();
   const tracker = new FakeTracker();
   const recorder = new FakeRecorder();
+  const micB = new FakeMic();
+  const trackerB = new FakeTracker();
   const parts = {
     engine,
     player,
@@ -287,8 +296,10 @@ export function makeHarness(saved?: Record<string, unknown>, search?: SearchOpti
     library: Promise.resolve(libraryStore),
     trackerSupported: true,
     search,
+    secondParts: () =>
+      ({ mic: micB, tracker: trackerB, capture: null }) as unknown as SecondParts,
   });
-  return { core, store, settingsStore, takeStore, libraryStore, engine, player, mic, tracker, recorder };
+  return { core, store, settingsStore, takeStore, libraryStore, engine, player, mic, tracker, recorder, micB, trackerB };
 }
 
 /** A song to load into a fake transport. */

@@ -21,6 +21,7 @@
 import { isRunning } from '../audio/transport';
 import { domEmbedHost } from '../audio/youtube-transport';
 import { parseYouTubeUrl } from '../audio/youtube-url';
+import { HANDS_FREE_WARNING, isHandsFreeLabel } from '../duet/hands-free';
 import { LyricsController } from '../lyrics/controller';
 import { createLrclibClient } from '../lyrics/lrclib';
 import { lazyLyricsStore } from '../lyrics/store';
@@ -36,6 +37,7 @@ import { mountModePanel } from './panels/mode';
 import { mountNoteGuidePanel } from './panels/note-guide';
 import { mountProgressPanel } from './panels/progress';
 import { mountReportPanel } from './panels/report';
+import { mountSingersPanel } from './panels/singers';
 import { mountSearchPanel } from './panels/search';
 import { mountStreakPanel } from './panels/streak';
 import { mountTakesPanel } from './panels/takes';
@@ -144,6 +146,7 @@ export function mountUI(session: Session, root: Document = document): UI {
   const prepareSteps = get('prepare-steps');
   const prepareNote = get('prepare-note');
   const inputSelect = get<HTMLSelectElement>('input-select');
+  const inputHandsFree = get('input-hands-free');
   const outputSelect = get<HTMLSelectElement>('output-select');
   const refreshButton = get<HTMLButtonElement>('refresh-devices');
   const micToggle = get<HTMLButtonElement>('mic-toggle');
@@ -211,6 +214,10 @@ export function mountUI(session: Session, root: Document = document): UI {
     });
     const known = [...inputSelect.options].some((o) => o.value === want);
     inputSelect.value = known ? want : NONE;
+    // A Bluetooth headset's mic drops it to call quality; say so beside the pick.
+    const picked = inputSelect.selectedOptions[0]?.textContent ?? '';
+    inputHandsFree.hidden = !isHandsFreeLabel(picked);
+    inputHandsFree.textContent = inputHandsFree.hidden ? '' : HANDS_FREE_WARNING;
   }
 
   function renderOutputSelect(state: AppState): void {
@@ -403,13 +410,11 @@ export function mountUI(session: Session, root: Document = document): UI {
   );
   cleanups.push(mountKeyboardPanel(get('keyboard'), { store, session }));
   cleanups.push(mountKeyShiftPanel(get('key-shift'), { store, session }));
-  cleanups.push(
-    mountLyricsPanel(get('lyrics'), {
-      store,
-      controller: new LyricsController(lazyLyricsStore(), createLrclibClient()),
-      lineHost: get('lyrics-line'),
-    }),
-  );
+  const lyrics = new LyricsController(lazyLyricsStore(), createLrclibClient());
+  cleanups.push(mountLyricsPanel(get('lyrics'), { store, controller: lyrics, lineHost: get('lyrics-line') }));
+  // Two singers on one mic take their turns by the lyric lines when there are some.
+  cleanups.push(lyrics.onChange(() => session.duet.setLyricLines(lyrics.syncedLines())));
+  cleanups.push(mountSingersPanel(get('singers'), { store, session }));
   cleanups.push(
     mountMicCheckPanel(get('mic-check'), { store, session, toggle: get<HTMLButtonElement>('mic-check-button') }),
   );

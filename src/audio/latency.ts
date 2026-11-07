@@ -32,7 +32,6 @@ import { fft, ifft, nextPow2 } from '../analysis/fft';
 import type { KeyValueStore } from '../app/storage';
 import type { PcmCapture, PcmTake } from './capture';
 import type { AudioEngine } from './engine';
-import type { MicCapture } from './mic';
 
 /** One chirp's measurement, kept so the status line can show the evidence. */
 export interface TrialResult {
@@ -436,7 +435,7 @@ export function describeLatency(result: LatencyResult): string {
  */
 export async function measureLatency(
   engine: AudioEngine,
-  mic: MicCapture,
+  mic: { readonly source: AudioNode | null },
   capture: PcmCapture,
   opts: MeasureOptions = {},
 ): Promise<LatencyResult> {

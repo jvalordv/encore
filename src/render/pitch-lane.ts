@@ -9,8 +9,11 @@
  * lane-free.ts), one live f0 ribbon per singer (lane-ribbon.ts), the hit
  * colours over the ribbons (learning mode only; lane-overlay.ts), the
  * keyboard view over the gutter (lit key and voice marker, when on;
- * lane-keyboard.ts), and the overlay with the notice and the playhead. A Shift+click on a phrase reports
- * its span so the session can mark it free (a plain click is left alone). The lane scrolls
+ * lane-keyboard.ts), the turns strip along the top (two singers on one mic:
+ * whose turn each stretch is; lane-turns.ts), and the overlay with the notice
+ * and the playhead. A Shift+click on a phrase reports its span so the session
+ * can mark it free; a plain click on a stretch of the turns strip's song
+ * reports it so the session can cycle it through A, B and both. The lane scrolls
  * with song time, so what the singer sees at the playhead is what they are
  * singing now and what is coming sits to its right. A one-line notice can be
  * set across the middle (an ad is playing in the embedded video, so nothing is
@@ -38,7 +41,7 @@ import {
   gutterWidth,
 } from './lane-geometry';
 import type { LaneFrame, LaneOptions, LaneReference, LaneView } from './lane-geometry';
-import { drawFreeBands, phraseAtX } from './lane-free';
+import { drawFreeBands } from './lane-free';
 import { drawGrid } from './lane-grid';
 import { drawKeyboard } from './lane-keyboard';
 import { drawCaption, drawGrades, drawPlayhead } from './lane-overlay';
@@ -46,6 +49,8 @@ import { drawReference } from './lane-reference';
 import { drawRibbon } from './lane-ribbon';
 import { readLaneStyle } from './lane-style';
 import type { LaneStyle } from './lane-style';
+import { drawTurns, routeLaneClick, singerColour } from './lane-turns';
+import type { LaneTurn, TurnLook } from './lane-turns';
 
 export {
   alphaRuns,
@@ -117,6 +122,9 @@ export class PitchLane {
   private backingShown = true;
   private singerRange: { lowMidi: number; highMidi: number } | null = null;
   private onPhraseClick: ((span: Span) => void) | null = null;
+  private turns: LaneTurn[] = [];
+  private turnLook: TurnLook | null = null;
+  private onTurnClick: ((startS: number) => void) | null = null;
   private notice: string | null = null;
   private now = 0;
   private width = 0;
@@ -264,6 +272,22 @@ export class PitchLane {
     this.onPhraseClick = handler;
   }
 
+  /**
+   * Sets the turns strip: the stretches and who sings each, with the singers'
+   * names and colours (a null colour is the skin's). Empty turns draw none;
+   * the colours also colour the singers' ribbons.
+   */
+  setTurns(turns: readonly LaneTurn[], look: TurnLook | null): void {
+    this.turns = turns.map((t) => ({ ...t }));
+    this.turnLook = look;
+    this.loop.invalidate();
+  }
+
+  /** Hears a plain click on a stretch of the turns: the callback gets its start. */
+  setTurnClick(handler: ((startS: number) => void) | null): void {
+    this.onTurnClick = handler;
+  }
+
   /** The visible MIDI rows, inclusive. */
   getRange(): { midiLow: number; midiHigh: number } {
     return { midiLow: this.midiLow, midiHigh: this.midiHigh };
@@ -331,16 +355,21 @@ export class PitchLane {
     ctx.rect(gutter, 0, width - gutter, height);
     ctx.clip();
     const shownBacking = this.backingShown ? this.backing : null;
+    const ribbonStyle: LaneStyle = {
+      ...this.style,
+      singers: [singerColour(this.style, this.turnLook, 0), singerColour(this.style, this.turnLook, 1)],
+    };
     const painters: Record<ScrollingLayer, () => void> = {
       backing: () => drawBacking(ctx, view, this.style, shownBacking, gutter),
       reference: () => drawReference(ctx, view, this.style, this.reference, gutter),
       free: () => drawFreeBands(ctx, view, this.style, this.freeSpans, gutter),
-      'ribbon-0': () => drawRibbon(ctx, view, this.style, traces[0], 0, gutter),
-      'ribbon-1': () => drawRibbon(ctx, view, this.style, traces[1], 1, gutter),
+      'ribbon-0': () => drawRibbon(ctx, view, ribbonStyle, traces[0], 0, gutter),
+      'ribbon-1': () => drawRibbon(ctx, view, ribbonStyle, traces[1], 1, gutter),
       'grades-0': () => drawGrades(ctx, view, this.style, traces[0], gutter),
       'grades-1': () => drawGrades(ctx, view, this.style, traces[1], gutter),
     };
     for (const layer of scrollingLayers({ backing: shownBacking !== null })) painters[layer]();
+    drawTurns(ctx, view, this.style, this.turns, this.turnLook, gutter);
     ctx.restore();
 
     if (this.keyboard) {
@@ -421,13 +450,14 @@ export class PitchLane {
   };
 
   private readonly onClick = (event: MouseEvent): void => {
-    if (!event.shiftKey || this.onPhraseClick === null) return;
+    if (event.shiftKey ? this.onPhraseClick === null : this.onTurnClick === null) return;
     const rect = this.canvas.getBoundingClientRect();
     if (!(rect.width > 0)) return;
     // The canvas may be scaled by CSS; the lane's geometry is in its own pixels.
     const x = ((event.clientX - rect.left) / rect.width) * this.width;
-    const phrase = phraseAtX(this.view(), x, gutterWidth(this.width), this.phrases);
-    if (phrase !== null) this.onPhraseClick([phrase.startS, phrase.endS]);
+    const click = routeLaneClick(this.view(), x, gutterWidth(this.width), event.shiftKey, this.turns, this.phrases);
+    if (click?.kind === 'turn') this.onTurnClick?.(click.startS);
+    else if (click?.kind === 'phrase') this.onPhraseClick?.(click.span);
   };
 
   private readonly onFonts = (): void => {

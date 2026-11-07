@@ -55,8 +55,8 @@ webcam or USB mic.
 - **In progress (2026-11-07, overnight, owner asleep):** none at this
   commit. Landed tonight: WL1, W0f, WL2, WL3a (capture), W6 (lyrics),
   WL3b (alignment), W6b (range and key), W6d (fun extras) and W0g
-  (backing notes, code only; the model waits on the owner). W5 (two
-  singers) is being built in a worktree. WL3 stays unticked only for the
+  (backing notes, code only; the model waits on the owner) and W5 (two
+  singers; the owner test needs a second person). WL3 stays unticked only for the
   downloader fix, which waits on the owner.
 - **Next:** **WL2** (progress over time), **WL3** (a
   melody for YouTube songs: capture while it plays, plus the downloader
@@ -1160,7 +1160,7 @@ Tracks inside a wave share no files and may run in parallel.
   - For W5: phrases come from `splitPhrases` over the reference notes; a
     plain click on the lane is still free (`PitchLane.setPhraseClick` takes
     Shift+click only), and free spans are per song, not per singer.
-- [ ] **W5: Two singers** (`docs/DUET.md`). Owns `src/duet/`, the
+- [x] **W5: Two singers** (`docs/DUET.md`). Owns `src/duet/`, the
   singers panel, the lane's ribbon layer.
   - Settings: today's input becomes singer A; singer B is optional.
     Names and colours editable.
@@ -1177,6 +1177,28 @@ Tracks inside a wave share no files and may run in parallel.
     call quality (its label says "Hands-Free" on Windows).
   - Done when the checks and e2e are green (two fake mics). Owner test
     with a second person: one mic with turns, then two mics if available.
+  - Built (2026-11-07):
+    - Code: `src/duet/` (controller, second input, take, turns, split,
+      singer health, settings, the `?secondFake` test seam),
+      `src/render/lane-turns.ts` and `src/app/panels/singers.ts`.
+    - Second singer: B has its own mic, tracker, health, latency and
+      tuning by device pair, and follows A's monitor mode.
+    - Turns on one mic: they follow synced lyric lines, else the melody's
+      phrases. A plain click on the lane cycles A, B, both; Shift+click
+      still marks a phrase free. Turns are saved per song.
+    - Reports: A's report stays in `take.report`, and B's, the turns and
+      the shared spans are in `take.duet`. Progress, stars, the streak
+      and the range band stay A's only. A take with no turns is a plain
+      A take.
+    - Leak gate: in speaker mode, a B frame at least 6 dB under A's level
+      and within 50 c of A's pitch is gated as A leaking into B's mic.
+    - Review fixes: empty turns erasing A's report, B feeding A's streak,
+      a leaked mic on a failed open, monitor mode, the speaker-mode gate,
+      turning B off mid-take, and tests.
+  - Follow-up: B's audio is not recorded (only A's mic), and B's frames
+    are not replayed on the lane.
+  - Follow-up: no Mic check for B, and no progress or stars view for B.
+  - Follow-up: the owner test needs a second person (unchanged).
 - [x] **W6: Synced lyrics** (small, optional).
   - Synced lyrics on request: look the song up on LRCLIB (lrclib.net,
     free, no key) by title and artist (from the file's tags, the video
@@ -1383,14 +1405,14 @@ were.
 | W6b Range and key (measured, worktree) | 0.7 | 0.45 M | 10 min |
 | W6d Fun extras (measured, worktree) | 0.6 | 0.36 M | 10 min |
 | W0g Backing notes, code only (measured, worktree) | 0.7 | 0.37 M | 5 min |
+| W5 Two singers (measured, worktree) | 1 | 0.65 M | 30 min, a second person |
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |
 | W4 Strict and Open scoring (measured) | 1 | 0.83 M | 20 min |
-| W5 Two singers | 1 (0.7-1.8) | about 0.7 M | 30 min, a second person |
-| W6 Synced lyrics | 0.4 (0.3-0.8) | about 0.3 M | 5 min |
 | W7 Test and sweep | 0.8 (0.6-1.5) | about 0.6 M | 45 min |
-| **Total** | **about 9 (8-12)** | **about 7.4 M** | **about 3.5 h** |
+| W6c Settings panel | 0.5 (0.4-0.8) | about 0.35 M | 5 min |
+| **Total** | **about 16 (15-19)** | **about 11.5 M** | **about 5 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The
 orchestrator's own reading adds about 100 to 200 thousand tokens per wave

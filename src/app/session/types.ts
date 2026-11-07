@@ -10,6 +10,7 @@ import type { InputDevice, MicCapture } from '../../audio/mic';
 import type { Player } from '../../audio/player';
 import type { Recorder } from '../../audio/recorder';
 import type { YouTubeApi } from '../../audio/youtube-api';
+import type { SecondMic } from '../../duet/second-mic';
 import type { PitchLane } from '../../render/pitch-lane';
 import type { LibraryStore } from '../library';
 import type { StateStore } from '../state';
@@ -33,7 +34,9 @@ export type LaneSink = Partial<Pick<PitchLane, 'setBacking' | 'setBackingShown'>
   | 'setPhraseClick'
   | 'setKeyboard'
   | 'setSingerRange'
->;
+> &
+  // The turns strip (W5); optional so a lane without it still drives a session.
+  Partial<Pick<PitchLane, 'setTurns' | 'setTurnClick'>>;
 
 /** The audio objects behind the Session, exposed for tests and debugging. */
 export interface SessionParts {
@@ -43,6 +46,14 @@ export interface SessionParts {
   capture: PcmCapture;
   tracker: PitchTracker;
   recorder: Recorder;
+}
+
+/** Singer B's own mic, tracker and (for calibration) capture, built lazily. */
+export interface SecondParts {
+  mic: SecondMic;
+  tracker: Pick<PitchTracker, 'load' | 'connect' | 'disconnect' | 'onFrame' | 'clarityThreshold'>;
+  /** Null when this mic cannot be calibrated (the test seam's). */
+  capture: PcmCapture | null;
 }
 
 /** Everything injectable; the defaults are the real browser services. */

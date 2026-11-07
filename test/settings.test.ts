@@ -45,6 +45,7 @@ describe('DEFAULT_SETTINGS', () => {
       keyboard: true,
       searchProvider: 'youtube',
       youtubeApiKey: '',
+      duet: { secondSinger: false, names: ['Singer A', 'Singer B'], colours: [null, null], inputDeviceIdB: null },
     });
   });
 
@@ -111,6 +112,7 @@ describe('loadSettings', () => {
       keyboard: true,
       searchProvider: 'youtube',
       youtubeApiKey: '',
+      duet: { secondSinger: false, names: ['Singer A', 'Singer B'], colours: [null, null], inputDeviceIdB: null },
     });
   });
 
@@ -267,6 +269,7 @@ describe('saveSettings', () => {
     keyboard: false,
     searchProvider: 'youtube',
     youtubeApiKey: 'AIzaSyExample_key-123',
+    duet: { secondSinger: true, names: ['Ann', 'Bo'], colours: ['#aa0000', null], inputDeviceIdB: 'in-2' },
   };
 
   it('round-trips through a store', () => {

@@ -62,6 +62,7 @@ export class TickLoop {
     input.level = Math.max(parts.mic.level(), input.level * LEVEL_DECAY);
     if (input.level < 0.001) input.level = 0;
     store.patchSection('input', { level: Math.round(input.level * 100) / 100 });
+    this.core.duet.tick();
     store.patch({
       positionS: position,
       framesPerSecond: Math.round(parts.tracker.framesPerSecond),
