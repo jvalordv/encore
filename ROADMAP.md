@@ -52,10 +52,10 @@ webcam or USB mic.
   and Open scoring), W3 (learning mode), W2 (search and the karaoke core)
   and W1 (the reference step and the browser seams); older work in
   `docs/HISTORY.md`.
-- **In progress (2026-11-07, overnight, owner asleep):** WL3b (aligning
-  the original's melody to a karaoke video) in the main checkout. Landed
-  tonight: WL1, W0f, WL2, WL3a (capture) and W6 (lyrics). The downloader
-  fix waits on the owner (WL3).
+- **In progress (2026-11-07, overnight, owner asleep):** W6b (range and
+  key) in a worktree, being fixed after review. Landed tonight: WL1,
+  W0f, WL2, WL3a (capture), W6 (lyrics) and WL3b (alignment). WL3 stays
+  unticked only for the downloader fix, which waits on the owner.
 - **Next:** **WL2** (progress over time), **WL3** (a
   melody for YouTube songs: capture while it plays, plus the downloader
   as a backup, both used together where possible), then **W0f** (library and
@@ -682,10 +682,42 @@ Tracks inside a wave share no files and may run in parallel.
     cross-check can measure it.
   - Follow-up: a playback rate other than 1 is not guarded, and a reload
     mid-capture loses it.
-  - **WL3b, still to do:** align the original's melody to a karaoke
-    video by chroma DTW (with a key offset and a confidence check,
-    falling back to Open), and cross-check a capture against a download
-    when both exist.
+  - **WL3b, alignment, built (2026-11-07).**
+    - Service: `service/encore_service/{align,align_reference,align_job}.py`
+      and `routes/align.py`.
+    - Chroma: mean-centred per recording, so unrelated songs cost about
+      1.
+    - Search: 12 key shifts. A coarse unbanded subsequence DTW (pooled to
+      ≤ 1200 frames) finds the path; a full-resolution pass runs in a
+      ±6 s band around it. The path must span 75 % of the shorter
+      recording, and each detour costs 0.2.
+    - Confidence: fit × tempo × coverage, with `COST_GOOD` 0.32,
+      `COST_BAD` 0.45 and a floor of 0.5. Measured on synthetic audio:
+      the same song 0.26–0.29, cuts 0.00, unrelated songs 0.40–0.73.
+    - Route: `POST /songs/{karaoke}/align {original_id}` queues a job.
+      It refuses (422) while the karaoke track is still being prepared.
+      The job writes the key, then the reference, then marks the steps
+      done, so a reload keeps the borrowed melody and
+      `extract_reference` leaves an aligned reference alone.
+    - Capture check: `capture_offset_s` is set when a capture and a
+      download both exist.
+    - Browser: "Use as original" sits on search results and Library
+      entries. An aligned reference makes Strict scoring work on the
+      karaoke track; a refusal shows its reason beside Switch to Open.
+    - Review fixes: unrelated songs passing (the key bug), reload losing
+      the melody, the write order, m4a input, cuts refused, and a later
+      reference overwriting the aligned one.
+  - Follow-up: calibrate the confidence on real songs. The margin between
+    0.29 (same song) and 0.40 (worst unrelated) comes from synthetic
+    audio only. A real karaoke track against a separated backing may
+    cost more, and is then refused (Open instead), which errs on the
+    honest side.
+  - Follow-up: use `capture_offset_s` to suggest `embedOffsetS`.
+  - Follow-up: an alignment left mid-run by a service restart reads
+    "running" forever.
+  - Follow-up: preparing an original from a search result still needs
+    the downloader (waiting on the owner), so an original currently
+    comes from a captured or uploaded song in the Library.
 
 - [x] **W0f: Library and favorites** (owner, 2026-11-06: "create a
   playlist of favorites, which would be the youtube links if they're from
@@ -1281,6 +1313,7 @@ were.
 | WL2 Progress over time (measured) | 0.5 | 0.35 M | 10 min |
 | WL3a Capture for learning (measured, worktree) | 0.8 | 0.47 M | 10 min |
 | W6 Imported lyrics (measured, worktree) | 0.5 | 0.33 M | 5 min |
+| WL3b Karaoke-to-original alignment (measured) | 0.8 | 0.53 M | 15 min |
 | W1 Seams and reference (measured) | 1 | about 1.0 M | 10 min |
 | W2 Search and karaoke core (measured) | 1 | 0.94 M | 20 min, an API key |
 | W3 Learning mode (measured) | 0.7 | 0.53 M | 20 min |
