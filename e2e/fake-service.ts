@@ -102,7 +102,7 @@ export const ANALYSIS_FIXTURE: TakeAnalysis = {
   ],
   current: {
     draw_margin_db: 8,
-    clarity_threshold: 0.9,
+    clarity_threshold: 0.85,
     bleed_match_cents: 30,
     bleed_min_match: 0.6,
     bleed_max_median_cents: 15,
@@ -110,7 +110,7 @@ export const ANALYSIS_FIXTURE: TakeAnalysis = {
   },
   recommended: {
     draw_margin_db: 11,
-    clarity_threshold: 0.85,
+    clarity_threshold: 0.8,
     bleed_match_cents: null,
     bleed_min_match: null,
     bleed_max_median_cents: null,

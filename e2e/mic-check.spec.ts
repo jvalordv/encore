@@ -128,7 +128,7 @@ test('1. the check runs its steps, gives the song back and shows the advice', as
   expect(take.take.kind).toBe('mic-check');
   expect(take.trace.sections.map((s) => s.label)).toEqual(['quiet', 'speakers', 'sing-along', 'sing-alone']);
   expect(take.trace.sections[0]!.startS).toBe(0);
-  expect(take.trace.environment.tuning).toMatchObject({ drawMarginDb: 8, clarityThreshold: 0.9 });
+  expect(take.trace.environment.tuning).toMatchObject({ drawMarginDb: 8, clarityThreshold: 0.85 });
 
   await expect(page.getByTestId('mic-check-findings')).toContainText('Your room is quiet.');
   await expect(page.getByTestId('mic-check-table')).toContainText('8.0 dB → 11.0 dB');
@@ -143,7 +143,7 @@ test('2. Use these settings writes the tuning and the latency; Reset returns the
     latencyS: window.encore!.store.state.latencyS,
     stored: Object.keys(window.encore!.session.settings.micTuningByDevicePair).length,
   }));
-  expect(applied.tuning).toMatchObject({ drawMarginDb: 11, clarityThreshold: 0.85, bleedMatchCents: 30 });
+  expect(applied.tuning).toMatchObject({ drawMarginDb: 11, clarityThreshold: 0.8, bleedMatchCents: 30 });
   expect(applied.latencyS).toBeCloseTo(0.12, 5);
   expect(applied.stored).toBe(1);
 
@@ -152,7 +152,7 @@ test('2. Use these settings writes the tuning and the latency; Reset returns the
     tuning: window.encore!.session.micTuning,
     stored: Object.keys(window.encore!.session.settings.micTuningByDevicePair).length,
   }));
-  expect(reset.tuning).toMatchObject({ drawMarginDb: 8, clarityThreshold: 0.9 });
+  expect(reset.tuning).toMatchObject({ drawMarginDb: 8, clarityThreshold: 0.85 });
   expect(reset.stored).toBe(0);
 
   await page.getByTestId('mic-check-close').click();

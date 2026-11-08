@@ -10,7 +10,7 @@
  * controller; the floor and states are sampled from the state store.
  */
 import { bleedCheck, BleedDetector, vocalInOutput } from '../../analysis/bleed';
-import { isDrawable, MicLevel, SILENCE_DB } from '../../analysis/mic-level';
+import { faintMarginFor, isDrawable, isFaintDrawable, MicLevel, SILENCE_DB } from '../../analysis/mic-level';
 import { tuningForPair } from '../../analysis/mic-tuning';
 import type { MicTuning } from '../../analysis/mic-tuning';
 import { NoteGuide } from '../../analysis/note-guide';
@@ -40,6 +40,8 @@ export class MicHealthController {
   private reading: GuideNote | null = null;
   /** Why the frame last observed failed the gate; null if it passed. */
   lastGate: GateReason | null = null;
+  /** True when the frame last observed may be drawn as a faint hint only. */
+  lastFaint = false;
 
   constructor(private readonly core: SessionCore) {
     // A bleed verdict belongs to the song it was heard over.
@@ -63,6 +65,8 @@ export class MicHealthController {
     const { clarityThreshold: clarity, drawMarginDb } = this.tuning();
     const drawable = isDrawable(frame, this.level.floorDb, clarity, drawMarginDb);
     this.lastGate = drawable ? null : gateReasonOf(frame, this.level.floorDb, clarity, drawMarginDb);
+    const faintMargin = faintMarginFor(this.core.store.state.input.requestedAec, drawMarginDb);
+    this.lastFaint = !drawable && isFaintDrawable(frame, this.level.floorDb, faintMargin);
     if (this.guideOn()) {
       if (drawable) this.guide.push(frame.t, positionS, frame.f0, this.core.scoring.keyMap());
     } else {

@@ -197,8 +197,11 @@ so learning mode when it is up. Scoring and tips run in the browser.
     `onAutoplayBlocked` gets a plain message. The spike's pane allowed
     unmuted autoplay, which stock Chrome does not, so nothing relies on it.
 - **Live pitch.** McLeod Pitch Method (normalised square difference) in an
-  AudioWorklet, 2048 window, 480 hop (10 ms), clarity gate at 0.9 for
-  voiced. Hand-written and unit-tested; no DSP dependency. Accuracy target
+  AudioWorklet, 2048 window, 480 hop (10 ms), clarity gate at 0.85 for
+  voiced, search floor 90 Hz, behind a 120 Hz high-pass that only the
+  tracker hears (the recorder stays raw). Frames within 0.1 of the gate
+  keep their pitch as `faintF0` and are drawn as a pale trace on the lane
+  (never scored, graded or stored in the take). Hand-written and unit-tested; no DSP dependency. Accuracy target
   5 cents on clean tones. The service re-runs a stronger tracker after the
   take; the live one only has to be good enough for display and streaks.
 - **Storage.** `localStorage` for settings, skin, calibration per device

@@ -66,6 +66,11 @@ export interface LaneFrame {
   /** Tracker confidence, 0 to 1; scales the ribbon's opacity. */
   clarity: number;
   /**
+   * Pitch of a faint frame (f0 is 0): drawn as a pale hint under the ribbon,
+   * never graded, in karaoke or learning mode alike.
+   */
+  faintF0?: number;
+  /**
    * How the frame did against the melody. Present only in learning mode; its
    * absence is what keeps karaoke mode free of hit colours.
    */

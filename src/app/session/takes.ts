@@ -351,6 +351,7 @@ export class TakeController {
         clarityThreshold: tuning.clarityThreshold,
         octaveInvariant: this.core.current.octaveInvariant,
         tuning,
+        speakers: store.state.input.requestedAec,
       },
       store.state,
     );

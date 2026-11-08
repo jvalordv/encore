@@ -43,6 +43,23 @@ export const NOTHING_OFF_DB = 6;
 /** dB above the floor a frame needs to be drawn or scored; under HEARING_ON_DB. */
 export const DRAW_MARGIN_DB = 8;
 
+/**
+ * dB above the floor a faint frame needs to be drawn. Far under DRAW_MARGIN_DB
+ * on purpose: with the song in the room the voice sits only a few dB over the
+ * level of the music, so the full margin would hide most of the faint trace.
+ */
+export const FAINT_DRAW_MARGIN_DB = 0;
+
+/**
+ * The faint margin to use. Headphones keep FAINT_DRAW_MARGIN_DB. With speakers
+ * the floor sits near the music's level, so a faint frame at the floor can be
+ * the backing bass or guitar; half the tuned drawing margin keeps most of the
+ * voice and drops that.
+ */
+export function faintMarginFor(speakers: boolean, drawMarginDb: number): number {
+  return speakers ? drawMarginDb / 2 : FAINT_DRAW_MARGIN_DB;
+}
+
 /** What the mic is doing, in the words the meter's line uses. */
 export type MicState = 'hearing' | 'quiet' | 'nothing';
 
@@ -87,6 +104,19 @@ export function isDrawable(
 ): boolean {
   if (!(frame.f0 > 0) || !(frame.clarity >= clarityThreshold)) return false;
   return rmsToDb(frame.rms) >= floorDb + drawMarginDb;
+}
+
+/**
+ * True when a frame carries a faint pitch (`faintF0`, f0 still 0) and is above
+ * the noise floor, so the lane may draw it as a hint. Never feeds scoring.
+ */
+export function isFaintDrawable(
+  frame: { f0: number; faintF0?: number; rms: number },
+  floorDb: number,
+  marginDb: number = FAINT_DRAW_MARGIN_DB,
+): boolean {
+  if (frame.f0 > 0 || !((frame.faintF0 ?? 0) > 0)) return false;
+  return rmsToDb(frame.rms) >= floorDb + marginDb;
 }
 
 /** Tracks the noise floor, the recent peak and the state over a stream of frames. */

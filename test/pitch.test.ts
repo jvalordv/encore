@@ -13,7 +13,9 @@ import {
   MIN_F0,
   PITCH_HOP,
   PITCH_WINDOW,
+  TRACKER_HIGHPASS_HZ,
   centsBetween,
+  faintClarityFor,
   estimatePitch,
   hzToMidi,
   midiToHz,
@@ -68,9 +70,12 @@ describe('constants', () => {
   it('match the architecture doc', () => {
     expect(PITCH_WINDOW).toBe(2048);
     expect(PITCH_HOP).toBe(480);
-    expect(MIN_F0).toBe(60);
+    expect(MIN_F0).toBe(90);
     expect(MAX_F0).toBe(1200);
-    expect(DEFAULT_CLARITY).toBe(0.9);
+    expect(DEFAULT_CLARITY).toBe(0.85);
+    expect(TRACKER_HIGHPASS_HZ).toBe(120);
+    expect(faintClarityFor(DEFAULT_CLARITY)).toBeCloseTo(0.75, 10);
+    expect(faintClarityFor(0.05)).toBe(0);
   });
 });
 
@@ -212,7 +217,7 @@ describe('pickPeak', () => {
 });
 
 describe('estimatePitch accuracy at 48 kHz on 2048-sample windows', () => {
-  it.each([82.4, 110, 220, 440, 880])('reads a %f Hz sine within 5 cents', (hz) => {
+  it.each([98, 110, 220, 440, 880])('reads a %f Hz sine within 5 cents', (hz) => {
     for (const offset of [0, 777, 12345]) {
       const est = estimatePitch(tone(hz, PITCH_WINDOW, sine, offset), RATE);
       expect(Math.abs(errCents(est.f0, hz))).toBeLessThan(5);
@@ -232,7 +237,7 @@ describe('estimatePitch accuracy at 48 kHz on 2048-sample windows', () => {
   });
 
   it('sweeps the singing range with no octave jumps', () => {
-    for (let midi = 40; midi <= 84; midi += 1.37) {
+    for (let midi = 43; midi <= 84; midi += 1.37) {
       const hz = midiToHz(midi);
       const est = estimatePitch(tone(hz, PITCH_WINDOW, sawtooth10), RATE);
       expect(Math.abs(errCents(est.f0, hz))).toBeLessThan(8);
@@ -269,10 +274,66 @@ describe('estimatePitch accuracy at 48 kHz on 2048-sample windows', () => {
     expect(est.rms).toBeCloseTo(0.006 / Math.SQRT2, 3);
   });
 
+  it('reads a bass note again once the search floor is lowered', () => {
+    const x = tone(82.4, PITCH_WINDOW, sine);
+    expect(Math.abs(errCents(estimatePitch(x, RATE, { minF0: 60 }).f0, 82.4))).toBeLessThan(5);
+    expect(estimatePitch(x, RATE).f0).not.toBeCloseTo(82.4, -1);
+  });
+
   it('honours the search range', () => {
     const x = tone(1000, PITCH_WINDOW, sine);
     expect(estimatePitch(x, RATE, { maxF0: 500 }).f0).not.toBeCloseTo(1000, -1);
     expect(Math.abs(errCents(estimatePitch(x, RATE, { maxF0: 1500 }).f0, 1000))).toBeLessThan(5);
+  });
+});
+
+/** A 2nd-order Butterworth high-pass (RBJ biquad), as the Web Audio node runs. */
+function highpass(x: Float32Array, cutoffHz: number): Float32Array {
+  const w0 = (2 * Math.PI * cutoffHz) / RATE;
+  const alpha = Math.sin(w0) / (2 * Math.SQRT1_2);
+  const c = Math.cos(w0);
+  const a0 = 1 + alpha;
+  const b0 = (1 + c) / 2 / a0;
+  const b1 = -(1 + c) / a0;
+  const a1 = (-2 * c) / a0;
+  const a2 = (1 - alpha) / a0;
+  const y = new Float32Array(x.length);
+  let x1 = 0;
+  let x2 = 0;
+  let y1 = 0;
+  let y2 = 0;
+  for (let i = 0; i < x.length; i++) {
+    const out = b0 * x[i] + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1;
+    x1 = x[i];
+    y2 = y1;
+    y1 = out;
+    y[i] = out;
+  }
+  return y;
+}
+
+describe('a voice over loud speaker bass', () => {
+  // A voice-like tone at 220 Hz under a bass line louder than it at 62 Hz, the
+  // way a karaoke track reaches a mic across the room.
+  const voice = (c: number) => 0.1 * (Math.sin(2 * Math.PI * c) + 0.5 * Math.sin(4 * Math.PI * c) + 0.3 * Math.sin(6 * Math.PI * c));
+  const mixture = (): Float32Array => {
+    const v = tone(220, 3 * PITCH_WINDOW, voice);
+    const b = tone(62, 3 * PITCH_WINDOW, (c) => 0.15 * Math.sin(2 * Math.PI * c));
+    return v.map((s, i) => s + b[i]);
+  };
+
+  it('is read at 220 Hz, not 62 Hz, with the shipped floor and high-pass', () => {
+    const filtered = highpass(mixture(), TRACKER_HIGHPASS_HZ).subarray(2 * PITCH_WINDOW);
+    const est = estimatePitch(filtered, RATE);
+    expect(Math.abs(errCents(est.f0, 220))).toBeLessThan(50);
+    expect(est.clarity).toBeGreaterThanOrEqual(DEFAULT_CLARITY);
+  });
+
+  it('is read at the bass when the old floor is used on the raw mix', () => {
+    const raw = mixture().subarray(2 * PITCH_WINDOW);
+    const est = estimatePitch(raw, RATE, { minF0: 60 });
+    expect(est.f0).toBeLessThan(80);
   });
 });
 
@@ -389,6 +450,14 @@ describe('applyVoicing', () => {
     expect(applyVoicing(base, 0.95)).toEqual({ t: 1, f0: 0, clarity: 0.93, rms: 0.2 });
   });
 
+  it('hints the pitch of a frame between the two thresholds, without voicing it', () => {
+    const faint = { ...base, clarity: 0.8 };
+    expect(applyVoicing(faint, 0.85, 0.75)).toEqual({ t: 1, f0: 0, clarity: 0.8, rms: 0.2, faintF0: 220 });
+    expect(applyVoicing(faint, 0.85)).toEqual({ t: 1, f0: 0, clarity: 0.8, rms: 0.2 });
+    expect(applyVoicing({ ...faint, clarity: 0.7 }, 0.85, 0.75).faintF0).toBeUndefined();
+    expect(applyVoicing(base, 0.85, 0.75)).toBe(base);
+  });
+
   it('never reports a pitch for a frame the estimator gave none', () => {
     expect(applyVoicing({ t: 0, f0: 0, clarity: 1, rms: 1 }, 0).f0).toBe(0);
   });
@@ -466,14 +535,22 @@ function fakeEngine(opts: { audioWorklet?: boolean } = {}) {
   const addModule = vi.fn(async (_url: string) => {});
   const gain = { gain: { value: 1 }, connect: vi.fn(), disconnect: vi.fn() };
   const destination = {};
+  const filter = {
+    type: '',
+    frequency: { value: 0 },
+    Q: { value: 0 },
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+  };
   const context = {
     sampleRate: RATE,
     destination,
     audioWorklet: opts.audioWorklet === false ? undefined : { addModule },
     createGain: () => gain,
+    createBiquadFilter: () => filter,
   };
   const engine = { context, now: () => 0 } as unknown as AudioEngine;
-  return { engine, addModule, gain, destination };
+  return { engine, addModule, gain, destination, filter };
 }
 
 function fakeSource() {
@@ -508,7 +585,7 @@ describe('PitchTracker', () => {
   });
 
   it('builds a mono node with the search options and mutes its output path', async () => {
-    const { engine, gain, destination } = fakeEngine();
+    const { engine, gain, destination, filter } = fakeEngine();
     const tracker = new PitchTracker(engine, { minF0: 80, maxF0: 900 });
     await tracker.load();
     const source = fakeSource();
@@ -520,10 +597,33 @@ describe('PitchTracker', () => {
       channelCountMode: 'explicit',
       processorOptions: { minF0: 80, maxF0: 900 },
     });
-    expect(source.connect).toHaveBeenCalledWith(node);
+    expect(source.connect).toHaveBeenCalledWith(filter);
+    expect(filter.connect).toHaveBeenCalledWith(node);
     expect(node.connections).toEqual([gain]);
     expect(gain.gain.value).toBe(0);
     expect(gain.connect).toHaveBeenCalledWith(destination);
+  });
+
+  it('puts a 120 Hz Butterworth high-pass between the source and the worklet only', async () => {
+    const { engine, filter } = fakeEngine();
+    const tracker = new PitchTracker(engine);
+    await tracker.load();
+    const source = fakeSource();
+    tracker.connect(source as unknown as AudioNode);
+    expect(filter.type).toBe('highpass');
+    expect(filter.frequency.value).toBe(120);
+    expect(filter.Q.value).toBeCloseTo(-3.01, 2);
+    expect(source.connect).toHaveBeenCalledTimes(1);
+    expect(source.connect).toHaveBeenCalledWith(filter);
+  });
+
+  it('skips the filter when the high-pass is turned off', async () => {
+    const { engine } = fakeEngine();
+    const tracker = new PitchTracker(engine, { highpassHz: 0 });
+    await tracker.load();
+    const source = fakeSource();
+    tracker.connect(source as unknown as AudioNode);
+    expect(source.connect).toHaveBeenCalledWith(FakeNode.last);
   });
 
   it('delivers voiced frames as they are and unvoiced ones with f0 = 0', async () => {
@@ -538,6 +638,24 @@ describe('PitchTracker', () => {
     expect(got).toEqual([
       { t: 1, f0: 220, clarity: 0.97, rms: 0.3 },
       { t: 1.01, f0: 0, clarity: 0.6, rms: 0.01 },
+    ]);
+  });
+
+  it('keeps the pitch of a faint frame as faintF0 while f0 stays 0', async () => {
+    const { engine } = fakeEngine();
+    const tracker = new PitchTracker(engine);
+    await tracker.load();
+    tracker.connect(fakeSource() as unknown as AudioNode);
+    const got: PitchFrame[] = [];
+    tracker.onFrame((f) => got.push(f));
+    // Voiced from 0.85, faint from 0.75.
+    FakeNode.last!.emit({ t: 0, f0: 220, clarity: 0.8, rms: 0.1 });
+    FakeNode.last!.emit({ t: 0.01, f0: 220, clarity: 0.7, rms: 0.1 });
+    FakeNode.last!.emit({ t: 0.02, f0: 0, clarity: 0.9, rms: 0.1 });
+    expect(got).toEqual([
+      { t: 0, f0: 0, clarity: 0.8, rms: 0.1, faintF0: 220 },
+      { t: 0.01, f0: 0, clarity: 0.7, rms: 0.1 },
+      { t: 0.02, f0: 0, clarity: 0.9, rms: 0.1 },
     ]);
   });
 
@@ -597,7 +715,7 @@ describe('PitchTracker', () => {
   });
 
   it('tears the node down on disconnect, keeps listeners, and can reconnect', async () => {
-    const { engine } = fakeEngine();
+    const { engine, filter } = fakeEngine();
     const tracker = new PitchTracker(engine);
     await tracker.load();
     const source = fakeSource();
@@ -608,7 +726,7 @@ describe('PitchTracker', () => {
     tracker.disconnect();
     expect(first.disconnected).toBe(true);
     expect(first.closed).toBe(true);
-    expect(source.disconnect).toHaveBeenCalledWith(first);
+    expect(source.disconnect).toHaveBeenCalledWith(filter);
     expect(tracker.framesPerSecond).toBe(0);
     tracker.disconnect();
     tracker.connect(source as unknown as AudioNode);
@@ -618,7 +736,7 @@ describe('PitchTracker', () => {
   });
 
   it('swaps the source on a second connect without building a second node', async () => {
-    const { engine } = fakeEngine();
+    const { engine, filter } = fakeEngine();
     const tracker = new PitchTracker(engine);
     await tracker.load();
     const one = fakeSource();
@@ -627,7 +745,7 @@ describe('PitchTracker', () => {
     const node = FakeNode.last!;
     tracker.connect(two as unknown as AudioNode);
     expect(FakeNode.last).toBe(node);
-    expect(one.disconnect).toHaveBeenCalledWith(node);
-    expect(two.connect).toHaveBeenCalledWith(node);
+    expect(one.disconnect).toHaveBeenCalledWith(filter);
+    expect(two.connect).toHaveBeenCalledWith(filter);
   });
 });

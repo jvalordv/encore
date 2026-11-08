@@ -9,9 +9,10 @@
  * mode. Checked in test/take-trace.test.ts.
  */
 import type { BleedState } from '../analysis/bleed';
-import { DRAW_MARGIN_DB, rmsToDb } from '../analysis/mic-level';
+import { DRAW_MARGIN_DB, faintMarginFor, rmsToDb } from '../analysis/mic-level';
 import type { MicTuning } from '../analysis/mic-tuning';
 import type { MicState } from '../analysis/mic-level';
+import { faintClarityFor, MAX_F0, MIN_F0, TRACKER_HIGHPASS_HZ } from '../analysis/pitch';
 import type { PitchFrame } from '../analysis/pitch';
 import type { TrialResult } from '../audio/latency';
 import type { LaneNote, LaneReference } from '../render/lane-geometry';
@@ -79,6 +80,24 @@ export interface TakeEnvironment {
   analysis: { clarityThreshold: number; octaveInvariant: boolean; scoring: string; mode: string };
   /** The gate and bleed rules in force; absent on takes saved before v3. */
   tuning?: MicTuning;
+  /** The tracker's search range, filter and faint tier; absent on older takes. */
+  tracker?: TrackerRules;
+}
+
+/**
+ * What the live tracker was set to when the take was made, so later analysis
+ * knows which frames it could have heard. `faintClarity` frames are drawn on
+ * the lane only (never stored in the take's frames).
+ */
+export interface TrackerRules {
+  minF0Hz: number;
+  maxF0Hz: number;
+  /** High-pass in front of the tracker, Hz; 0 when off. */
+  highpassHz: number;
+  /** Lowest clarity that draws a faint frame; the voiced one is `analysis`'s. */
+  faintClarity: number;
+  /** dB over the floor a faint frame needed to be drawn. */
+  faintDrawMarginDb: number;
 }
 
 /** One labelled stretch of a Mic check take, on song time. */
@@ -161,6 +180,8 @@ export interface EnvironmentSource {
   clarityThreshold: number;
   octaveInvariant: boolean;
   tuning?: MicTuning;
+  /** Speakers are the monitor, so the faint margin is the speaker one. */
+  speakers?: boolean;
 }
 
 /** The environment record for a take about to start. */
@@ -186,6 +207,13 @@ export function captureEnvironment(src: EnvironmentSource, state: Pick<AppState,
       mode: state.mode,
     },
     ...(src.tuning ? { tuning: { ...src.tuning } } : {}),
+    tracker: {
+      minF0Hz: MIN_F0,
+      maxF0Hz: MAX_F0,
+      highpassHz: TRACKER_HIGHPASS_HZ,
+      faintClarity: faintClarityFor(src.clarityThreshold),
+      faintDrawMarginDb: faintMarginFor(src.speakers === true, src.tuning?.drawMarginDb ?? DRAW_MARGIN_DB),
+    },
   };
 }
 

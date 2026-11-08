@@ -31,6 +31,16 @@ describe('singer health', () => {
     expect(noisy.floorDb).toBeGreaterThan(quiet.floorDb + 20);
   });
 
+  it('holds a faint frame a few dB over the floor back with speakers only', () => {
+    const near = { t: 1, f0: 0, faintF0: 220, clarity: 0.8, rms: HISS * 10 ** (3 / 20) };
+    const phones = new SingerHealth(() => ({ ...DEFAULT_TUNING }), () => false);
+    const room = new SingerHealth(() => ({ ...DEFAULT_TUNING }), () => true);
+    listen(phones);
+    listen(room);
+    expect(phones.observe(near).faint).toBe(true);
+    expect(room.observe(near).faint).toBe(false);
+  });
+
   it('uses the rules it was given, read each frame', () => {
     let tuning = { ...DEFAULT_TUNING, clarityThreshold: 0.99 };
     const health = new SingerHealth(() => tuning);

@@ -7,7 +7,7 @@
  * with singer A's mic. Pure of the DOM and of Web Audio; tested in
  * test/duet-health.test.ts.
  */
-import { isDrawable, MicLevel, rmsToDb, SILENCE_DB } from '../analysis/mic-level';
+import { faintMarginFor, isDrawable, isFaintDrawable, MicLevel, rmsToDb, SILENCE_DB } from '../analysis/mic-level';
 import type { MicState } from '../analysis/mic-level';
 import type { MicTuning } from '../analysis/mic-tuning';
 import { centsBetween } from '../analysis/pitch';
@@ -49,6 +49,8 @@ export interface GateVerdict {
   drawable: boolean;
   /** Why it failed; null when it passed. */
   reason: GateReason | null;
+  /** True when it may be drawn as a faint hint (never scored). */
+  faint: boolean;
 }
 
 /** What the meter shows for the mic. */
@@ -62,7 +64,10 @@ export interface HealthReading {
 export class SingerHealth {
   private readonly level = new MicLevel();
 
-  constructor(private readonly tuning: () => MicTuning) {}
+  constructor(
+    private readonly tuning: () => MicTuning,
+    private readonly speakers: () => boolean = () => false,
+  ) {}
 
   /** Takes one tracker frame and says whether it may be drawn and scored. */
   observe(frame: PitchFrame): GateVerdict {
@@ -72,6 +77,9 @@ export class SingerHealth {
     return {
       drawable,
       reason: drawable ? null : gateReasonOf(frame, this.level.floorDb, clarityThreshold, drawMarginDb),
+      faint:
+        !drawable &&
+        isFaintDrawable(frame, this.level.floorDb, faintMarginFor(this.speakers(), drawMarginDb)),
     };
   }
 

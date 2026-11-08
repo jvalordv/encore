@@ -38,6 +38,7 @@ export const SKIN_TOKENS = [
   '--lane-bg',
   '--lane-grid',
   '--lane-ribbon-width',
+  '--lane-faint-alpha',
 ] as const;
 
 /** One name from the token contract. */

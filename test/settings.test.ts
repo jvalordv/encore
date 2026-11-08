@@ -11,6 +11,7 @@ import {
   loadSettings,
   MAX_EMBED_OFFSET_S,
   MAX_LATENCY_S,
+  MIGRATED_KEY,
   sanitizeSettings,
   saveSettings,
   SETTINGS_KEY,
@@ -33,7 +34,7 @@ describe('DEFAULT_SETTINGS', () => {
       monitor: 'headphones',
       serviceUrl: 'http://localhost:8765',
       autoPrepareLinks: false,
-      clarityThreshold: 0.9,
+      clarityThreshold: 0.85,
       octaveInvariant: false,
       latencyByDevicePair: {},
       micTuningByDevicePair: {},
@@ -151,7 +152,60 @@ describe('loadSettings', () => {
     expect(sanitizeSettings({ clarityThreshold: 0 }).clarityThreshold).toBe(0);
     expect(sanitizeSettings({ clarityThreshold: 1 }).clarityThreshold).toBe(1);
     for (const bad of [-0.1, 1.01, 5, NaN, Infinity, '0.5', null, undefined]) {
-      expect(sanitizeSettings({ clarityThreshold: bad }).clarityThreshold, String(bad)).toBe(0.9);
+      expect(sanitizeSettings({ clarityThreshold: bad }).clarityThreshold, String(bad)).toBe(0.85);
+    }
+  });
+
+  it('moves a saved clarity of 0.9, the old default, to the new default on load', () => {
+    const old = JSON.stringify({ inputDeviceId: 'mic-1', clarityThreshold: 0.9 });
+    const loaded = loadSettings(storeWith(old));
+    expect(loaded.clarityThreshold).toBe(0.85);
+    expect(loaded.inputDeviceId).toBe('mic-1');
+  });
+
+  it('migrates once: the marker, written on load, keeps a later 0.9', () => {
+    const store = storeWith(JSON.stringify({ clarityThreshold: 0.9 }));
+    expect(loadSettings(store).clarityThreshold).toBe(0.85);
+    // The slider is moved back to 0.9 on purpose and saved.
+    saveSettings(store, { ...loadSettings(store), clarityThreshold: 0.9 });
+    expect(loadSettings(store).clarityThreshold).toBe(0.9);
+    expect(loadSettings(store).clarityThreshold).toBe(0.9);
+  });
+
+  it('keeps a 0.9 in a blob that already carries the marker', () => {
+    const store = storeWith(JSON.stringify({ clarityThreshold: 0.9 }));
+    store.set(MIGRATED_KEY, '1');
+    expect(loadSettings(store).clarityThreshold).toBe(0.9);
+  });
+
+  it('round-trips a saved 0.9 unchanged', () => {
+    const store = memoryStore();
+    saveSettings(store, { ...DEFAULT_SETTINGS, clarityThreshold: 0.9 });
+    expect(loadSettings(store).clarityThreshold).toBe(0.9);
+  });
+
+  it('moves a tuned pair holding 0.9 to the default and leaves other pairs alone', () => {
+    const tuned = (clarityThreshold: number) => ({
+      drawMarginDb: 11,
+      clarityThreshold,
+      bleedMatchCents: 25,
+      bleedMinMatch: 0.7,
+      bleedMaxMedianCents: 12,
+    });
+    const stored = JSON.stringify({
+      clarityThreshold: 0.8,
+      micTuningByDevicePair: { old: tuned(0.9), other: tuned(0.8) },
+    });
+    const loaded = loadSettings(storeWith(stored));
+    expect(loaded.clarityThreshold).toBe(0.8);
+    expect(loaded.micTuningByDevicePair.old).toEqual(tuned(0.85));
+    expect(loaded.micTuningByDevicePair.other).toEqual(tuned(0.8));
+  });
+
+  it('keeps any other saved clarity, 0.8 and 0.95 alike', () => {
+    for (const saved of [0.8, 0.95, 0.85]) {
+      const stored = JSON.stringify({ clarityThreshold: saved });
+      expect(loadSettings(storeWith(stored)).clarityThreshold).toBe(saved);
     }
   });
 
@@ -294,7 +348,7 @@ describe('saveSettings', () => {
     });
     expect(loadSettings(store)).toEqual({
       ...custom,
-      clarityThreshold: 0.9,
+      clarityThreshold: 0.85,
       serviceUrl: DEFAULT_SETTINGS.serviceUrl,
       latencyByDevicePair: { good: 0.1 },
     });
@@ -330,7 +384,7 @@ describe('saveSettings', () => {
     };
     const store = localStorageStore('encore.', () => storage);
     saveSettings(store, custom);
-    expect([...data.keys()]).toEqual(['encore.settings']);
+    expect([...data.keys()].sort()).toEqual(['encore.settings', 'encore.settings-migrated']);
     expect(loadSettings(localStorageStore('encore.', () => storage))).toEqual(custom);
   });
 

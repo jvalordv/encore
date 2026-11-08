@@ -17,6 +17,7 @@
  */
 import { sanitizeTuning } from '../analysis/mic-tuning';
 import type { MicTuning } from '../analysis/mic-tuning';
+import { DEFAULT_CLARITY, LEGACY_CLARITY } from '../analysis/pitch';
 import type { ScoringStyle } from '../analysis/score';
 import type { MonitorMode } from '../audio/mic';
 import { defaultDuet, sanitizeDuet } from '../duet/settings';
@@ -114,7 +115,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   monitor: 'headphones',
   serviceUrl: 'http://localhost:8765',
   autoPrepareLinks: false,
-  clarityThreshold: 0.9,
+  clarityThreshold: DEFAULT_CLARITY,
   octaveInvariant: false,
   latencyByDevicePair: Object.freeze({}) as Record<string, number>,
   micTuningByDevicePair: Object.freeze({}) as Record<string, MicTuning>,
@@ -257,12 +258,57 @@ export function sanitizeSettings(value: unknown): Settings {
   };
 }
 
-/** Reads the stored settings merged over the defaults; never throws. */
+/**
+ * Key of the marker that says the one-time migrations have run. It is written
+ * with every save, so a clarity of 0.9 saved after the upgrade is a choice.
+ */
+export const MIGRATED_KEY = 'settings-migrated';
+
+/** The old default clarity is not a choice: it moves to the new default. */
+function migrateClarity(value: unknown): unknown {
+  return value === LEGACY_CLARITY ? DEFAULT_CLARITY : value;
+}
+
+/**
+ * Moves the old 0.9 clarity default to the new one, in the global setting and
+ * in every tuned device pair (a pair tuned before the change still holds it).
+ * Other values stay as they are.
+ */
+function migrateLegacy(parsed: unknown): unknown {
+  if (!isRecord(parsed)) return parsed;
+  const out: Record<string, unknown> = {
+    ...parsed,
+    clarityThreshold: migrateClarity(parsed.clarityThreshold),
+  };
+  if (isRecord(parsed.micTuningByDevicePair)) {
+    out.micTuningByDevicePair = Object.fromEntries(
+      Object.entries(parsed.micTuningByDevicePair).map(([key, tuning]) => [
+        key,
+        isRecord(tuning) ? { ...tuning, clarityThreshold: migrateClarity(tuning.clarityThreshold) } : tuning,
+      ]),
+    );
+  }
+  return out;
+}
+
+/**
+ * Reads the stored settings merged over the defaults; never throws. A blob
+ * saved before the marker existed goes through the one-time migration and is
+ * written back with the marker, so a later 0.9 is kept.
+ */
 export function loadSettings(store: KeyValueStore): Settings {
   const text = store.get(SETTINGS_KEY);
   if (text === null) return sanitizeSettings(null);
   try {
-    return sanitizeSettings(JSON.parse(text));
+    const parsed: unknown = JSON.parse(text);
+    if (store.get(MIGRATED_KEY) !== null) return sanitizeSettings(parsed);
+    const settings = sanitizeSettings(migrateLegacy(parsed));
+    try {
+      saveSettings(store, settings);
+    } catch {
+      // The migrated value still serves this session; it runs again next time.
+    }
+    return settings;
   } catch {
     // A corrupt blob must not lock the app out of its own settings.
     return sanitizeSettings(null);
@@ -272,4 +318,5 @@ export function loadSettings(store: KeyValueStore): Settings {
 /** Writes the settings, validated first so bad values never reach storage. */
 export function saveSettings(store: KeyValueStore, s: Settings): void {
   store.set(SETTINGS_KEY, JSON.stringify(sanitizeSettings(s)));
+  store.set(MIGRATED_KEY, '1');
 }

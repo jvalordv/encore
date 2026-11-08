@@ -7,12 +7,14 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyLevel,
   DRAW_MARGIN_DB,
+  FAINT_DRAW_MARGIN_DB,
   FLOOR_CEILING_DB,
   FLOOR_MIN_FRAMES,
   FLOOR_RISE_DB_PER_S,
   HEARING_OFF_DB,
   HEARING_ON_DB,
   isDrawable,
+  isFaintDrawable,
   MicLevel,
   NOTHING_OFF_DB,
   NOTHING_ON_DB,
@@ -186,5 +188,24 @@ describe('isDrawable', () => {
 
   it('passes anything voiced and clear while no floor is known', () => {
     expect(isDrawable({ f0: 220, clarity: 0.95, rms: 1e-4 }, SILENCE_DB, 0.9)).toBe(true);
+  });
+});
+
+describe('isFaintDrawable', () => {
+  const floor = -80;
+  const loud = 0.1;
+
+  it('needs a faint pitch on a frame that is not voiced, over the floor', () => {
+    expect(isFaintDrawable({ f0: 0, faintF0: 220, rms: loud }, floor)).toBe(true);
+    expect(isFaintDrawable({ f0: 0, rms: loud }, floor)).toBe(false);
+    expect(isFaintDrawable({ f0: 220, faintF0: 220, rms: loud }, floor)).toBe(false);
+  });
+
+  it('asks for no margin over the floor by default, a set one when given', () => {
+    const level = 10 ** ((floor + 3) / 20);
+    expect(isFaintDrawable({ f0: 0, faintF0: 220, rms: level }, floor)).toBe(true);
+    expect(isFaintDrawable({ f0: 0, faintF0: 220, rms: level }, floor, 8)).toBe(false);
+    expect(isFaintDrawable({ f0: 0, faintF0: 220, rms: 10 ** ((floor - 3) / 20) }, floor)).toBe(false);
+    expect(FAINT_DRAW_MARGIN_DB).toBeLessThan(DRAW_MARGIN_DB);
   });
 });

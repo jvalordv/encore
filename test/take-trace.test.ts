@@ -216,7 +216,14 @@ describe('a recorded take', () => {
 
   it('carries the environment, health and the log, and exports them', async () => {
     const { take } = await recordSpeakerTake();
-    expect(take.trace?.environment.analysis).toMatchObject({ clarityThreshold: 0.9, mode: 'karaoke' });
+    expect(take.trace?.environment.analysis).toMatchObject({ clarityThreshold: 0.85, mode: 'karaoke' });
+    expect(take.trace?.environment.tracker).toEqual({
+      minF0Hz: 90,
+      maxF0Hz: 1200,
+      highpassHz: 120,
+      faintClarity: 0.75,
+      faintDrawMarginDb: 4,
+    });
     expect(take.trace?.environment.appVersion).toBe(appVersion());
     expect(take.trace?.health.length).toBeGreaterThan(0);
     const json = takeExportJson(take);

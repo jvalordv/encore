@@ -77,7 +77,9 @@ export function takeExportJson(record: TakeRecord): Record<string, unknown> {
     report: record.report ?? null,
     // Version 2 adds `trace` and the per-frame `rawF0` and `gate`; version 3
     // adds `take.kind`, `trace.sections` and `trace.environment.tuning`. A
-    // take saved before then lacks them and reads as before.
+    // take saved before then lacks them and reads as before. The optional
+    // `trace.environment.tracker` (search range, filter, faint tier) needed no
+    // new version.
     trace: record.trace ?? null,
     frames: record.frames.map((f) => ({
       t: f.t,

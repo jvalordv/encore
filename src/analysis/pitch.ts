@@ -20,18 +20,43 @@ export interface PitchFrame {
   clarity: number;
   /** Root mean square level of the window, 0 to 1 for full-scale audio. */
   rms: number;
+  /**
+   * Fundamental of a faint frame, in Hz: clear enough to draw as a hint but
+   * not to count as voiced, so `f0` stays 0. Set by the tracker, read only by
+   * the lane; scoring, the guide and the take never see it.
+   */
+  faintF0?: number;
 }
 
 /** Samples per analysis window: 42.7 ms at 48 kHz, 3+ periods at 82 Hz. */
 export const PITCH_WINDOW = 2048;
 /** Samples between windows: 10 ms at 48 kHz, the project-wide f0 hop. */
 export const PITCH_HOP = 480;
-/** Lowest f0 searched for, Hz; just under a bass singer's floor. */
-export const MIN_F0 = 60;
+/**
+ * Lowest f0 searched for, Hz. Raised from 60: measured on a take with the
+ * song in the room, the 60-90 Hz range held only room rumble and bass notes
+ * (1332 voiced bass frames, none of them the singer).
+ */
+export const MIN_F0 = 90;
 /** Highest f0 searched for, Hz; covers soprano whistle-adjacent notes. */
 export const MAX_F0 = 1200;
 /** Clarity needed to call a frame voiced, per docs/ARCHITECTURE.md. */
-export const DEFAULT_CLARITY = 0.9;
+export const DEFAULT_CLARITY = 0.85;
+/** The default before the 0.85 change; a saved setting equal to it moves on. */
+export const LEGACY_CLARITY = 0.9;
+/** How far under the voiced threshold a frame may sit and still be drawn faintly. */
+export const FAINT_CLARITY_STEP = 0.1;
+/**
+ * Cut-off of the high-pass in front of the tracker, Hz. A singer's pitch
+ * sits above it while the speaker bass the mic picks up sits below, so the
+ * periodicity search is not pulled down to the bass. 0 turns it off.
+ */
+export const TRACKER_HIGHPASS_HZ = 120;
+
+/** The lowest clarity that still draws a faint frame, given the voiced one. */
+export function faintClarityFor(threshold: number): number {
+  return Math.max(0, threshold - FAINT_CLARITY_STEP);
+}
 
 /** Default fraction of the best peak a shorter-lag peak must reach. */
 const DEFAULT_K = 0.9;

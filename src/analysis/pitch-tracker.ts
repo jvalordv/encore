@@ -4,13 +4,16 @@
  * from mic.ts) into it, and fans the posted frames out to listeners, with the
  * voicing decision applied: a frame whose clarity is under the threshold is
  * delivered with f0 = 0, so consumers see one steady 100 Hz stream of voiced
- * and unvoiced frames and never have to guess at gaps. Frame times are raw
+ * and unvoiced frames and never have to guess at gaps. A 120 Hz high-pass
+ * sits between the source and the worklet (not in the recorder's path) so
+ * speaker bass cannot pull the pitch search down; frames just under the
+ * threshold keep their pitch as `faintF0`, for the lane's faint trace only. Frame times are raw
  * context times; shifting them by the calibrated latency is the caller's job.
  * The singer's voice is never routed to the speakers: the worklet's output is
  * silent and passes through a muted gain.
  */
 import type { AudioEngine } from '../audio/engine';
-import { DEFAULT_CLARITY } from './pitch';
+import { DEFAULT_CLARITY, faintClarityFor, TRACKER_HIGHPASS_HZ } from './pitch';
 import type { PitchFrame } from './pitch';
 import { PITCH_PROCESSOR_NAME } from './pitch-worklet';
 import type { PitchProcessorOptions } from './pitch-worklet';
@@ -20,6 +23,8 @@ import workletUrl from './pitch-worklet.ts?worker&url';
 export interface PitchTrackerOptions extends PitchProcessorOptions {
   /** Clarity at or above which a frame counts as voiced. */
   clarityThreshold?: number;
+  /** High-pass cut-off in front of the worklet, Hz; 0 for none. Default 120. */
+  highpassHz?: number;
 }
 
 /** One addModule per context, shared by every tracker built on it. */
@@ -72,10 +77,16 @@ export class RateMeter {
   }
 }
 
-/** Returns `frame` with f0 zeroed when it is under the voicing threshold. */
-export function applyVoicing(frame: PitchFrame, threshold: number): PitchFrame {
+/**
+ * Returns `frame` with f0 zeroed when it is under the voicing threshold. With
+ * `faintThreshold`, a frame between the two keeps its pitch as `faintF0`, a
+ * drawing hint that leaves f0 (and so everything that scores) at 0.
+ */
+export function applyVoicing(frame: PitchFrame, threshold: number, faintThreshold?: number): PitchFrame {
   if (frame.f0 > 0 && frame.clarity >= threshold) return frame;
-  return { t: frame.t, f0: 0, clarity: frame.clarity, rms: frame.rms };
+  const out: PitchFrame = { t: frame.t, f0: 0, clarity: frame.clarity, rms: frame.rms };
+  if (faintThreshold !== undefined && frame.f0 > 0 && frame.clarity >= faintThreshold) out.faintF0 = frame.f0;
+  return out;
 }
 
 /** Runs the pitch worklet on a source node and publishes gated frames. */
@@ -83,8 +94,10 @@ export class PitchTracker {
   private ready = false;
   private node: AudioWorkletNode | null = null;
   private sink: GainNode | null = null;
+  private filter: BiquadFilterNode | null = null;
   private input: AudioNode | null = null;
   private threshold: number;
+  private readonly highpassHz: number;
   private readonly meter = new RateMeter();
   private readonly listeners = new Set<(frame: PitchFrame) => void>();
 
@@ -93,6 +106,7 @@ export class PitchTracker {
     private readonly opts: PitchTrackerOptions = {},
   ) {
     this.threshold = clampClarity(opts.clarityThreshold, DEFAULT_CLARITY);
+    this.highpassHz = Math.max(0, opts.highpassHz ?? TRACKER_HIGHPASS_HZ);
   }
 
   /** True when this browser has AudioWorklet, which needs a secure context. */
@@ -154,10 +168,20 @@ export class PitchTracker {
       this.sink = sink;
     } else if (this.input) {
       const previous = this.input;
-      const current = node;
+      const current = this.filter ?? node;
       safely(() => previous.disconnect(current));
     }
-    source.connect(node);
+    if (!this.filter && this.highpassHz > 0) {
+      // Only the tracker hears the filtered signal; the recorder taps the raw
+      // source. Q is in dB for this filter type: -3.01 dB is Butterworth.
+      const filter = context.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.value = this.highpassHz;
+      filter.Q.value = -3.01;
+      filter.connect(node);
+      this.filter = filter;
+    }
+    source.connect(this.filter ?? node);
     this.input = source;
     this.meter.reset();
   }
@@ -167,13 +191,16 @@ export class PitchTracker {
     const node = this.node;
     if (!node) return;
     const input = this.input;
-    if (input) safely(() => input.disconnect(node));
+    const filter = this.filter;
+    if (input) safely(() => input.disconnect(filter ?? node));
+    safely(() => filter?.disconnect());
     safely(() => node.disconnect());
     safely(() => this.sink?.disconnect());
     node.port.onmessage = null;
     node.port.close();
     this.node = null;
     this.sink = null;
+    this.filter = null;
     this.input = null;
     this.meter.reset();
   }
@@ -203,7 +230,7 @@ export class PitchTracker {
   private receive(data: PitchFrame): void {
     if (!data || typeof data.f0 !== 'number' || typeof data.clarity !== 'number') return;
     this.meter.tick();
-    const frame = applyVoicing(data, this.threshold);
+    const frame = applyVoicing(data, this.threshold, faintClarityFor(this.threshold));
     for (const cb of [...this.listeners]) {
       try {
         cb(frame);

@@ -7,6 +7,7 @@
  * detector read them. Checked in test/mic-tuning.test.ts.
  */
 import { DRAW_MARGIN_DB } from './mic-level';
+import { DEFAULT_CLARITY } from './pitch';
 
 /** The five numbers a device pair can tune. */
 export interface MicTuning {
@@ -37,7 +38,7 @@ export type TuningKey = (typeof TUNING_KEYS)[number];
 /** Today's values, used by every pair that has not been tuned. */
 export const DEFAULT_TUNING: Readonly<MicTuning> = Object.freeze({
   drawMarginDb: DRAW_MARGIN_DB,
-  clarityThreshold: 0.9,
+  clarityThreshold: DEFAULT_CLARITY,
   bleedMatchCents: 30,
   bleedMinMatch: 0.6,
   bleedMaxMedianCents: 15,

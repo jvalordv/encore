@@ -55,6 +55,53 @@ beforeEach(() => {
   clock = 0;
 });
 
+describe('the faint trace', () => {
+  /** A frame between the faint and voiced clarity: f0 0, the pitch only hinted. */
+  function faintFrame(h: Harness, rms: number): void {
+    clock += 0.01;
+    h.engine.t = clock;
+    h.player.positionS = clock;
+    h.tracker.emit({ t: clock, f0: 0, clarity: 0.8, rms, faintF0: 220 });
+  }
+
+  it('reaches the lane, but never the take or the scorer', async () => {
+    const { h, lane } = await ready('speakers');
+    listen(h);
+    await h.core.takes.toggleRecord();
+    for (let i = 0; i < 10; i++) faintFrame(h, VOICE);
+    expect(lane.pushFrame).toHaveBeenLastCalledWith(expect.objectContaining({ f0: 0, faintF0: 220 }));
+    await h.core.takes.toggleRecord();
+    const [summary] = await h.takeStore.list();
+    const record = await h.takeStore.get(summary.id);
+    const faint = record!.frames.filter((f) => f.clarity === 0.8);
+    expect(faint.length).toBeGreaterThan(0);
+    for (const f of faint) {
+      expect(f.f0).toBe(0);
+      expect(f).not.toHaveProperty('faintF0');
+    }
+    expect(h.store.state.lastFrame?.f0 ?? 0).toBe(0);
+  });
+
+  it('is dropped with speakers when it sits only a few dB over the floor, kept with headphones', async () => {
+    const nearFloor = HISS * 10 ** (3 / 20);
+    const speakers = await ready('speakers');
+    listen(speakers.h);
+    faintFrame(speakers.h, nearFloor);
+    expect(speakers.lane.pushFrame).toHaveBeenLastCalledWith(expect.not.objectContaining({ faintF0: 220 }));
+    const phones = await ready('headphones');
+    listen(phones.h);
+    faintFrame(phones.h, nearFloor);
+    expect(phones.lane.pushFrame).toHaveBeenLastCalledWith(expect.objectContaining({ faintF0: 220 }));
+  });
+
+  it('is not drawn when the frame is under the noise floor', async () => {
+    const { h, lane } = await ready();
+    listen(h);
+    faintFrame(h, HISS * 0.5);
+    expect(lane.pushFrame).toHaveBeenLastCalledWith(expect.not.objectContaining({ faintF0: 220 }));
+  });
+});
+
 describe('the level and state the meter shows', () => {
   it('starts with nothing, then hears a voice over the hiss', async () => {
     const { h } = await ready();
@@ -249,7 +296,7 @@ describe('the mic settings kept with a take', () => {
       inputLabel: 'mic usb',
       monitor: 'speakers',
       requestedAec: true,
-      clarityThreshold: 0.9,
+      clarityThreshold: 0.85,
       mix: { choice: 'original' },
     });
     expect(summary.mic?.noiseFloorDb).toBeCloseTo(-80, 0);
@@ -300,6 +347,6 @@ describe('the gate reads the tuning of the current device pair', () => {
     h.core.store.patchSection('output', { deviceId: 'other' });
     h.core.latency.refreshLatency();
     expect(h.core.health.tuning().drawMarginDb).toBe(8);
-    expect(h.tracker.clarityThreshold).toBe(0.9);
+    expect(h.tracker.clarityThreshold).toBe(0.85);
   });
 });

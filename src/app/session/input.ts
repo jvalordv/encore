@@ -242,7 +242,14 @@ export class InputController {
     health.compare(t, frame, drawable);
     this.core.bus.publish({
       singer: 0,
-      frame: { t, f0, clarity: frame.clarity, rms: frame.rms },
+      frame: {
+        t,
+        f0,
+        clarity: frame.clarity,
+        rms: frame.rms,
+        // Only the lane reads this; the take and the scorer ignore it.
+        ...(health.lastFaint && frame.faintF0 ? { faintF0: frame.faintF0 } : {}),
+      },
       gated: !drawable,
       ...(health.lastGate ? { gateReason: health.lastGate } : {}),
       rawF0: frame.f0,

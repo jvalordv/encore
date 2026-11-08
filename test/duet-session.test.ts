@@ -219,7 +219,7 @@ describe('singer B\'s own mic', () => {
     const { h } = await ready({ micTuningByDevicePair: { 'latency.default|usb-b': tuning } });
     await h.core.duet.chooseSecondInput('usb-b');
     expect(h.trackerB.clarityThreshold).toBe(0.8);
-    expect(h.tracker.clarityThreshold).toBe(0.9);
+    expect(h.tracker.clarityThreshold).toBe(0.85);
   });
 
   it('closes B\'s mic without touching A\'s, and back to turns', async () => {

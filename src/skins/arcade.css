@@ -39,6 +39,7 @@
 
   --lane-bg: #02010a;
   --lane-grid: rgba(25, 245, 255, 0.24);
+  --lane-faint-alpha: 0.45;
   --lane-ribbon-width: 5px;
 }
 

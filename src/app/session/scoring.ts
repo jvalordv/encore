@@ -59,11 +59,13 @@ export class ScoringController {
       // While a take replays, its own trace owns the lane.
       if (core.store.state.playingTakeId !== null) return;
       // A frame under the level gate is a gap, not jitter.
+      // The faint hint rides along either way: it is not graded or stored.
+      const faint = frame.faintF0 ? { faintF0: frame.faintF0 } : {};
       if (gated) {
-        this.draw({ t: frame.t, f0: 0, clarity: frame.clarity }, singer);
+        this.draw({ t: frame.t, f0: 0, clarity: frame.clarity, ...faint }, singer);
         return;
       }
-      const drawn = { t: frame.t, f0: frame.f0, clarity: frame.clarity };
+      const drawn = { t: frame.t, f0: frame.f0, clarity: frame.clarity, ...faint };
       this.draw(grade === null ? drawn : { ...drawn, grade }, singer);
     });
     // A card, and the phrases marked free, belong to the song they were made for.

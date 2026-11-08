@@ -25,6 +25,8 @@ export interface LaneStyle {
   freeBand: string;
   singers: [string, string];
   ribbonWidth: number;
+  /** Opacity of the faint trace, the voice line's hue at a lower alpha. */
+  faintAlpha: number;
 }
 
 /** Perceived brightness (0 to 1) of a hex or rgb() colour; 0 if unparsed. */
@@ -52,6 +54,7 @@ export function readLaneStyle(): LaneStyle {
   // keys and a light skin keeps pale keys with dark ones on top.
   const textIsPaler = brightness(text) >= brightness(surface);
   const width = parseFloat(token('--lane-ribbon-width'));
+  const faint = parseFloat(token('--lane-faint-alpha'));
   return {
     background: token('--lane-bg'),
     grid: token('--lane-grid'),
@@ -69,5 +72,6 @@ export function readLaneStyle(): LaneStyle {
     freeBand: token('--color-free-band'),
     singers: [token('--color-singer-a'), token('--color-singer-b')],
     ribbonWidth: Number.isFinite(width) ? Math.min(12, Math.max(1, width)) : 3,
+    faintAlpha: Number.isFinite(faint) ? Math.min(1, Math.max(0.05, faint)) : 0.35,
   };
 }

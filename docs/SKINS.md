@@ -22,7 +22,7 @@ Tokens (all required, the registry test checks each CSS file defines them):
 --font-display --font-body --font-mono
 --radius --border-width --shadow
 --motion-fast --motion-slow --easing
---lane-bg --lane-grid --lane-ribbon-width
+--lane-bg --lane-grid --lane-ribbon-width --lane-faint-alpha
 ```
 
 `--color-free` paints a freestyle frame on the lane (learning mode, Open style or

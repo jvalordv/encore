@@ -64,7 +64,10 @@ export class SecondInput {
     private readonly core: SessionCore,
     private readonly parts: SecondParts,
   ) {
-    this.health = new SingerHealth(() => this.tuning());
+    this.health = new SingerHealth(
+      () => this.tuning(),
+      () => core.store.state.singers[1]?.input.requestedAec === true,
+    );
     parts.tracker.onFrame((frame) => this.onFrame(frame));
     parts.mic.onEnded(() => this.onEnded());
     core.bus.subscribe((m) => {
@@ -270,7 +273,13 @@ export class SecondInput {
     const f0 = speakers && !drawable ? 0 : frame.f0;
     this.core.bus.publish({
       singer: 1,
-      frame: { t, f0, clarity: frame.clarity, rms: frame.rms },
+      frame: {
+        t,
+        f0,
+        clarity: frame.clarity,
+        rms: frame.rms,
+        ...(verdict.faint && !leak && frame.faintF0 ? { faintF0: frame.faintF0 } : {}),
+      },
       gated: !drawable,
       ...(reason ? { gateReason: reason } : {}),
       rawF0: frame.f0,
