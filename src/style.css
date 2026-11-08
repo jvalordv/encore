@@ -907,6 +907,20 @@ button[aria-pressed='true'] {
   flex: 1 1 100%;
 }
 
+/* A replay item's detail line (the numbers) and tip sit under its summary,
+   muted, so the list stays scannable. */
+.report-list li > .report-moment-detail,
+.report-list li > .report-moment-tip {
+  flex: 1 1 100%;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.report-list li > .report-moment-tip {
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
 .report-card button,
 .learning-notice button {
   min-width: 0;

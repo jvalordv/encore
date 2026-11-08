@@ -210,7 +210,7 @@ describe('describeReport', () => {
         worstPhrases: [{ first: 4, last: 6, startS: 65, endS: 72, meanAbsCents: 63.4, missShare: 0.52 }],
       }),
     );
-    expect(view.phrases).toEqual([{ text: '1:05 to 1:12: 63 c off on average, 52% of it missed', atS: 65 }]);
+    expect(view.phrases).toMatchObject([{ text: '1:05 to 1:12: 63 c off on average, 52% of it missed', atS: 65 }]);
     expect(view.noPhrases).toBe('');
     expect(describeReport(reportOf([])).noPhrases).toBe('No phrase stood out as off.');
   });

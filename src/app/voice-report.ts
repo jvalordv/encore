@@ -6,12 +6,15 @@
  * from the notes and labelled so, or the nearest semitone), the intonation, the
  * steadiness of held notes, scoops, drift, vibrato, the range and the phrases.
  * Each line carries its number and nothing is softened or guessed. The worst
- * notes are listed to jump to and replay. Never shown in karaoke mode.
+ * notes are listed to jump to and replay, each with its measurements and a tip
+ * (src/app/replay-detail.ts). Never shown in karaoke mode.
  */
 import { STABILITY_NOTE_S } from '../analysis/voice';
 import type { VoiceReport } from '../analysis/voice';
+import type { LyricLine } from '../lyrics/lrc';
 import { noteName } from '../render/lane-geometry';
 import type { MomentView } from './report';
+import { lyricQuote, voiceNoteDetail, voiceNoteTip } from './replay-detail';
 import { formatClock } from './state';
 
 /** At most this many worst notes are listed; the rest are counted. */
@@ -63,7 +66,7 @@ function basisLine(voice: VoiceReport): string {
   }
 }
 
-function worstNotes(voice: VoiceReport): { rows: MomentView[]; more: number } {
+function worstNotes(voice: VoiceReport, lyrics: readonly LyricLine[] | undefined): { rows: MomentView[]; more: number } {
   const off = voice.notes
     .filter((n) => n.centsOff !== null && Math.abs(n.centsOff) > WORST_NOTE_CENTS)
     .sort((a, b) => Math.abs(b.centsOff ?? 0) - Math.abs(a.centsOff ?? 0));
@@ -73,13 +76,15 @@ function worstNotes(voice: VoiceReport): { rows: MomentView[]; more: number } {
     return {
       text: `${noteName(n.midi)} at ${formatClock(n.onsetS)}: ${Math.round(Math.abs(cents))} c ${whichWay(cents, 'sharp', 'flat')} of ${tone}`,
       atS: n.onsetS,
+      detail: voiceNoteDetail(n, voice.reference, lyricQuote(lyrics, n.onsetS)),
+      tip: voiceNoteTip(n),
     };
   });
   return { rows, more: Math.max(0, off.length - MAX_WORST_NOTES) };
 }
 
-/** The card's "Your voice" text for a take. */
-export function describeVoice(voice: VoiceReport): VoiceView {
+/** The card's "Your voice" text for a take; `lyrics` are the song's synced lines, when imported. */
+export function describeVoice(voice: VoiceReport, lyrics?: readonly LyricLine[]): VoiceView {
   const s = voice.summary;
   const empty: VoiceView = {
     basis: '',
@@ -94,7 +99,7 @@ export function describeVoice(voice: VoiceReport): VoiceView {
     moreOff: 0,
   };
   if (voice.notes.length === 0 || s.judged === 0) return empty;
-  const worst = worstNotes(voice);
+  const worst = worstNotes(voice, lyrics);
   const bias = s.biasCents ?? 0;
   const biasText =
     Math.abs(bias) < 5 ? 'centred on the notes' : `a median ${Math.round(Math.abs(bias))} c ${whichWay(bias, 'sharp', 'flat')}`;

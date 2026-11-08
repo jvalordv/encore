@@ -81,6 +81,25 @@ the in-tune rate, which notes were off and which way, early or late, and
 the three worst phrases. Skins change the colours and the copy, never the
 numbers (`docs/SKINS.md`).
 
+Each item with a Replay (a worst note of "Your voice", a worst phrase) has
+a summary and a muted detail line, which are evidence and always shown, and
+one tip, shown only once the singer presses the card's Tips button (tips come
+only on request). The detail line
+gives the song time, the lyric sung there when lyrics were imported, the note
+sung against its tone, cents sharp or flat, how long it was held, and every
+trait that was measured on it (spread, scoop, drift, vibrato); a trait not
+measured is left out. A phrase gives its shares on target, close and off, the
+mean error, its median lean and entry time, and notes sung. The tip is a rule
+over the dominant measured problem, the measure furthest past its threshold;
+when no measure reaches its threshold there is no tip. The thresholds are the
+take-level tips table below (`TIP_THRESHOLDS`), read by `REPLAY_TIP_THRESHOLDS`
+in `src/app/replay-detail.ts`: scoop over 60 c, drift over 20 c/s, wobble over
+35 c, wide vibrato over 80 c, a phrase lean over 20 c, and early or late at the
+scoring style's own limit (60 ms in Strict, 120 ms in Open). One number is
+replay's own: a note 60 c from its tone only weights the pitch tip against the
+other rules and never gates it. Replay tips are not part of the three-tip cap
+of the card's own tips.
+
 ## Scoring styles (learning mode, W4)
 
 Two styles (owner, 2026-10-28), chosen beside the mode toggle and shown

@@ -248,6 +248,8 @@ export interface PhraseResult {
   meanAbsCents: number;
   /** Share of the phrase's scored frames that missed, 0..1. */
   missShare: number;
+  /** Share of the phrase's scored frames that hit, 0..1; absent on older takes. */
+  hitShare?: number;
 }
 
 /** A range of MIDI notes. */
@@ -518,7 +520,8 @@ function worstPhrases(
     // A phrase sung inside a hit's width is not a problem to point at.
     if (meanAbsCents <= rules.hitCents) continue;
     const misses = errors.filter((c) => gradeCents(c, style) === 'miss').length;
-    results.push({ ...p, meanAbsCents, missShare: misses / errors.length });
+    const hits = errors.filter((c) => gradeCents(c, style) === 'hit').length;
+    results.push({ ...p, meanAbsCents, missShare: misses / errors.length, hitShare: hits / errors.length });
   }
   // Array sort is stable, so equally bad phrases keep their song order.
   return results.sort((a, b) => b.meanAbsCents - a.meanAbsCents).slice(0, WORST_PHRASES);

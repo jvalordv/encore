@@ -431,7 +431,17 @@ export function mountUI(session: Session, root: Document = document): UI {
     }),
   );
   cleanups.push(mountTakesPanel(get('takes'), { store, session }));
-  cleanups.push(mountReportPanel(get('report'), { store, session }));
+  // The report card quotes the lyric line at each replay item.
+  cleanups.push(
+    mountReportPanel(get('report'), {
+      store,
+      session,
+      lyrics: {
+        lines: (hash) => (lyrics.state.song?.hash === hash ? lyrics.syncedLines() : []),
+        onChange: (listener) => lyrics.onChange(listener),
+      },
+    }),
+  );
   cleanups.push(mountStreakPanel(get('streak'), { store }));
   cleanups.push(
     mountProgressPanel(get('progress'), { store, session, toggle: get<HTMLButtonElement>('progress-button') }),

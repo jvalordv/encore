@@ -15,7 +15,9 @@
 import type { Span } from '../analysis/free-phrases';
 import { SCORING_STYLES } from '../analysis/score';
 import type { FreestyleReport, NoteResult, OffKeyNote, PhraseResult, ScoringStyle, TakeReport } from '../analysis/score';
+import type { LyricLine } from '../lyrics/lrc';
 import { noteName } from '../render/lane-geometry';
+import { lyricQuote, measurePhrase, phraseDetail, phraseTip } from './replay-detail';
 import { formatClock } from './state';
 import { describeVoice } from './voice-report';
 import type { VoiceView } from './voice-report';
@@ -44,6 +46,10 @@ export interface MomentView {
   text: string;
   /** Song time of the moment itself; jumps and replays start a lead-in earlier. */
   atS: number;
+  /** Replay items: the numbers behind the line, each only when measured. */
+  detail?: string;
+  /** Replay items: one plain tip from the dominant measured problem. */
+  tip?: string;
 }
 
 /** A phrase row of the card: its words and the span Mark free and Free act on. */
@@ -109,12 +115,15 @@ function offNote(n: NoteResult, style: ScoringStyle): { view: MomentView; severi
   return { view: { text: `${noteLabel(n)}: ${parts.join(', ')}`, atS: n.onsetS }, severity };
 }
 
-function phraseView(p: PhraseResult): MomentView {
+function phraseView(p: PhraseResult, report: TakeReport, lyrics: readonly LyricLine[] | undefined): MomentView {
+  const measure = measurePhrase(p, report.notes);
   return {
     text:
       `${formatClock(p.startS)} to ${formatClock(p.endS)}: ${Math.round(p.meanAbsCents)} c off on average, ` +
       `${percent(p.missShare)} of it missed`,
     atS: p.startS,
+    detail: phraseDetail(p, measure, lyricQuote(lyrics, p.startS)),
+    tip: phraseTip(measure, report.style ?? 'strict'),
   };
 }
 
@@ -211,8 +220,8 @@ function headlineFor(report: TakeReport, style: ScoringStyle): string {
   return `In tune: ${percent(report.inTuneRate)} of the notes you sang${where} were within ${okayCents} c.`;
 }
 
-/** The card's text for a report. */
-export function describeReport(report: TakeReport): ReportView {
+/** The card's text for a report; `lyrics` are the song's synced lines, when imported. */
+export function describeReport(report: TakeReport, lyrics?: readonly LyricLine[]): ReportView {
   const style = report.style ?? 'strict';
   const total = report.frames.hit + report.frames.okay + report.frames.miss;
   const off = report.notes
@@ -245,12 +254,12 @@ export function describeReport(report: TakeReport): ReportView {
     offNotes: off.slice(0, MAX_OFF_NOTES).map((n) => n.view),
     moreOff: Math.max(0, off.length - MAX_OFF_NOTES),
     timing: timingLine(report.timingBiasS),
-    phrases: report.worstPhrases.map(phraseView),
+    phrases: report.worstPhrases.map((p) => phraseView(p, report, lyrics)),
     phraseSpans: report.worstPhrases.map((p): Span => [p.startS, p.endS]),
     noPhrases: report.worstPhrases.length === 0 ? 'No phrase stood out as off.' : '',
     range: report.noMelody ? '' : rangeLine(report),
     freestyle: describeFreestyle(report.freestyle, style),
     freePhrases: freeRows,
-    voice: report.voice ? describeVoice(report.voice) : null,
+    voice: report.voice ? describeVoice(report.voice, lyrics) : null,
   };
 }

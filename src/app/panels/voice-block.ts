@@ -1,11 +1,13 @@
 /**
  * The "Your voice" block of the report card: the take's own measurements
  * (src/app/voice-report.ts) as lines, then the notes furthest from their tone,
- * each with Jump (seek the song there) and Replay (play the take from there).
+ * each with its measurements and a tip, then Jump (seek the song there) and
+ * Replay (play the take from there).
  * Built apart from the card so the card's file stays small; it has no state
  * and is never built in karaoke mode (the card is not).
  */
 import { jumpTarget } from '../report';
+import type { MomentView } from '../report';
 import type { VoiceView } from '../voice-report';
 
 /** What the block calls on: the two moves a worst note offers. */
@@ -14,12 +16,37 @@ export interface VoiceBlockActions {
   replay(atS: number): void;
 }
 
+/**
+ * The text of a replay item: the summary line, then the muted detail line of
+ * numbers (evidence, always shown) and, only when the singer has asked for
+ * tips on this card, the tip (learning mode's replay items).
+ */
+export function momentTexts(doc: Document, view: MomentView, showTip = false): HTMLElement[] {
+  const summary = doc.createElement('span');
+  summary.textContent = view.text;
+  const out: HTMLElement[] = [summary];
+  const extra: Array<[string | undefined, string, string]> = [
+    [view.detail, 'report-moment-detail', 'song-meta report-moment-detail'],
+    [showTip ? view.tip : undefined, 'report-moment-tip', 'song-meta report-moment-tip'],
+  ];
+  for (const [text, testid, className] of extra) {
+    if (!text) continue;
+    const line = doc.createElement('span');
+    line.dataset.testid = testid;
+    line.className = className;
+    line.textContent = text;
+    out.push(line);
+  }
+  return out;
+}
+
 /** The block's elements; empty when the take has no voice section. */
 export function voiceBlock(
   doc: Document,
   view: VoiceView | null,
   actions: VoiceBlockActions,
   busy: boolean,
+  showTips = false,
 ): HTMLElement[] {
   if (view === null) return [];
   const make = <K extends keyof HTMLElementTagNameMap>(tag: K, testid: string, className: string, text: string) => {
@@ -46,9 +73,7 @@ export function voiceBlock(
     for (const note of view.worstNotes) {
       const item = doc.createElement('li');
       item.dataset.testid = 'report-voice-note';
-      const text = doc.createElement('span');
-      text.textContent = note.text;
-      item.append(text);
+      item.append(...momentTexts(doc, note, showTips));
       const buttons: Array<[string, string, () => void]> = [
         ['Jump', 'voice-note-jump', () => actions.seek(jumpTarget(note.atS))],
         ['Replay', 'voice-note-replay', () => actions.replay(note.atS)],

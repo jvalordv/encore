@@ -25,6 +25,7 @@ import { takesOfSinger } from '../../duet/take';
 import type { SingerReport } from '../../duet/take';
 import { tipsFor } from '../../coach/tips';
 import type { Tip } from '../../coach/tips';
+import type { LyricLine } from '../../lyrics/lrc';
 import { describeAlign } from '../align';
 import { cardContentOf } from '../card-content';
 import { CARD_FAILED, drawCard, renderCardPng } from '../card-image';
@@ -38,7 +39,7 @@ import type { Session } from '../session';
 import type { AppState, StateStore } from '../state';
 import type { TakeSummary } from '../takes';
 import type { MountPanel } from './panel';
-import { voiceBlock } from './voice-block';
+import { momentTexts, voiceBlock } from './voice-block';
 
 /** The keys of the state the panel is drawn from. */
 const WATCHED: ReadonlyArray<keyof AppState> = [
@@ -59,14 +60,23 @@ const WATCHED: ReadonlyArray<keyof AppState> = [
 /** Said when a take earns no tip. */
 export const NO_TIPS = 'Nothing in this take stands out enough for a tip.';
 
+/** Where the card finds the lyric lines of a song, and hears they changed. */
+export interface LyricsSource {
+  /** The synced lines (song time, nudge included) of that song; [] when none. */
+  lines(songHash: string): readonly LyricLine[];
+  onChange(listener: () => void): () => void;
+}
+
 /** What the panel needs: the state to draw, and the intents it calls. */
 export interface ReportPanelDeps {
   store: StateStore;
+  /** The song's imported lyrics, to quote the line at each replay item. */
+  lyrics?: LyricsSource;
   session: Pick<Session, 'seek' | 'playTake' | 'findOriginal' | 'showReport' | 'setScoring' | 'setPhraseFree'>;
 }
 
 /** Builds the panel into `host`; the returned function takes it down. */
-export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, session }) => {
+export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, session, lyrics }) => {
   const doc = host.ownerDocument;
   const cleanups: Array<() => void> = [];
   // The take whose tips were asked for; the tips go when another card opens.
@@ -99,12 +109,11 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
     testid: string,
     actions: Array<[string, string, () => void]>,
     disabled: boolean,
+    showTip = false,
   ): HTMLLIElement {
     const item = doc.createElement('li');
     item.dataset.testid = testid;
-    const text = doc.createElement('span');
-    text.textContent = view.text;
-    item.append(text);
+    item.append(...momentTexts(doc, view, showTip));
     for (const [label, id, run] of actions) item.append(button(label, id, run, disabled));
     return item;
   }
@@ -165,8 +174,9 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
   function card(state: AppState, take: TakeSummary, who: SingerReport, multi: boolean): HTMLElement {
     const { report } = who;
     const key = `${take.id}:${who.singer}`;
+    const asked = tipsShownFor === key;
     const busy = state.recording || state.calibrating;
-    const view = describeReport(report);
+    const view = describeReport(report, lyrics?.lines(take.songHash));
     const root = el('div', 'report-card', 'report-card');
     root.dataset.takeId = take.id;
     root.dataset.singer = String(who.singer);
@@ -225,6 +235,7 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
                   ['Replay', 'phrase-replay', () => void session.playTake(take.id, p.atS)],
                 ],
                 busy,
+                asked,
               );
               const span = view.phraseSpans[i];
               row.append(freeToggle(take.id, span, isMarked(state.freePhrases, span), busy, 'phrase-free'));
@@ -250,6 +261,7 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
         view.voice,
         { seek: (s) => session.seek(s), replay: (s) => void session.playTake(take.id, s) },
         busy,
+        asked,
       ),
     );
     if (view.freePhrases.length > 0) {
@@ -287,7 +299,6 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
       }),
       cardStatus,
     );
-    const asked = tipsShownFor === key;
     root.append(
       button('Tips', 'report-tips', () => {
         tipsShownFor = key;
@@ -345,6 +356,7 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
       if (WATCHED.some((key) => changed.has(key))) render(state);
     }),
   );
+  if (lyrics) cleanups.push(lyrics.onChange(() => render(store.state)));
   render(store.state);
 
   return () => {
