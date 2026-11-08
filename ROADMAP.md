@@ -24,6 +24,14 @@ webcam or USB mic.
 
 ## Current state
 
+- **Last done (2026-11-08): WL4, hear the voice over the song, and
+  detailed replay items.** From the owner's take of 2026-11-08 (speakers,
+  webcam mic): the tracker caught 19 % of the voice and read the
+  subwoofer as notes. Now 90 Hz floor, 120 Hz high-pass in front of the
+  tracker only, clarity 0.85 (38 % caught, false 49 % -> 18 %, bass 0),
+  plus a faint visual-only trace. Replay items carry a detail line and a
+  tip on request. **Next:** the owner sings again on speakers and on
+  headphones; then the WL4 follow-ups or W7.
 - **Morning summary for the owner (overnight session, 2026-11-07).**
   Eleven waves landed on `main`, each with one review, one fix pass and
   green checks (front end, e2e, service):
@@ -43,7 +51,7 @@ webcam or USB mic.
     analysis), W0b, W0, and W1-W4; older work in `docs/HISTORY.md`.
 - **Waiting on the owner (decide in chat):**
   - **Downloader fix (WL3):** the safety check refused to start a plugin
-    that gets past YouTube's bot check. Say whether to proceed. Capture
+    that gets past YouTube's bot check. Owner, 2026-11-08: "Not yet". Capture
     covers YouTube songs meanwhile, and a search-result original still
     needs it (or a captured or uploaded original from the Library).
   - **Basic Pitch for backing notes (W0g):** it pins numpy below 2 and
@@ -1316,6 +1324,38 @@ Tracks inside a wave share no files and may run in parallel.
       midnight refresh.
   - Follow-up: the PNG text uses the English report lines, not skin copy.
   - Follow-up: the flourish replays whenever the card is reopened.
+- [x] **WL4: Hear the voice over the song** (owner, 2026-11-08: "we need
+  to up the sensitivity to voice, or else it gets drowned out in the song
+  playing"; "build out the descriptions to be more detailed"). Measured
+  first: the owner's take was replayed offline through `pitch.ts` and
+  swept against torchcrepe (clarity 0.65-0.9, floor 60-90 Hz, high-pass
+  none/70/90/120 Hz). The recording itself stays outside the repo.
+  - **WL4a:** floor 60 -> 90 Hz, a 120 Hz Butterworth high-pass between
+    the mic and the pitch worklet (the recorder stays raw; singer B too),
+    clarity 0.9 -> 0.85 with a one-time migration of a saved 0.9. A faint
+    tier (0.75-0.85) is drawn as a pale line (`--lane-faint-alpha`) and
+    never reaches scoring, reports, the note guide, streaks, stars or
+    stored frames; its level margin is half the draw margin on speakers,
+    0 on headphones. The take trace records the tracker settings.
+  - **WL4b:** each worst note and worst phrase gets a muted detail line
+    (lyric, note vs tone, cents, held time, spread, scoop, drift,
+    vibrato; phrases: hit share, mean error, lean, entry timing) and a
+    tip by rule, shown only once Tips is pressed; thresholds are shared
+    with `src/coach/tips.ts`.
+  - Follow-up: the loud chorus is still weak (130-180 s: 1.7 % -> 9.9 %
+    solid, 30 % with the faint tier). A steeper or adaptive high-pass, or
+    a floor from the singer's measured range, would help; measure first.
+  - Follow-up: warn when the monitor says headphones but sound goes to
+    speakers (the owner's take had echo cancellation off for that
+    reason); suggest speaker mode or headphones. Device labels alone are
+    unreliable ("Speakers" names many headphone jacks), so pair it with
+    measured bleed.
+  - Follow-up: 0.85 / 0.75 were measured on one bleed-heavy take; check
+    a headphones take for extra false frames before calling them final.
+  - Follow-up: a 0.9 in a settings export from before the migration is
+    kept on import (counted as a choice).
+  - Follow-up: per-item replay tips fire at or past a threshold, the
+    take-level tips strictly past it; unify.
 - [ ] **W7: Owner test and one bug sweep.** The owner runs the full list:
   solo with a file, a link, a prepared link; learning mode; duet on one
   mic and on two; speakers and headphones. Then one reviewer reads
@@ -1428,6 +1468,7 @@ were.
 | W4 Strict and Open scoring (measured) | 1 | 0.83 M | 20 min |
 | W7 Test and sweep | 0.8 (0.6-1.5) | about 0.6 M | 45 min |
 | W6c Settings panel (measured, worktree) | 0.6 | 0.39 M | 5 min |
+| WL4 Voice over the song + replay detail (measured, 2 lanes) | 0.9 | 1.18 M | 15 min |
 | **Total** | **about 16 (15-19)** | **about 11.5 M** | **about 5 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The
