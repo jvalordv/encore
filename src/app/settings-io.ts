@@ -1,18 +1,24 @@
 /**
  * Export and import of the settings as one JSON file, for the Settings panel.
- * The file holds the `Settings` object, the chosen skin and the auto-advance
- * choice, which live under their own storage keys, and nothing else: no
- * takes, library, lyrics or favorites. The YouTube search key is the one
+ * The file holds the `Settings` object and everything else that says how the
+ * app was left, which lives under its own storage keys: the chosen skin, the
+ * auto-advance choice, the singer profiles, the song panel's layout (width,
+ * folded) and the remembered panel choices (src/app/ui-choices.ts); and
+ * nothing else: no takes, library, lyrics or favorites. The YouTube search key is the one
  * secret in it, so it is left out unless the person asks. Importing never
  * trusts the file: only known keys are read, the result goes through
  * `sanitizeSettings` (so a bad value is clamped or falls back to its
  * default), a key the file does not carry keeps its current value, and the
  * words to show the person say what changed. Pure: no storage, no DOM.
  */
+import { layoutPatchFromValue } from './panel-layout';
+import type { PanelLayout } from './panel-layout';
 import { sanitizeList } from './profiles';
 import type { Profile } from './profiles';
 import { DEFAULT_SETTINGS, sanitizeSettings } from './settings';
 import type { Settings } from './settings';
+import { sanitizeUiChoices, uiChoicesPatch } from './ui-choices';
+import type { UiChoices } from './ui-choices';
 
 /** Name of the file the panel offers for download. */
 export const SETTINGS_FILE_NAME = 'encore-settings.json';
@@ -26,6 +32,10 @@ export interface SettingsExtras {
   autoAdvance: boolean;
   /** The singer profiles (names, colours, ids; never takes). */
   profiles?: readonly Profile[];
+  /** The song panel's width and fold; left out of the file when absent. */
+  layout?: PanelLayout;
+  /** The remembered panel choices; left out of the file when absent. */
+  ui?: UiChoices;
 }
 
 /**
@@ -58,7 +68,7 @@ export const SETTING_LABELS: Readonly<Record<keyof Settings, string>> = Object.f
 });
 
 const KNOWN_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<keyof Settings>;
-const TOP_LEVEL = ['app', 'version', 'settings', 'skin', 'autoAdvance', 'profiles'];
+const TOP_LEVEL = ['app', 'version', 'settings', 'skin', 'autoAdvance', 'profiles', 'layout', 'ui'];
 
 /** What reading a file produced; `null` from the parser means not ours. */
 export interface ParsedImport {
@@ -70,6 +80,10 @@ export interface ParsedImport {
   autoAdvance: boolean | null;
   /** The singers the file lists, or null when it has none. */
   profiles: Profile[] | null;
+  /** The usable fields of the song panel's layout, or null when the file has none. */
+  layout: Partial<PanelLayout> | null;
+  /** The panel choices the file carries and are valid, or null when it has none. */
+  ui: Partial<UiChoices> | null;
   /** Plain names of what would change, in a stable order. */
   changed: string[];
   /** How many entries were not recognised and so ignored. */
@@ -95,6 +109,8 @@ export function exportSettingsText(settings: Settings, extras: SettingsExtras, i
       skin: extras.skin,
       autoAdvance: extras.autoAdvance,
       profiles: extras.profiles ?? [],
+      ...(extras.layout ? { layout: { width: extras.layout.width, collapsed: extras.layout.collapsed } } : {}),
+      ...(extras.ui ? { ui: sanitizeUiChoices(extras.ui) } : {}),
     },
     null,
     2,
@@ -139,7 +155,18 @@ export function parseSettingsText(
   const skin = typeof raw.skin === 'string' && skinIds.includes(raw.skin) ? raw.skin : null;
   const autoAdvance = typeof raw.autoAdvance === 'boolean' ? raw.autoAdvance : null;
   const profiles = Array.isArray(raw.profiles) ? sanitizeList(raw.profiles) : null;
-  return { settings, skin, autoAdvance, profiles: profiles && profiles.length > 0 ? profiles : null, changed, ignored };
+  const layout = layoutPatchFromValue(raw.layout);
+  const ui = isRecord(raw.ui) ? uiChoicesPatch(raw.ui) : null;
+  return {
+    settings,
+    skin,
+    autoAdvance,
+    profiles: profiles && profiles.length > 0 ? profiles : null,
+    layout,
+    ui,
+    changed,
+    ignored,
+  };
 }
 
 /** One plain sentence about an import, given what the app changed. */

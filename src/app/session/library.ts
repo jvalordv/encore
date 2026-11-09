@@ -11,7 +11,7 @@
 import { songStarsBySong } from '../../analysis/stars';
 import { daysSung } from '../../analysis/streak';
 import { ServiceClient } from '../../service/client';
-import { entryAfterLoad, memoryLibraryStore, newestFirst } from '../library';
+import { entryAfterLoad, isVideoId, memoryLibraryStore, newestFirst } from '../library';
 import type { LibraryEntry, LibraryStore, LoadedSong } from '../library';
 import { describeImport, exportFavorites, parseFavorites } from '../library-share';
 import { serviceOnly } from '../library-state';
@@ -34,18 +34,23 @@ export class LibraryController {
   // the playlist's own and does not end it.
   private expected: string | null = null;
   private serviceToken = 0;
+  // The take whose song is opening for a replay; a second press is ignored.
+  private opening: string | null = null;
 
   constructor(
     private readonly core: SessionCore,
     store: Promise<LibraryStore>,
   ) {
     const autoAdvance = core.settingsStore.get(AUTO_ADVANCE_KEY) !== 'off';
-    core.store.patch({ library: { ...core.store.state.library, autoAdvance } });
+    core.store.patch({ library: { ...core.store.state.library, autoAdvance, view: core.ui.get().libraryView } });
     this.ready = store
       .catch(() => memoryLibraryStore())
       .then(async (backing) => {
-        this.entries = newestFirst(await backing.list().catch(() => []));
+        const listed = await backing.list().catch(() => null);
+        this.entries = newestFirst(listed ?? []);
         this.publish();
+        // An unreadable list says nothing about which songs are still there.
+        if (listed !== null) this.pruneExpanded();
         void this.refreshCounts();
         return backing;
       });
@@ -186,6 +191,7 @@ export class LibraryController {
 
   /** Chooses the list the panel shows. */
   setView(view: LibraryView): void {
+    this.core.ui.set({ libraryView: view });
     if (this.state.view !== view) this.set({ view });
   }
 
@@ -213,8 +219,16 @@ export class LibraryController {
       this.entries = this.entries.filter((e) => e.id !== id);
       this.set({ notice: `Removed ${entry.title}. Its takes are kept.` });
       this.publish();
+      this.pruneExpanded();
       void this.refreshService();
     });
+  }
+
+  /** Forgets expanded rows of songs no longer in the Library, so they neither pile up nor travel in an export. */
+  private pruneExpanded(): void {
+    const expanded = this.core.ui.get().libraryExpanded;
+    const kept = expanded.filter((id) => this.entries.some((e) => e.id === id));
+    if (kept.length !== expanded.length) this.core.ui.set({ libraryExpanded: kept });
   }
 
   /**
@@ -252,18 +266,74 @@ export class LibraryController {
 
   /**
    * Replays a take from the Library. The replay lays the voice over its song
-   * (and over the video's own sound for a YouTube song), so it needs that song
-   * loaded; for another song this says so and leaves what is loaded alone.
+   * (and over the video's own sound for a YouTube song), so for a take of
+   * another song this opens that song first, the way Open does but with the
+   * drawer left up (its Stop button is in it), and replays once it is ready.
+   * Nothing is fetched again that is stored. While a take is being recorded
+   * nothing happens but a plain line. A second press while a song opens does
+   * nothing; a song that cannot be loaded is said so in one line and the song
+   * in use stays.
    */
   async replayTake(takeId: string): Promise<void> {
     const take = this.state.takes.find((t) => t.id === takeId);
     if (!take) return;
-    if (take.songHash !== this.core.store.state.song?.hash) {
-      this.set({ notice: `Replay plays the take over its song. Press Open to load ${take.songName} first.` });
+    const { store, takes } = this.core;
+    if (store.state.recording || store.state.calibrating || takes.startingRecord) {
+      this.set({ notice: 'Finish recording before replaying a take.' });
       return;
     }
-    this.set({ notice: '' });
-    await this.core.takes.playTake(takeId);
+    if (take.songHash === store.state.song?.hash) {
+      this.set({ notice: '' });
+      await takes.playTake(takeId);
+      return;
+    }
+    if (this.opening !== null) return;
+    this.opening = takeId;
+    try {
+      this.set({ notice: `Opening ${take.songName} to replay…` });
+      const outcome = await this.openSong(take.songHash, take.songName);
+      // A newer load (Open, Load, a drop) took over and says its own piece.
+      if (outcome === 'superseded') {
+        this.set({ notice: '' });
+        return;
+      }
+      if (outcome === 'failed') {
+        // The load failure is on the status line; a closed drawer has no room
+        // for a notice that would greet the next opening.
+        if (this.state.open) this.set({ notice: `Could not open ${take.songName}, so the take was not replayed.` });
+        return;
+      }
+      // A recording begun while the song opened would be cut off by the replay.
+      if (store.state.recording || store.state.calibrating || takes.startingRecord) {
+        this.set({ notice: '' });
+        return;
+      }
+      this.set({ notice: '' });
+      await takes.playTake(takeId);
+    } finally {
+      this.opening = null;
+    }
+  }
+
+  /**
+   * Loads a song by id for a replay, from its Library entry when there is one
+   * (a link as a video, a file back from the service) and otherwise from the
+   * service by the id the take carries. The drawer stays as it is.
+   */
+  private async openSong(id: string, name: string): Promise<'loaded' | 'failed' | 'superseded'> {
+    await this.ready;
+    const entry = this.entries.find((e) => e.id === id);
+    // A removed entry leaves the take with the song's id, which says what it was.
+    const videoId = entry ? (entry.source === 'youtube' ? entry.videoId : null) : id.startsWith('yt-') ? id.slice(3) : null;
+    const { songs, store } = this.core;
+    const load = isVideoId(videoId)
+      ? songs.loadLink(`https://www.youtube.com/watch?v=${videoId}`)
+      : songs.loadStored(id, entry?.fileName ?? entry?.title ?? name);
+    // Both loads take their token before their first await.
+    const own = songs.loadToken;
+    await load;
+    if (songs.loadToken !== own) return 'superseded';
+    return store.state.song?.hash === id ? 'loaded' : 'failed';
   }
 
   /** Deletes one take (any song's) and refreshes the counts. */

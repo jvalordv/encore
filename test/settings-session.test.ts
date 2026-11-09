@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { saveShift } from '../src/app/key-shift';
 import { loadSettings, SETTINGS_KEY } from '../src/app/settings';
+import { DEFAULT_UI_CHOICES } from '../src/app/ui-choices';
 import { makeHarness } from './session-harness';
 
 const SKINS = ['studio', 'arcade'];
@@ -111,7 +112,7 @@ describe('busy states', () => {
     expect(h.store.state.status?.text).toBe(MESSAGE);
     expect(h.core.current.noteGuide).toBe(true);
     const out = h.core.settings.importText('{"settings":{"noteGuide":false}}', SKINS, 'studio');
-    expect(out).toEqual({ message: MESSAGE, applied: false, skin: null });
+    expect(out).toEqual({ message: MESSAGE, applied: false, skin: null, layout: null });
     expect(h.core.current.noteGuide).toBe(true);
   });
 });
@@ -177,5 +178,78 @@ describe('the settings the inline controls do not own', () => {
     const h = makeHarness(saved);
     expect(h.core.settings.exportText('studio', false)).not.toContain('abc123');
     expect(h.core.settings.exportText('studio', true)).toContain('abc123');
+  });
+});
+
+describe('everything left as it was, in the file', () => {
+  const layout = { width: 360, collapsed: false };
+
+  it('exports the layout and the panel choices, and an import on another page restores them', () => {
+    const h = makeHarness();
+    h.core.ui.set({ libraryAllSingers: true, libraryExpanded: ['hash-a'], micCheckRange: 'high' });
+    h.core.library.setView('favorites');
+    const text = h.core.settings.exportText('studio', false, layout);
+
+    const other = makeHarness();
+    const out = other.core.settings.importText(text, SKINS, 'studio', { width: null, collapsed: false });
+    expect(out.applied).toBe(true);
+    expect(out.layout).toEqual(layout);
+    expect(other.store.state.ui).toMatchObject({
+      libraryAllSingers: true,
+      libraryExpanded: ['hash-a'],
+      micCheckRange: 'high',
+      libraryView: 'favorites',
+    });
+    // The controllers that keep their own copy follow.
+    expect(other.store.state.library.view).toBe('favorites');
+    expect(out.message).toContain('Panel layout');
+    expect(out.message).toContain('Library All singers');
+    expect(JSON.parse(other.settingsStore.get('ui') ?? '{}')).toMatchObject({ libraryAllSingers: true });
+  });
+
+  it('keeps the current width when the file names only the fold', () => {
+    const h = makeHarness();
+    const out = h.core.settings.importText(
+      '{"settings":{},"layout":{"collapsed":true}}',
+      SKINS,
+      'studio',
+      { width: 400, collapsed: false },
+    );
+    expect(out.layout).toEqual({ width: 400, collapsed: true });
+    const none = h.core.settings.importText('{"settings":{},"layout":{}}', SKINS, 'studio', layout);
+    expect(none.layout).toBeNull();
+    expect(none.message).not.toContain('Panel layout');
+  });
+
+  it('does not name the layout as changed when it is the same', () => {
+    const h = makeHarness();
+    const text = h.core.settings.exportText('studio', false, layout);
+    expect(h.core.settings.importText(text, SKINS, 'studio', layout).message).not.toContain('Panel layout');
+  });
+
+  it('keeps the choices an older file does not carry, and the layout it lacks stays null', () => {
+    const h = makeHarness();
+    h.core.ui.set({ takesScope: 'all' });
+    const out = h.core.settings.importText('{"settings":{"noteGuide":true}}', SKINS, 'studio');
+    expect(out.layout).toBeNull();
+    expect(h.store.state.ui.takesScope).toBe('all');
+  });
+
+  it('changes only the choices a file names, and ignores bad values in it', () => {
+    const h = makeHarness();
+    h.core.ui.set({ takesScope: 'all', libraryAllSingers: true });
+    h.core.settings.importText('{"settings":{},"ui":{"libraryAllSingers":false,"takesScope":"bad"}}', SKINS, 'studio');
+    expect(h.store.state.ui.libraryAllSingers).toBe(false);
+    expect(h.store.state.ui.takesScope).toBe('all');
+  });
+
+  it('puts the panel choices back to their defaults on Reset all, leaving takes and singers', () => {
+    const h = makeHarness();
+    h.core.ui.set({ libraryAllSingers: true, libraryExpanded: ['hash-a'], progressSong: 'all' });
+    h.core.backing.setShown(false);
+    expect(h.core.settings.resetAll()).toBe(true);
+    expect(h.store.state.ui).toEqual(DEFAULT_UI_CHOICES);
+    expect(JSON.parse(h.settingsStore.get('ui') ?? '{}')).toMatchObject({ libraryAllSingers: false });
+    expect(h.store.state.backing.shown).toBe(true);
   });
 });

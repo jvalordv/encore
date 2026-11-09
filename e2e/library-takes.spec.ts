@@ -6,7 +6,8 @@
  * row says "2 takes · last sung today" and a song with none says nothing; the
  * "All singers" switch counts the third; the expanded list shows date, time
  * and length and, in karaoke mode, no figures; Replay of another song's take
- * explains plainly and changes nothing; in learning mode the take with a
+ * opens that song, plays the take and leaves the drawer up, and with the song
+ * out of reach says so in one line and changes nothing; in learning mode the take with a
  * report shows its in-tune share; Open loads the song and shows the take's
  * report card; Replay of the loaded song's take plays it and Stop ends it;
  * Delete (two presses) removes that take only and the count drops. The tests
@@ -121,7 +122,10 @@ test.beforeAll(async ({ browser }) => {
   page = await context.newPage();
   page.on('pageerror', (error) => pageErrors.push(`uncaught: ${error.message}`));
   page.on('console', (message) => {
-    if (message.type() === 'error') pageErrors.push(`console.error: ${message.text()}`);
+    // A service that is away is a failed request the browser logs as an error itself.
+    if (message.type() === 'error' && !message.text().includes('Failed to load resource')) {
+      pageErrors.push(`console.error: ${message.text()}`);
+    }
   });
   await page.goto('/');
   await page.waitForFunction(() => window.encore !== undefined);
@@ -167,11 +171,32 @@ test('expanding lists each take with date, time and length, and no figures in ka
   await expect(takes.first().getByRole('button')).toHaveText(['Replay', 'Open', 'Delete']);
 });
 
-test('Replay of a take of another song explains and leaves the loaded song alone', async () => {
-  await rowOf('one').getByTestId('library-take-replay').first().click();
-  await expect(page.getByTestId('library-notice')).toContainText('Press Open');
+test('Replay of a take of another song opens that song, plays the take and leaves the drawer up', async () => {
   expect(await songHash()).toBe(hashTwo);
+  await rowOf('one').getByTestId('library-take-replay').first().click();
+  await expect.poll(songHash).toBe(hashOne);
+  await expect
+    .poll(() => page.evaluate(() => window.encore?.store.state.playingTakeId ?? null))
+    .toBe(seeded.scored);
+  await expect(page.getByTestId('library')).toBeVisible();
+  await expect(page.getByTestId('library-notice')).toBeHidden();
+  // Stop is on the same row; pressing it ends the replay.
+  await rowOf('one').getByTestId('library-take-replay').first().click();
+  await expect.poll(() => page.evaluate(() => window.encore?.store.state.playingTakeId ?? null)).toBeNull();
+});
+
+test('Replay of a take whose song cannot be opened says so in one line and changes nothing', async () => {
+  // Song two's audio lives only on the service, which is now away.
+  await seedTake({ songHash: hashTwo, songName: 'two', createdAt: Date.now() });
+  service.up = false;
+  await page.getByTestId('library-toggle').click();
+  await page.getByTestId('library-toggle').click();
+  await rowOf('two').getByTestId('library-takes-toggle').click();
+  await rowOf('two').getByTestId('library-take-replay').click();
+  await expect(page.getByTestId('library-notice')).toHaveText('Could not open two, so the take was not replayed.');
+  expect(await songHash()).toBe(hashOne);
   expect(await page.evaluate(() => window.encore?.store.state.playingTakeId ?? null)).toBeNull();
+  service.up = true;
 });
 
 test('in learning mode the take with a report shows its in-tune share', async () => {
@@ -213,6 +238,9 @@ test('Delete takes two presses, removes that take only and the count drops', asy
     .poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? ''))
     .toBe('library-take-delete');
   expect(await page.evaluate(() => document.activeElement?.closest('[data-testid="library-take"]') !== null)).toBe(true);
-  const left = await page.evaluate(() => window.encore?.store.state.library.takes.map((t) => t.id) ?? []);
+  const left = await page.evaluate(
+    (hash) => window.encore?.store.state.library.takes.filter((t) => t.songHash === hash).map((t) => t.id) ?? [],
+    hashOne,
+  );
   expect(left.sort()).toEqual([seeded.scored, seeded.kept].sort());
 });

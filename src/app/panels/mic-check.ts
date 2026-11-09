@@ -83,7 +83,8 @@ export interface MicCheckPanelDeps {
   session: Pick<
     Session,
     'startMicCheck' | 'cancelMicCheck' | 'closeMicCheck' | 'applyMicCheck' | 'resetMicTuning' | 'exportTake'
-  >;
+  > &
+    Partial<Pick<Session, 'setUiChoices'>>;
   /** The button beside Calibrate; it opens the panel. */
   toggle: HTMLButtonElement;
 }
@@ -92,7 +93,10 @@ export interface MicCheckPanelDeps {
 export const mountMicCheckPanel: MountPanel<MicCheckPanelDeps> = (host, { store, session, toggle }) => {
   const doc = host.ownerDocument;
   let open = false;
-  let range: MelodyRange = 'low';
+  // The voice range is a remembered choice (state.ui); a session without the
+  // intent keeps it here instead.
+  let localRange: MelodyRange = 'low';
+  const rangeNow = (): MelodyRange => (session.setUiChoices ? store.state.ui.micCheckRange : localRange);
 
   const el = <K extends keyof HTMLElementTagNameMap>(
     tag: K,
@@ -144,13 +148,14 @@ export const mountMicCheckPanel: MountPanel<MicCheckPanelDeps> = (host, { store,
       ['high', 'Higher voice'],
     ] as const) {
       const b = button(text, `mic-check-range-${value}`, () => {
-        range = value;
-        render(store.state);
+        localRange = value;
+        if (session.setUiChoices) session.setUiChoices({ micCheckRange: value });
+        else render(store.state);
       });
-      b.setAttribute('aria-pressed', String(range === value));
+      b.setAttribute('aria-pressed', String(rangeNow() === value));
       choice.append(b);
     }
-    const start = button('Start', 'mic-check-start', () => void session.startMicCheck(range));
+    const start = button('Start', 'mic-check-start', () => void session.startMicCheck(rangeNow()));
     const close = button('Close', 'mic-check-dismiss', () => {
       open = false;
       render(store.state);
@@ -281,7 +286,13 @@ export const mountMicCheckPanel: MountPanel<MicCheckPanelDeps> = (host, { store,
   };
   toggle.addEventListener('click', onToggle);
   const unsubscribe = store.subscribe((state, changed) => {
-    if (changed.has('micCheck') || changed.has('recording') || changed.has('calibrating') || changed.has('tracker')) {
+    if (
+      changed.has('micCheck') ||
+      changed.has('recording') ||
+      changed.has('calibrating') ||
+      changed.has('tracker') ||
+      changed.has('ui')
+    ) {
       render(state);
     } else if (changed.has('input')) {
       updateLive(state);

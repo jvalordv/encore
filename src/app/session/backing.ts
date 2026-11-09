@@ -18,9 +18,12 @@ import type { SessionCore } from './core';
 /** Owns the backing notes and their visibility. */
 export class BackingController {
   private raw: LaneBacking | null = null;
-  private shown = true;
+  private shown: boolean;
 
-  constructor(private readonly core: SessionCore) {}
+  constructor(private readonly core: SessionCore) {
+    this.shown = core.ui.get().backingShown;
+    core.store.patch({ backing: { ...initialBacking(), shown: this.shown } });
+  }
 
   /** Takes the service's notes (or none, to forget them) and shows them. */
   set(notes: BackingNotes | null): void {
@@ -35,17 +38,18 @@ export class BackingController {
     this.syncLane();
   }
 
-  /** Forgets the notes and puts the toggle back to on, for a new song. */
+  /** Forgets the notes for a new song; the toggle keeps the singer's choice. */
   reset(): void {
-    this.shown = true;
+    this.shown = this.core.ui.get().backingShown;
     this.raw = null;
-    this.core.store.patch({ backing: initialBacking() });
+    this.core.store.patch({ backing: { ...initialBacking(), shown: this.shown } });
     this.syncLane();
   }
 
   /** Shows or hides the notes on the lane. */
   setShown(on: boolean): void {
     this.shown = on;
+    this.core.ui.set({ backingShown: on });
     this.core.store.patch({ backing: { ...this.core.store.state.backing, shown: on } });
     this.core.lane?.setBackingShown?.(on);
   }

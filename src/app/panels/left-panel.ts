@@ -49,8 +49,12 @@ export interface LeftPanelDeps {
   storage?: KeyValueStore;
 }
 
-/** The mounted chrome: put the layout back to its default, or take it all down. */
+/** The mounted chrome: read, apply or reset the layout, or take it all down. */
 export interface LeftPanel {
+  /** The layout now in force (width null = the default). */
+  get(): PanelLayout;
+  /** Applies a layout and remembers it (the settings import). */
+  set(next: PanelLayout): void;
   reset(): void;
   dispose(): void;
 }
@@ -374,6 +378,8 @@ export function mountLeftPanel(doc: Document, deps: LeftPanelDeps = {}): LeftPan
   apply();
 
   return {
+    get: () => ({ ...layout }),
+    set: (next) => setLayout({ ...next }, true),
     reset(): void {
       layout = { ...DEFAULT_LAYOUT };
       apply();

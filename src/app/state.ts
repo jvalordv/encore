@@ -54,6 +54,8 @@ import type { PracticeMode, ScoringStyle } from './settings';
 import { initialLibrary } from './library-state';
 import type { LibraryState } from './library-state';
 import type { TakeSummary } from './takes';
+import { sanitizeUiChoices } from './ui-choices';
+import type { UiChoices } from './ui-choices';
 
 /** How loudly the status line should speak. */
 export type StatusKind = 'info' | 'warn' | 'error';
@@ -160,6 +162,8 @@ export interface AppState {
    * can redraw when the Settings panel or an import changes it.
    */
   settingsRev: number;
+  /** The remembered panel choices (src/app/ui-choices.ts); the Session writes them. */
+  ui: UiChoices;
   /** What the note guide reads now; null with the guide off or no voice. */
   guideReading: GuideNote | null;
   /** What the song panel knows about the song's key, which Open scores against. */
@@ -251,6 +255,7 @@ export function initialState(): AppState {
     keyboard: true,
     hoverHelp: true,
     settingsRev: 0,
+    ui: sanitizeUiChoices(null),
     guideReading: null,
     key: initialKey(),
     keyShift: initialKeyShift(),

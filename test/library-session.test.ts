@@ -140,6 +140,15 @@ describe('favorites and removal', () => {
     expect(await h.takeStore.list('hash-a.mp3')).toHaveLength(1);
     expect(h.store.state.library.notice).toContain('takes are kept');
   });
+
+  it('forgets the expanded row of a removed song', async () => {
+    const h = makeHarness();
+    await load(h, 'a.mp3');
+    await load(h, 'b.mp3');
+    h.core.ui.set({ libraryExpanded: ['hash-a.mp3', 'hash-b.mp3'] });
+    await h.core.library.removeEntry('hash-a.mp3');
+    expect(h.store.state.ui.libraryExpanded).toEqual(['hash-b.mp3']);
+  });
 });
 
 describe('takes in the Library', () => {
@@ -178,16 +187,125 @@ describe('takes in the Library', () => {
     expect(h.store.state.library.takes).toEqual([]);
   });
 
-  it('will not replay another songs take, and says how to get there', async () => {
+  /** A harness with two songs loaded (b in use), one take of a, the Library open. */
+  async function replayable() {
     const h = makeHarness();
     await load(h, 'a.mp3');
     await load(h, 'b.mp3');
     const id = await save(h, 'hash-a.mp3', 1);
+    const mine = await save(h, 'hash-b.mp3', 2);
+    serviceHolds([]);
     h.core.library.setOpen(true);
-    await vi.waitFor(() => expect(h.store.state.library.takes).toHaveLength(1));
+    await vi.waitFor(() => expect(h.store.state.library.takes).toHaveLength(2));
+    const playTake = vi.spyOn(h.core.takes, 'playTake').mockResolvedValue();
+    return { h, id, mine, playTake };
+  }
+
+  it('replays a take of another song by opening that song first, drawer left up', async () => {
+    const { h, id, playTake } = await replayable();
     await h.core.library.replayTake(id);
-    expect(h.store.state.playingTakeId).toBeNull();
-    expect(h.store.state.library.notice).toContain('Open');
+    expect(ServiceClient.prototype.fetchSongAudio).toHaveBeenCalledWith('hash-a.mp3');
+    expect(h.store.state.song?.hash).toBe('hash-a.mp3');
+    expect(playTake).toHaveBeenCalledTimes(1);
+    expect(playTake).toHaveBeenCalledWith(id);
+    expect(h.store.state.library.open).toBe(true);
+    expect(h.store.state.library.notice).toBe('');
+  });
+
+  it('says what it is opening while the song loads', async () => {
+    const { h, id } = await replayable();
+    let release: (bytes: ArrayBuffer) => void = () => {};
+    vi.spyOn(ServiceClient.prototype, 'fetchSongAudio').mockReturnValue(
+      new Promise<ArrayBuffer>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const done = h.core.library.replayTake(id);
+    await vi.waitFor(() => expect(h.store.state.library.notice).toBe('Opening hash-a.mp3 to replay…'));
+    release(new ArrayBuffer(8));
+    await done;
+    expect(h.store.state.library.notice).toBe('');
+  });
+
+  it('starts nothing twice when the same Replay is pressed while the song opens', async () => {
+    const { h, id, playTake } = await replayable();
+    let release: (bytes: ArrayBuffer) => void = () => {};
+    const fetchAudio = vi.spyOn(ServiceClient.prototype, 'fetchSongAudio').mockReturnValue(
+      new Promise<ArrayBuffer>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const first = h.core.library.replayTake(id);
+    await vi.waitFor(() => expect(fetchAudio).toHaveBeenCalledTimes(1));
+    await h.core.library.replayTake(id);
+    release(new ArrayBuffer(8));
+    await first;
+    expect(fetchAudio).toHaveBeenCalledTimes(1);
+    expect(playTake).toHaveBeenCalledTimes(1);
+  });
+
+  it('steps aside, with no failure line, when another load takes over while the song opens', async () => {
+    const { h, id, playTake } = await replayable();
+    let release: (bytes: ArrayBuffer) => void = () => {};
+    const fetchAudio = vi.spyOn(ServiceClient.prototype, 'fetchSongAudio').mockReturnValue(
+      new Promise<ArrayBuffer>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const first = h.core.library.replayTake(id);
+    await vi.waitFor(() => expect(fetchAudio).toHaveBeenCalledTimes(1));
+    // Another load takes the token, as Open, a row's Load or a drop does; the
+    // fake player would still show this load's song, so only the token is moved.
+    h.core.songs.loadToken++;
+    release(new ArrayBuffer(8));
+    await first;
+    expect(h.store.state.library.notice).toBe('');
+    expect(playTake).not.toHaveBeenCalled();
+  });
+
+  it('leaves no failure notice behind when the drawer was closed while the song opened', async () => {
+    const { h, id } = await replayable();
+    let fail: (error: Error) => void = () => {};
+    vi.spyOn(ServiceClient.prototype, 'getSong').mockReturnValue(
+      new Promise<SongStatus>((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    const done = h.core.library.replayTake(id);
+    await vi.waitFor(() => expect(h.store.state.library.notice).toBe('Opening hash-a.mp3 to replay…'));
+    h.core.library.setOpen(false);
+    fail(new ServiceError('unreachable', 'down'));
+    await done;
+    expect(h.store.state.library.notice).toBe('');
+  });
+
+  it('refuses plainly while a take is recording, and loads nothing', async () => {
+    const { h, id, playTake } = await replayable();
+    h.store.patch({ recording: true });
+    await h.core.library.replayTake(id);
+    expect(h.store.state.library.notice).toBe('Finish recording before replaying a take.');
+    expect(h.store.state.song?.hash).toBe('hash-b.mp3');
+    expect(playTake).not.toHaveBeenCalled();
+  });
+
+  it('says so in one line, and changes nothing, when the song cannot be loaded', async () => {
+    const { h, id, playTake } = await replayable();
+    vi.spyOn(ServiceClient.prototype, 'getSong').mockRejectedValue(new ServiceError('unreachable', 'down'));
+    await h.core.library.replayTake(id);
+    expect(h.store.state.song?.hash).toBe('hash-b.mp3');
+    expect(h.store.state.library.notice).toBe('Could not open hash-a.mp3, so the take was not replayed.');
+    expect(playTake).not.toHaveBeenCalled();
+    // The failure leaves the way open for another try.
+    vi.spyOn(ServiceClient.prototype, 'getSong').mockImplementation(async (sid) => failedStatus(sid));
+    await h.core.library.replayTake(id);
+    expect(playTake).toHaveBeenCalledTimes(1);
+  });
+
+  it('plays a take of the song in use at once, without loading anything', async () => {
+    const { h, mine, playTake } = await replayable();
+    await h.core.library.replayTake(mine);
+    expect(ServiceClient.prototype.fetchSongAudio).not.toHaveBeenCalled();
+    expect(playTake).toHaveBeenCalledWith(mine);
   });
 
   it('opens a take: loads its song; a take with no report has no card', async () => {

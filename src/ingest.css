@@ -61,3 +61,11 @@
 .ingest-problems[hidden] {
   display: none;
 }
+
+.ingest-dismiss {
+  align-self: flex-start;
+}
+
+.ingest-dismiss[hidden] {
+  display: none;
+}

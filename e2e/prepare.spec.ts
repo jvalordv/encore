@@ -960,7 +960,7 @@ test('18. a service check not yet answered when a newer load fails is asked agai
   await expect(prepareButton()).toBeEnabled();
   expect(service.songRequests()).toEqual([]);
   // The file that would not play is named under the drop zone, and is no song.
-  await expect(page.getByTestId('ingest-problems')).toContainText('bad.mp3: It could not be read as audio.');
+  await expect(page.getByTestId('ingest-problems')).toContainText('bad.mp3: no readable audio in this file.');
 });
 
 /** Waits until the engine's own clock has reached `positionS` in the song. */

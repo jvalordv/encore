@@ -16,9 +16,11 @@
  * opens the song's takes: date, time and length of each, who sang it under the
  * drawer's "All singers" switch (otherwise the active singer's takes are the
  * ones counted), and, in learning mode only, the in-tune share and stars of a
- * take that has a report. Each take has Replay (over its song, which must be
- * the one loaded), Open (loads the song and, in learning mode, the take's
- * report card) and Delete (two presses). Karaoke mode shows no figures.
+ * take that has a report. Each take has Replay (over its song; another song
+ * is opened first, the drawer staying up, and the take plays once it is
+ * ready), Open (loads the song and, in learning mode, the take's report card)
+ * and Delete (two presses). Karaoke mode shows no figures. The All singers
+ * switch, the open rows and the list shown are remembered (state.ui).
  */
 import { downloadBlob } from '../download';
 import { STAR_MEASURE_SHORT } from '../../analysis/stars';
@@ -32,6 +34,7 @@ import type { TakeScope } from '../song-takes';
 import { formatClock } from '../state';
 import type { AppState, StateStore } from '../state';
 import type { TakeSummary } from '../takes';
+import { toggledId } from '../ui-choices';
 import type { MountPanel } from './panel';
 
 /** A first Remove press waits this long for a confirming second press. */
@@ -47,6 +50,7 @@ const WATCHED: ReadonlyArray<keyof AppState> = [
   'playingTakeId',
   'recording',
   'calibrating',
+  'ui',
 ];
 
 /** What the panel needs: the state, the intents and the buttons it works with. */
@@ -62,6 +66,7 @@ export interface LibraryPanelDeps {
     | 'replayLibraryTake'
     | 'deleteLibraryTake'
     | 'stopTake'
+    | 'setUiChoices'
     | 'useAsOriginal'
     | 'toggleFavorite'
     | 'moveFavorite'
@@ -98,10 +103,8 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
   let armedTakeId: string | null = null;
   /** Where focus goes when the control it sits on (`from`) is removed by a render. */
   let pendingFocus: { from: string; to: string[] } | null = null;
-  /** Songs whose takes are listed open. */
-  const expanded = new Set<string>();
-  /** The "All singers" switch: count everyone's takes, not the active singer's. */
-  let allSingers = false;
+  // The "All singers" switch and the songs whose takes are listed open are
+  // remembered choices (state.ui), so they survive a reload and the export.
 
   function make<K extends keyof HTMLElementTagNameMap>(tag: K, testid: string, className = ''): HTMLElementTagNameMap[K] {
     const el = doc.createElement(tag);
@@ -182,10 +185,7 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
   const importButton = button('Import', 'library-import', () => importFile.click());
   tools.append(playTop, autoLabel, exportButton, importButton, importFile);
   listen(auto, 'change', () => session.setAutoAdvance(auto.checked));
-  listen(singers, 'change', () => {
-    allSingers = singers.checked;
-    render(store.state);
-  });
+  listen(singers, 'change', () => session.setUiChoices({ libraryAllSingers: singers.checked }));
   listen(importFile, 'change', () => {
     const file = importFile.files?.[0];
     importFile.value = '';
@@ -227,7 +227,7 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
     const day = dayLabel(take.createdAt, Date.now());
     const time = new Date(take.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const parts = [`${day.charAt(0).toUpperCase()}${day.slice(1)} ${time}`, formatClock(take.durationS)];
-    const owner = allSingers ? ownerName(take, state.profiles) : undefined;
+    const owner = scope.allSingers ? ownerName(take, state.profiles) : undefined;
     if (owner) parts.push(owner);
     const label = make('span', 'library-take-label', 'library-take-label');
     const text = parts.join(' · ');
@@ -359,13 +359,12 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
     item.append(starButton, load, actions);
     const songTakes = taken[entry.id] ?? [];
     if (songTakes.length > 0) {
-      const listed = expanded.has(entry.id);
+      const listed = state.ui.libraryExpanded.includes(entry.id);
       const toggleTakes = button(
         takesLine(songTakes, Date.now()),
         'library-takes-toggle',
         () => {
-          if (!expanded.delete(entry.id)) expanded.add(entry.id);
-          render(store.state);
+          session.setUiChoices({ libraryExpanded: toggledId(store.state.ui.libraryExpanded, entry.id) });
         },
         'takes-toggle',
       );
@@ -416,6 +415,7 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
     setText(notice, library.notice);
     notice.hidden = library.notice === '';
 
+    const allSingers = state.ui.libraryAllSingers;
     singers.checked = allSingers;
     const scope: TakeScope = { allSingers, activeId: state.profiles.activeId, legacyId: state.profiles.legacyId };
     const taken = takesBySong(library.takes, scope);

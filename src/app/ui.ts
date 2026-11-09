@@ -377,7 +377,7 @@ export function mountUI(session: Session, root: Document = document): UI {
   // The song's karaoke track and its mix are a panel of their own.
   cleanups.push(mountSongReferencePanel(get('song-reference'), { store, session }));
   // The bar under the drop zone: every song dropped together, analysed up front.
-  cleanups.push(mountIngestPanel(get('ingest'), { store }));
+  cleanups.push(mountIngestPanel(get('ingest'), { store, session }));
   cleanups.push(mountKaraokePanel(get('karaoke'), { store, session }));
   // The mode toggle, the takes list and learning mode's notice and report card.
   cleanups.push(mountModePanel(get('mode'), { store, session }));

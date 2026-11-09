@@ -268,10 +268,54 @@ describe('songs dropped together', () => {
     h.core.ingest.addFiles([file('a.mp3'), file('b.mp3')]);
     await finished(h);
     expect(h.store.state.ingest.items.map((i) => i.phase)).toEqual(['failed', 'done']);
-    expect(ingestView(h.store.state.ingest).failures).toEqual(['a.mp3: It could not be read as audio.']);
+    expect(ingestView(h.store.state.ingest).failures).toEqual(['a.mp3: no readable audio in this file.']);
     expect(answers.upload.mock.calls.map(([f]) => f.name)).toEqual(['b.mp3']);
     expect(h.store.state.library.entries.some((e) => e.title === 'a')).toBe(false);
     await vi.waitFor(() => expect(entryTitled(h, 'b')?.melody).toBe(true));
+  });
+
+  it('names a lone file that would not decode, and the line stays until the next drop or Dismiss', async () => {
+    const h = makeHarness();
+    h.player.load.mockRejectedValueOnce(new Error('Unable to decode audio data'));
+    h.core.ingest.addFiles([file('a.mp3')]);
+    await finished(h);
+    expect(ingestView(h.store.state.ingest)).toMatchObject({
+      visible: true,
+      busy: false,
+      failures: ['a.mp3: no readable audio in this file.'],
+    });
+    // Nothing is running, yet the line is still there a moment later.
+    await Promise.resolve();
+    expect(ingestView(h.store.state.ingest).failures).toHaveLength(1);
+    h.core.ingest.dismiss();
+    expect(ingestView(h.store.state.ingest)).toMatchObject({ visible: false, failures: [], skipped: [] });
+  });
+
+  it('keeps a non-audio file line when the queue is idle, until Dismiss clears it', () => {
+    const h = makeHarness();
+    h.core.ingest.addFiles([file('notes.txt', 'text/plain')]);
+    expect(ingestView(h.store.state.ingest).skipped).toEqual(['notes.txt is not an audio file, so it was skipped.']);
+    h.core.ingest.dismiss();
+    expect(ingestView(h.store.state.ingest).visible).toBe(false);
+  });
+
+  it('does not dismiss while songs are being analysed', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const answers = service({ 'a.mp3': statusFor('a.mp3') });
+    answers.upload.mockImplementation(async (f) => {
+      await gate;
+      return statusFor(f.name);
+    });
+    const h = makeHarness();
+    h.core.ingest.addFiles([file('a.mp3')]);
+    await vi.waitFor(() => expect(isBusy(h.store.state.ingest)).toBe(true));
+    h.core.ingest.dismiss();
+    expect(isBusy(h.store.state.ingest)).toBe(true);
+    release();
+    await finished(h);
   });
 
   it('shows only the skipped line when nothing dropped was audio', () => {

@@ -66,6 +66,8 @@ import { SessionCore } from './session/core';
 import type { ProfilesController } from './session/profiles';
 import { buildParts } from './session/parts';
 import type { ImportOutcome } from './session/settings';
+import type { PanelLayout } from './panel-layout';
+import type { UiChoices } from './ui-choices';
 import type { DeviceLists, LaneSink, SessionOptions, SessionParts } from './session/types';
 import { loadSettings } from './settings';
 import type { PracticeMode, ScoringStyle, Settings } from './settings';
@@ -218,6 +220,11 @@ export class Session {
    */
   addSongs(files: readonly File[]): void {
     this.core.ingest.addFiles(files);
+  }
+
+  /** Clears the lines a finished drop left under the drop zone. */
+  dismissIngest(): void {
+    this.core.ingest.dismiss();
   }
 
   /** Loads a pasted YouTube link into the embedded player as the song. */
@@ -619,13 +626,18 @@ export class Session {
   }
 
   /** The text of a settings file; the search key only when `includeKey`. */
-  exportSettings(skin: string, includeKey: boolean): string {
-    return this.core.settings.exportText(skin, includeKey);
+  exportSettings(skin: string, includeKey: boolean, layout?: PanelLayout): string {
+    return this.core.settings.exportText(skin, includeKey, layout);
   }
 
   /** Applies a settings file and says, in one sentence, what changed. */
-  importSettings(text: string, skinIds: readonly string[], skin: string): ImportOutcome {
-    return this.core.settings.importText(text, skinIds, skin);
+  importSettings(text: string, skinIds: readonly string[], skin: string, layout?: PanelLayout): ImportOutcome {
+    return this.core.settings.importText(text, skinIds, skin, layout);
+  }
+
+  /** Remembers some panel choices (the Library's All singers switch, ...). */
+  setUiChoices(patch: Partial<UiChoices>): void {
+    this.core.ui.set(patch);
   }
 
   /** Puts every setting back to its default; takes and the Library stay. */

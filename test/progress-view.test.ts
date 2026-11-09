@@ -148,7 +148,7 @@ const PROFILES = {
 };
 
 function fakeStore(mode: Mode) {
-  const state = { mode, song: { hash: 'h1' }, profiles: { ...PROFILES }, library: { open: false } };
+  const state = { mode, song: { hash: 'h1' }, profiles: { ...PROFILES }, library: { open: false }, ui: { progressSong: null as string | null } };
   const subs = new Set<Listener>();
   const store = {
     state,
@@ -187,6 +187,13 @@ function setup(mode: Mode, takes: TakeSummary[]) {
         return Promise.resolve(takes);
       },
       setLibraryOpen: (open: boolean) => void calls.library.push(open),
+      // The Session remembers the choice in state.ui and announces it.
+      setUiChoices: (patch: { progressSong?: string | null }) => {
+        if (patch.progressSong === undefined) return;
+        const before = fake.store.state.ui.progressSong;
+        (fake.store.state.ui as { progressSong: string | null }).progressSong = patch.progressSong;
+        if (before !== patch.progressSong) fake.emit('ui');
+      },
     },
     toggle,
     settingsToggle,
@@ -277,6 +284,24 @@ describe('mountProgressPanel', () => {
     await t.flush();
     expect(byTestId(t.host, 'progress-count').textContent).toContain('No learning takes for Cy yet');
     expect(t.host.byTestId('progress-row')).toBeUndefined();
+  });
+
+  it('forgets the remembered song only when the singer really changes', async () => {
+    const t = setup('learning', [strictTake('a', 0, 0.4, 1)]);
+    const state = t.fake.store.state as { profiles: typeof PROFILES; ui: { progressSong: string | null } };
+    state.ui.progressSong = 'h9';
+    // A change to the list while the drawer is shut (a rename) keeps the choice.
+    state.profiles = { ...PROFILES, list: [{ id: 'p1', name: 'Anna', colour: null }, PROFILES.list[1]] };
+    t.fake.emit('profiles');
+    expect(state.ui.progressSong).toBe('h9');
+    state.profiles = { ...PROFILES, activeId: 'p2' };
+    t.fake.emit('profiles');
+    expect(state.ui.progressSong).toBeNull();
+    // The drawer has not loaded since, but a later rename is not a switch.
+    state.ui.progressSong = 'h8';
+    state.profiles = { ...PROFILES, activeId: 'p2', list: [PROFILES.list[0], { id: 'p2', name: 'Bob', colour: null }] };
+    t.fake.emit('profiles');
+    expect(state.ui.progressSong).toBe('h8');
   });
 
   it('moves focus in, and closes with the x, Escape and a press outside', () => {

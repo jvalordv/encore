@@ -202,12 +202,13 @@ describe('the session and the backing notes', () => {
     expect(h.core.backing.notesForExport()?.[0].midi).toBe(48);
   });
 
-  it('forgets the notes for a new song and turns the toggle back on', () => {
+  it('forgets the notes for a new song and keeps the toggle where the singer left it', () => {
     const { h, setBacking } = ready();
     h.core.backing.set({ notes: CHORDS });
     h.core.backing.setShown(false);
     h.core.backing.reset();
-    expect(h.store.state.backing).toEqual({ phase: 'none', notes: 0, shown: true });
+    expect(h.store.state.backing).toEqual({ phase: 'none', notes: 0, shown: false });
+    expect(h.store.state.ui.backingShown).toBe(false);
     expect(setBacking).toHaveBeenLastCalledWith(null);
     expect(h.core.backing.notesForExport()).toBeNull();
   });

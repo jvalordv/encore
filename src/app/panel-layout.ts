@@ -112,19 +112,50 @@ export function keyResult(key: string, shift: boolean, current: number, windowWi
 /** The remembered layout from its stored text; anything unusable reads as the default. */
 export function parseLayout(raw: string | null): PanelLayout {
   if (raw === null) return { ...DEFAULT_LAYOUT };
-  let value: unknown;
   try {
-    value = JSON.parse(raw);
+    return layoutFromValue(JSON.parse(raw)) ?? { ...DEFAULT_LAYOUT };
   } catch {
     return { ...DEFAULT_LAYOUT };
   }
-  if (typeof value !== 'object' || value === null) return { ...DEFAULT_LAYOUT };
+}
+
+/**
+ * A layout from a parsed value (the stored text, or the `layout` of a settings
+ * export): null when it is not an object, otherwise the layout with an
+ * unusable width read as the default and unknown fields ignored.
+ */
+export function layoutFromValue(value: unknown): PanelLayout | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const { width, collapsed } = value as Record<string, unknown>;
-  const usable = typeof width === 'number' && Number.isFinite(width) && width >= MIN_WIDTH && width <= 4000;
   return {
-    width: usable ? Math.round(width) : null,
+    width: usableWidth(width) ? Math.round(width) : null,
     collapsed: collapsed === true,
   };
+}
+
+function usableWidth(width: unknown): width is number {
+  return typeof width === 'number' && Number.isFinite(width) && width >= MIN_WIDTH && width <= 4000;
+}
+
+/**
+ * The fields of a settings file's `layout` that are usable: a width that is a
+ * number in range or null (the default), a fold that is a boolean. Null when
+ * the value carries neither, so a partial or garbled layout cannot undo what
+ * the singer set; the caller keeps the current value of each missing field.
+ */
+export function layoutPatchFromValue(value: unknown): Partial<PanelLayout> | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const { width, collapsed } = value as Record<string, unknown>;
+  const patch: Partial<PanelLayout> = {};
+  if (width === null) patch.width = null;
+  else if (usableWidth(width)) patch.width = Math.round(width);
+  if (typeof collapsed === 'boolean') patch.collapsed = collapsed;
+  return 'width' in patch || 'collapsed' in patch ? patch : null;
+}
+
+/** True when two layouts are the same width and fold. */
+export function layoutsEqual(a: PanelLayout, b: PanelLayout): boolean {
+  return a.width === b.width && a.collapsed === b.collapsed;
 }
 
 /** The layout as the text kept in storage. */

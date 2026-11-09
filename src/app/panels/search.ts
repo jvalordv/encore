@@ -25,13 +25,14 @@ export interface SearchPanelDeps {
   session: Pick<
     Session,
     'searchSongs' | 'findOriginal' | 'pickResult' | 'setSearchFilter' | 'setSearchOpen' | 'setSearchKey'
-  >;
+  > &
+    Partial<Pick<Session, 'setUiChoices'>>;
   /** The button in the song panel that brings the search back over a loaded song. */
   toggle: HTMLButtonElement;
 }
 
 /** The keys of the state the panel is drawn from. */
-const WATCHED: ReadonlyArray<keyof AppState> = ['search', 'song'];
+const WATCHED: ReadonlyArray<keyof AppState> = ['search', 'song', 'ui'];
 
 const FILTERS: ReadonlyArray<{ filter: SearchFilter; label: string }> = [
   { filter: 'karaoke', label: 'Karaoke versions' },
@@ -169,6 +170,11 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
   keyNote.className = 'song-meta';
   keyNote.textContent = KEY_HELP;
   keyBox.append(keyForm, keyNote);
+  // A toggle caused by the render above matches the state already and stores
+  // nothing; one the person makes, with a key saved, is remembered.
+  listen(keyBox, 'toggle', () => {
+    if (store.state.search.hasKey) session.setUiChoices?.({ searchKeyOpen: keyBox.open });
+  });
   listen(keyForm, 'submit', (ev) => {
     ev.preventDefault();
     if (session.setSearchKey(keyInput.value)) keyInput.value = '';
@@ -293,8 +299,10 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
     setup.hidden = search.hasKey;
     keyForget.hidden = !search.hasKey;
     keyInput.placeholder = search.hasKey ? 'Paste a new key to replace it' : 'Paste your key';
-    // Open for a first key; once there is one the person decides.
-    if (!search.hasKey) keyBox.open = true;
+    // Open for a first key; once there is one the person decides, and the
+    // choice is remembered.
+    const wantOpen = !search.hasKey || state.ui.searchKeyOpen;
+    if (keyBox.open !== wantOpen) keyBox.open = wantOpen;
   }
 
   render(store.state);

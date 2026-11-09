@@ -132,6 +132,29 @@ test('a song the service refuses is named with its reason, a file that is not au
   expect(service.count('POST', '/songs')).toBe(2);
 });
 
+test('a single garbage .mp3 is named under the drop zone and the line stays until it is dismissed or the next drop', async () => {
+  const garbage = { name: 'garbage.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('this is not audio at all, just words') };
+  await choose([garbage]);
+  await expect(problems()).toContainText('garbage.mp3: no readable audio in this file.');
+  // Nothing is running, yet the line is still there, with the way to clear it.
+  await expect(bar()).toBeHidden();
+  await page.waitForTimeout(500);
+  await expect(problems()).toContainText('garbage.mp3: no readable audio in this file.');
+  expect(service.songRequests()).toEqual([]);
+  expect(await page.evaluate(() => window.encore!.store.state.song)).toBeNull();
+
+  await page.getByTestId('ingest-dismiss').click();
+  await expect(page.getByTestId('ingest')).toBeHidden();
+
+  // A file that is not audio at all, dropped alone with the queue idle, gets its line too.
+  await choose([NOTES]);
+  await expect(problems()).toContainText('notes.txt is not an audio file, so it was skipped.');
+  // The next drop replaces the lines.
+  await choose([garbage]);
+  await expect(problems()).toContainText('garbage.mp3: no readable audio in this file.');
+  await expect(problems()).not.toContainText('notes.txt');
+});
+
 test('without the service the songs are still added, and the bar says once that the analysis needs it', async () => {
   service.up = false;
   await choose([A, B, C]);

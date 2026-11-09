@@ -123,6 +123,9 @@ export function skippedLine(name: string): string {
   return `${name} is not an audio file, so it was skipped.`;
 }
 
+/** Why a file the browser could not decode failed, after "<name>: ". */
+export const UNREADABLE_REASON = 'no readable audio in this file.';
+
 /** The line under the bar for a song that failed. */
 export function failureLine(item: Pick<IngestItem, 'name' | 'failure'>): string {
   return `${item.name}: ${item.failure}`;

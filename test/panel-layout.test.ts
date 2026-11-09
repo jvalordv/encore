@@ -19,6 +19,9 @@ import {
   defaultWidth,
   effectiveWidth,
   keyResult,
+  layoutFromValue,
+  layoutPatchFromValue,
+  layoutsEqual,
   maxWidth,
   nextInfoOpen,
   parseLayout,
@@ -155,5 +158,30 @@ describe('the rail sections', () => {
       expect(section.glyph.length).toBeGreaterThan(0);
       expect(section.glyph.length).toBeLessThanOrEqual(2);
     }
+  });
+});
+
+describe('layoutFromValue', () => {
+  it('reads a layout object, and nothing else', () => {
+    expect(layoutFromValue({ width: 300.4, collapsed: true, extra: 1 })).toEqual({ width: 300, collapsed: true });
+    expect(layoutFromValue({ width: 5, collapsed: 'yes' })).toEqual({ width: null, collapsed: false });
+    expect(layoutFromValue({})).toEqual(DEFAULT_LAYOUT);
+    for (const bad of [null, undefined, 'wide', 7, [300]]) expect(layoutFromValue(bad)).toBeNull();
+  });
+
+  it('compares layouts by width and fold', () => {
+    expect(layoutsEqual({ width: 300, collapsed: false }, { width: 300, collapsed: false })).toBe(true);
+    expect(layoutsEqual({ width: 300, collapsed: false }, { width: null, collapsed: false })).toBe(false);
+    expect(layoutsEqual({ width: null, collapsed: true }, DEFAULT_LAYOUT)).toBe(false);
+  });
+});
+
+describe('layoutPatchFromValue', () => {
+  it('keeps only the usable fields', () => {
+    expect(layoutPatchFromValue({ width: 300.4, collapsed: true })).toEqual({ width: 300, collapsed: true });
+    expect(layoutPatchFromValue({ width: null })).toEqual({ width: null });
+    expect(layoutPatchFromValue({ collapsed: true, width: 'x' })).toEqual({ collapsed: true });
+    expect(layoutPatchFromValue({ width: 5, collapsed: 'yes' })).toBeNull();
+    for (const bad of [{}, null, undefined, 'wide', 7, [300]]) expect(layoutPatchFromValue(bad)).toBeNull();
   });
 });

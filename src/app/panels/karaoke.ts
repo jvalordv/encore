@@ -23,11 +23,12 @@ import type { MountPanel } from './panel';
 /** What the panel needs: the state to draw, and the two intents it calls. */
 export interface KaraokePanelDeps {
   store: StateStore;
-  session: Pick<Session, 'setMix' | 'setGuideLevel' | 'melodyForExport'> & Partial<Pick<Session, 'setBackingShown'>>;
+  session: Pick<Session, 'setMix' | 'setGuideLevel' | 'melodyForExport'> &
+    Partial<Pick<Session, 'setBackingShown' | 'setUiChoices'>>;
 }
 
 /** The keys of the state the panel is drawn from. */
-const WATCHED: ReadonlyArray<keyof AppState> = ['karaoke', 'reference', 'mix', 'align', 'backing'];
+const WATCHED: ReadonlyArray<keyof AppState> = ['karaoke', 'reference', 'mix', 'align', 'backing', 'ui'];
 
 function element<K extends keyof HTMLElementTagNameMap>(
   doc: Document,
@@ -90,6 +91,9 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
   withLabel.dataset.help = 'Save the backing as a second track in the .mid file.';
   const withBacking = element(doc, 'input', 'save-with-backing');
   withBacking.type = 'checkbox';
+  const onWith = (): void => session.setUiChoices?.({ saveWithBacking: withBacking.checked });
+  withBacking.addEventListener('change', onWith);
+  cleanups.push(() => withBacking.removeEventListener('change', onWith));
   withLabel.append(withBacking, doc.createTextNode(' with backing'));
   backingBox.append(showLabel, withLabel);
 
@@ -170,6 +174,7 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
     backingBox.dataset.phase = state.backing.phase;
     backingBox.dataset.notes = String(state.backing.notes);
     showBacking.checked = state.backing.shown;
+    withBacking.checked = state.ui.saveWithBacking;
 
     mixBox.hidden = !view.mixVisible;
     for (const [choice, button] of buttons) {

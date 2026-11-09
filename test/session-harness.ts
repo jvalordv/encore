@@ -266,8 +266,11 @@ export interface Harness {
  * Builds a SessionCore over fake parts; `saved` seeds the settings store and
  * `search` replaces what the song search reaches out with.
  */
-export function makeHarness(saved?: Record<string, unknown>, search?: SearchOptions): Harness {
-  const settingsStore = memoryStore();
+export function makeHarness(
+  saved?: Record<string, unknown>,
+  search?: SearchOptions,
+  settingsStore: KeyValueStore = memoryStore(),
+): Harness {
   if (saved) settingsStore.set('settings', JSON.stringify(saved));
   const store = new StateStore();
   const takeStore = memoryTakeStore();

@@ -42,6 +42,7 @@ import { SongController } from './songs';
 import { SongReferenceController } from './song-reference';
 import { StemsController } from './stems';
 import { TakeController } from './takes';
+import { UiChoicesController } from './ui-choices';
 import type { LaneSink, SecondParts, SessionParts } from './types';
 
 /** What the core is built from; the Session facade fills it from its options. */
@@ -101,6 +102,7 @@ export class SessionCore {
   readonly library: LibraryController;
   readonly ingest: IngestController;
   readonly settings: SettingsController;
+  readonly ui: UiChoicesController;
   readonly duet: DuetController;
   readonly profiles: ProfilesController;
   readonly loop: TickLoop;
@@ -116,6 +118,8 @@ export class SessionCore {
     // The take controller goes first so its frame subscriber runs before the
     // lane's (the scoring controller feeds the lane), as the take recorded a
     // frame before the lane drew it.
+    // First, so the controllers below start from the remembered choices.
+    this.ui = new UiChoicesController(this);
     this.takes = new TakeController(this);
     this.scoring = new ScoringController(this);
     this.songs = new SongController(this, init.youtubeApi);

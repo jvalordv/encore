@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { describeImport, exportSettingsText, parseSettingsText, SETTINGS_FILE_APP } from '../src/app/settings-io';
 import { DEFAULT_SETTINGS, MAX_EMBED_OFFSET_S, sanitizeSettings } from '../src/app/settings';
+import { sanitizeUiChoices } from '../src/app/ui-choices';
 
 const SKINS = ['studio', 'arcade', 'dreamhouse'];
 const current = sanitizeSettings({ youtubeApiKey: 'AIzaSyA-secret-key-1234567890abcdefghijk', noteGuide: true });
@@ -130,5 +131,62 @@ describe('describeImport', () => {
   it('says so when nothing changed', () => {
     const parsed = parseSettingsText(JSON.stringify({ settings: {} }), DEFAULT_SETTINGS, SKINS);
     expect(describeImport(parsed!, [])).toBe('Nothing changed: the file matches the settings already in use.');
+  });
+});
+
+describe('the song panel layout and the panel choices in the file', () => {
+  const layout = { width: 340, collapsed: true };
+  const ui = sanitizeUiChoices({ libraryAllSingers: true, libraryExpanded: ['hash-a'], takesScope: 'all' });
+
+  it('carries both out and back in', () => {
+    const file = JSON.parse(exportSettingsText(current, { ...extras, layout, ui }, false));
+    expect(file.layout).toEqual(layout);
+    expect(file.ui).toMatchObject({ libraryAllSingers: true, libraryExpanded: ['hash-a'], takesScope: 'all' });
+    const parsed = parseSettingsText(JSON.stringify(file), DEFAULT_SETTINGS, SKINS);
+    expect(parsed?.layout).toEqual(layout);
+    expect(parsed?.ui).toMatchObject({ libraryAllSingers: true, libraryExpanded: ['hash-a'], takesScope: 'all' });
+    expect(parsed?.ignored).toBe(0);
+  });
+
+  it('leaves them out of a file made without them, and reads such a file as carrying none', () => {
+    const file = JSON.parse(exportSettingsText(current, extras, false));
+    expect('layout' in file).toBe(false);
+    expect('ui' in file).toBe(false);
+    const parsed = parseSettingsText(JSON.stringify(file), DEFAULT_SETTINGS, SKINS);
+    expect(parsed?.layout).toBeNull();
+    expect(parsed?.ui).toBeNull();
+  });
+
+  it('tolerates an older file with neither, and unknown or bad fields inside them', () => {
+    const old = parseSettingsText(JSON.stringify({ app: SETTINGS_FILE_APP, settings: {} }), DEFAULT_SETTINGS, SKINS);
+    expect(old?.layout).toBeNull();
+    expect(old?.ui).toBeNull();
+    const odd = parseSettingsText(
+      JSON.stringify({
+        app: SETTINGS_FILE_APP,
+        settings: {},
+        layout: { width: 3, collapsed: 'yes', extra: 1 },
+        ui: { libraryAllSingers: 'maybe', takesScope: 'all', madeUp: 1 },
+      }),
+      DEFAULT_SETTINGS,
+      SKINS,
+    );
+    // A width under the floor and a bad flag are each ignored, so nothing is left.
+    expect(odd?.layout).toBeNull();
+    expect(odd?.ui).toEqual({ takesScope: 'all' });
+    expect(odd?.ignored).toBe(0);
+    const partial = parseSettingsText(
+      JSON.stringify({ app: SETTINGS_FILE_APP, settings: {}, layout: { collapsed: true, width: 'x' } }),
+      DEFAULT_SETTINGS,
+      SKINS,
+    );
+    expect(partial?.layout).toEqual({ collapsed: true });
+    const wrongType = parseSettingsText(
+      JSON.stringify({ app: SETTINGS_FILE_APP, settings: {}, layout: 'wide', ui: [1] }),
+      DEFAULT_SETTINGS,
+      SKINS,
+    );
+    expect(wrongType?.layout).toBeNull();
+    expect(wrongType?.ui).toBeNull();
   });
 });

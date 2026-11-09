@@ -350,9 +350,38 @@ so learning mode when it is up. Scoring and tips run in the browser.
   (the grid's first column), so the stage fills the rest and `PitchLane`'s own
   ResizeObserver re-measures the canvas. The limits, drag threshold, key steps
   and stored-text parsing are pure in `src/app/panel-layout.ts`. The layout
-  lives under `encore.panel`, outside the settings file and the state store
-  (it is a per-screen view choice, like the skin); Reset all calls its
-  `reset`. Colours come from existing skin tokens.
+  lives under `encore.panel`, outside the state store (it is a per-screen
+  view choice, like the skin); since W12 it is also carried by the settings
+  export (`get`, `set` and `reset` on the mounted panel), so Reset all and an
+  import restore it. Colours come from existing skin tokens.
+- **Remembered panel choices (W12).** The small choices a singer makes in
+  the panels (the Library's list, All singers switch and open song rows, the
+  Takes list's singer filter, the Progress picker, whether the search key
+  box is open, the Mic check's voice range, the backing notes toggle and
+  Save with backing) are one typed record, `UiChoices` in
+  `src/app/ui-choices.ts`, stored as `encore.ui` through the Session's
+  settings store and mirrored in `state.ui`. It is validated on read field by
+  field, so a damaged or older value falls back to its default alone. The
+  Session's `UiChoicesController` writes it (`session.setUiChoices`); panels
+  read `state.ui` and keep no copy, so Reset all and an import move the
+  panels without help. The Library's list and the backing toggle also live in
+  their controllers' state; those controllers write the record and
+  `UiChoicesController.replace` applies it back to them. Transient on
+  purpose: an open drawer or dialog, a playing replay, a pending delete
+  confirmation, the search text and results, the open (i) note, the mix
+  choice (per song) and the search chips (derived from the practice mode).
+- **What the settings export carries (W12).** `src/app/settings-io.ts`:
+  the `Settings` object, the skin, the auto-advance choice, the singer
+  profiles, the song panel's layout and the `UiChoices`; no takes, library,
+  lyrics or song data, and the search key only when asked. Import reads only
+  known fields, keeps what a file lacks (an older file has no `layout` or
+  `ui`), ignores unknown fields inside them, and Reset all puts all of it
+  back to the defaults except the profiles.
+- **Library Replay (W12).** Replay of a take whose song is not loaded opens
+  that song through the same loaders as Open (a file back from the service
+  by its id, a link as a video), keeping the drawer up, and plays the take
+  when it is ready (`LibraryController.replayTake`); a song that cannot be
+  loaded leaves the song in use and says so in one line.
 - **Pitch lane layers.** `PitchLane` (`src/render/pitch-lane.ts`) owns the
   canvas, the resize and skin listeners and the redraw loop, and composes
   layers back to front, each a function over a `LaneView` and a `LaneStyle`:

@@ -6,14 +6,20 @@
  * the same intents the inline controls call (setMode, setNoteGuide,
  * setClarity, ...), one by one, so the lane, the tracker, the state and the
  * stored object all move together and there is no second source of truth.
- * Reset all and import touch settings only: takes, singer profiles, the
- * Library, lyrics, favorites and the per-song stores (key shift, free
- * phrases, turns) stay; an import adds or updates the singers its file names.
+ * Reset all and import touch settings and how the app was left (the skin, the
+ * song panel's layout, the remembered panel choices) only: takes, singer
+ * profiles, the Library, lyrics, favorites and the per-song stores (key shift,
+ * free phrases, turns) stay; an import adds or updates the singers its file
+ * names. The skin and the layout live in the page, so they go out with the
+ * caller and come back in the outcome for the caller to apply.
  */
 import { ServiceClient } from '../../service/client';
+import { DEFAULT_LAYOUT, layoutsEqual } from '../panel-layout';
+import type { PanelLayout } from '../panel-layout';
 import { describeImport, exportSettingsText, parseSettingsText } from '../settings-io';
 import { parseServiceUrl, sanitizeSettings } from '../settings';
 import type { Settings } from '../settings';
+import { changedUiChoices, sanitizeUiChoices } from '../ui-choices';
 import type { SessionCore } from './core';
 
 /** The words when a change is refused because a take is being recorded. */
@@ -27,6 +33,8 @@ export interface ImportOutcome {
   applied: boolean;
   /** The skin the file asked for, for the caller that owns the skin. */
   skin: string | null;
+  /** The song panel's layout the file carried, for the caller that owns the panel. */
+  layout: PanelLayout | null;
 }
 
 /** Applies, resets, exports and imports the settings. */
@@ -70,33 +78,50 @@ export class SettingsController {
     return new ServiceClient({ baseUrl: this.core.current.serviceUrl }).health();
   }
 
-  /** The text of a settings file; the key is in it only when asked for. */
-  exportText(skin: string, includeKey: boolean): string {
+  /**
+   * The text of a settings file; the key is in it only when asked for. `layout`
+   * is the song panel's, which the page owns; without it the file has none.
+   */
+  exportText(skin: string, includeKey: boolean, layout?: PanelLayout): string {
     const autoAdvance = this.core.store.state.library.autoAdvance;
     const profiles = this.core.profiles.list();
-    return exportSettingsText(this.core.current, { skin, autoAdvance, profiles }, includeKey);
+    const ui = this.core.ui.get();
+    return exportSettingsText(this.core.current, { skin, autoAdvance, profiles, layout, ui }, includeKey);
   }
 
   /**
    * Applies a settings file. `skinIds` are the skins the app has; the skin
    * itself is handed back for the caller to apply, since it lives in the page.
    */
-  importText(text: string, skinIds: readonly string[], currentSkin: string): ImportOutcome {
+  importText(
+    text: string,
+    skinIds: readonly string[],
+    currentSkin: string,
+    currentLayout?: PanelLayout,
+  ): ImportOutcome {
     const { store, current } = this.core;
     const parsed = parseSettingsText(text, current, skinIds);
     if (parsed === null) {
-      return { message: 'That file is not an Encore settings file.', applied: false, skin: null };
+      return { message: 'That file is not an Encore settings file.', applied: false, skin: null, layout: null };
     }
-    if (this.busy()) return { message: FINISH_FIRST, applied: false, skin: null };
+    if (this.busy()) return { message: FINISH_FIRST, applied: false, skin: null, layout: null };
     const extras: string[] = [];
     if (parsed.skin !== null && parsed.skin !== currentSkin) extras.push('Skin');
     if (parsed.autoAdvance !== null && parsed.autoAdvance !== store.state.library.autoAdvance) {
       extras.push('Auto-advance');
     }
+    // Fields the file lacks keep the panel's current value.
+    const nextLayout = parsed.layout === null ? null : { ...(currentLayout ?? DEFAULT_LAYOUT), ...parsed.layout };
+    if (nextLayout !== null && (currentLayout === undefined || !layoutsEqual(nextLayout, currentLayout))) {
+      extras.push('Panel layout');
+    }
+    const nextUi = parsed.ui === null ? null : sanitizeUiChoices(parsed.ui, this.core.ui.get());
+    if (nextUi !== null) extras.push(...changedUiChoices(this.core.ui.get(), nextUi));
     // Singers from the file are added or updated, never removed, so no take loses its owner.
     if (parsed.profiles !== null && this.core.profiles.merge(parsed.profiles) > 0) extras.push('Singers');
     this.apply(parsed.settings, parsed.autoAdvance);
-    return { message: describeImport(parsed, extras), applied: true, skin: parsed.skin };
+    if (nextUi !== null) this.core.ui.replace(nextUi);
+    return { message: describeImport(parsed, extras), applied: true, skin: parsed.skin, layout: nextLayout };
   }
 
   /** True while something is using the mic or the settings it reads. */
@@ -113,6 +138,7 @@ export class SettingsController {
     }
     // The key and the pair-keyed numbers are settings too; "all" means all.
     this.apply(sanitizeSettings(null), true);
+    this.core.ui.reset();
     this.core.store.setStatus('All settings are back to their defaults.');
     return true;
   }

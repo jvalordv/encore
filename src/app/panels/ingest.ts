@@ -2,20 +2,24 @@
  * The bar under the drop zone: one line and one progress bar for every song
  * dropped together, then one line for each song that failed and each file that
  * was not audio. Everything drawn comes from `ingestView` (src/app/ingest.ts),
- * a function of `state.ingest`; the panel holds no logic and calls no intent.
+ * a function of `state.ingest`; the panel holds no logic. The lines stay until
+ * the next drop or until Dismiss, which shows once nothing is being analysed,
+ * so a file that could not be read is never lost to a quick glance away.
  * The bar is a native progress element, so assistive technology reads it.
  */
 import { ingestView } from '../ingest';
+import type { Session } from '../session';
 import type { AppState, StateStore } from '../state';
 import type { MountPanel } from './panel';
 
-/** What the panel needs: the state to draw. */
+/** What the panel needs: the state to draw, and the intent that clears the lines. */
 export interface IngestPanelDeps {
   store: StateStore;
+  session: Pick<Session, 'dismissIngest'>;
 }
 
 /** Builds the bar into `host`; the returned function takes it down. */
-export const mountIngestPanel: MountPanel<IngestPanelDeps> = (host, { store }) => {
+export const mountIngestPanel: MountPanel<IngestPanelDeps> = (host, { store, session }) => {
   const doc = host.ownerDocument;
   const cleanups: Array<() => void> = [];
 
@@ -32,7 +36,16 @@ export const mountIngestPanel: MountPanel<IngestPanelDeps> = (host, { store }) =
   const problems = doc.createElement('ul');
   problems.className = 'ingest-problems song-meta';
   problems.dataset.testid = 'ingest-problems';
-  host.append(line, bar, problems);
+  const dismiss = doc.createElement('button');
+  dismiss.type = 'button';
+  dismiss.className = 'compact ingest-dismiss';
+  dismiss.dataset.testid = 'ingest-dismiss';
+  dismiss.textContent = 'Dismiss';
+  dismiss.dataset.help = 'Clear these lines';
+  const onDismiss = (): void => session.dismissIngest();
+  dismiss.addEventListener('click', onDismiss);
+  cleanups.push(() => dismiss.removeEventListener('click', onDismiss));
+  host.append(line, bar, problems, dismiss);
 
   let shown = '';
 
@@ -58,6 +71,7 @@ export const mountIngestPanel: MountPanel<IngestPanelDeps> = (host, { store }) =
       );
     }
     problems.hidden = lines.length === 0;
+    dismiss.hidden = view.busy;
   }
 
   cleanups.push(

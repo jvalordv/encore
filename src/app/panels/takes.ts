@@ -31,12 +31,13 @@ const WATCHED: ReadonlyArray<keyof AppState> = [
   'mode',
   'reportTakeId',
   'profiles',
+  'ui',
 ];
 
 /** What the panel needs: the state to draw, and the intents it calls. */
 export interface TakesPanelDeps {
   store: StateStore;
-  session: Pick<Session, 'playTake' | 'stopTake' | 'deleteTake' | 'showReport' | 'exportTake'>;
+  session: Pick<Session, 'playTake' | 'stopTake' | 'deleteTake' | 'showReport' | 'exportTake' | 'setUiChoices'>;
 }
 
 /** Builds the list into `host`; the returned function takes it down. */
@@ -46,8 +47,6 @@ export const mountTakesPanel: MountPanel<TakesPanelDeps> = (host, { store, sessi
   const empty = host.querySelector<HTMLElement>('#take-empty');
   const scopePick = host.querySelector<HTMLSelectElement>('#take-owner');
   if (!list || !empty || !scopePick) throw new Error('index.html is missing #take-list, #take-empty or #take-owner');
-  /** Whose takes the list shows; 'mine' is the active singer's. */
-  let scope: 'mine' | 'all' = 'mine';
   const timers = new Set<ReturnType<typeof setTimeout>>();
 
   function button(text: string, testid: string, onClick: () => void): HTMLButtonElement {
@@ -138,6 +137,8 @@ export const mountTakesPanel: MountPanel<TakesPanelDeps> = (host, { store, sessi
   function render(state: AppState): void {
     const { profiles } = state;
     const me = activeProfile(profiles);
+    // Whose takes the list shows ('mine' is the active singer's); remembered.
+    const scope = state.ui.takesScope;
     // A Mic check take is the mic's, not a singer's, so every list keeps it.
     const takes =
       scope === 'all'
@@ -169,8 +170,7 @@ export const mountTakesPanel: MountPanel<TakesPanelDeps> = (host, { store, sessi
         : `No takes by ${me.name} for this song yet. Press Record and sing.`;
   }
   const onScope = (): void => {
-    scope = scopePick.value === 'all' ? 'all' : 'mine';
-    render(store.state);
+    session.setUiChoices({ takesScope: scopePick.value === 'all' ? 'all' : 'mine' });
   };
   scopePick.addEventListener('change', onScope);
 

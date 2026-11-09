@@ -12,6 +12,7 @@
  */
 import type { Session } from '../session';
 import { isActivePhase } from '../mic-check';
+import type { PanelLayout } from '../panel-layout';
 import { SETTINGS_FILE_NAME } from '../settings-io';
 import type { AppState, StateStore } from '../state';
 import type { MountPanel } from './panel';
@@ -70,7 +71,7 @@ export interface SettingsPanelDeps {
     | 'setLibraryOpen'
   >;
   /** The song panel's layout, which Reset all puts back to its default. */
-  layout?: { reset(): void };
+  layout?: { get(): PanelLayout; set(next: PanelLayout): void; reset(): void };
   /** The header button that opens the drawer. */
   toggle: HTMLButtonElement;
   /** The header's Mic check button; the panel's own button presses it. */
@@ -427,7 +428,7 @@ export const mountSettingsPanel: MountPanel<SettingsPanelDeps> = (host, deps) =>
     includeKey = v;
   });
   kit.button(tools, 'Export settings', 'settings-export', () => {
-    download(session.exportSettings(skin.current(), includeKey), SETTINGS_FILE_NAME);
+    download(session.exportSettings(skin.current(), includeKey, layout?.get()), SETTINGS_FILE_NAME);
     notice.textContent = includeKey ? 'Exported, with the search key.' : 'Exported, without the search key.';
   });
   const importFile = el('input', 'settings-import-file');
@@ -443,8 +444,9 @@ export const mountSettingsPanel: MountPanel<SettingsPanelDeps> = (host, deps) =>
       .text()
       .then((text) => {
         const ids = skin.choices.map(([id]) => id);
-        const outcome = session.importSettings(text, ids, skin.current());
+        const outcome = session.importSettings(text, ids, skin.current(), layout?.get());
         if (outcome.skin !== null) skin.set(outcome.skin);
+        if (outcome.layout !== null) layout?.set(outcome.layout);
         notice.textContent = outcome.message;
       })
       .catch(() => {

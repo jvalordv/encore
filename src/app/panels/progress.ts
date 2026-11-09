@@ -30,7 +30,7 @@ import type { MountPanel } from './panel';
 /** What the panel needs: the state to read, the intents, the header buttons. */
 export interface ProgressPanelDeps {
   store: StateStore;
-  session: Pick<Session, 'listAllTakes' | 'setLibraryOpen'>;
+  session: Pick<Session, 'listAllTakes' | 'setLibraryOpen' | 'setUiChoices'>;
   toggle: HTMLButtonElement;
   /** The Settings button: that drawer sits in the same place, one at a time. */
   settingsToggle: HTMLButtonElement;
@@ -73,12 +73,13 @@ export const mountProgressPanel: MountPanel<ProgressPanelDeps> = (host, { store,
   const doc = host.ownerDocument;
   let open = false;
   let points: TakePoint[] = [];
-  /** The picker's value; null until the singer picks, then theirs. */
-  let chosen: string | null = null;
   let loading = 0;
   /** True until the cached points match the stored takes and the active singer. */
   let stale = true;
   let shownFor = store.state.profiles.activeId;
+  // The singer last seen, so only a real switch (not a rename or a later
+  // profile change with the drawer shut) forgets the remembered song.
+  let seenActive = store.state.profiles.activeId;
   /** True while another singer's takes are being read, so nothing old shows. */
   let switching = true;
 
@@ -112,7 +113,7 @@ export const mountProgressPanel: MountPanel<ProgressPanelDeps> = (host, { store,
   const singer = (): string => activeProfile(store.state.profiles).name;
   const currentHash = (): string | null => store.state.song?.hash ?? null;
   const selected = (): string => {
-    const wanted = chosen ?? defaultSong(points, currentHash());
+    const wanted = store.state.ui.progressSong ?? defaultSong(points, currentHash());
     return wanted === ALL_SONGS || points.some((p) => p.songHash === wanted) ? wanted : ALL_SONGS;
   };
 
@@ -184,8 +185,8 @@ export const mountProgressPanel: MountPanel<ProgressPanelDeps> = (host, { store,
   const onToggle = (): void => setOpen(!open, false);
   const onClose = (): void => setOpen(false, true);
   const onPick = (): void => {
-    chosen = picker.value;
-    draw();
+    // Remembered; the subscriber below redraws.
+    session.setUiChoices({ progressSong: picker.value });
   };
   toggle.addEventListener('click', onToggle);
   close.addEventListener('click', onClose);
@@ -214,8 +215,12 @@ export const mountProgressPanel: MountPanel<ProgressPanelDeps> = (host, { store,
       stale = true;
       switching = true;
       points = [];
-      chosen = null;
+      if (state.profiles.activeId !== seenActive && state.ui.progressSong !== null) {
+        session.setUiChoices({ progressSong: null });
+      }
     }
+    seenActive = state.profiles.activeId;
+    if (changed.has('ui') && open && !stale && !switching) draw();
     // The Library drawer opening takes this place.
     if (changed.has('library') && state.library.open && open) setOpen(false);
     if (!open) return;

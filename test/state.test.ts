@@ -33,6 +33,7 @@ import {
 import type { AppState } from '../src/app/state';
 import { memoryStore } from '../src/app/storage';
 import { memoryTakeStore } from '../src/app/takes';
+import { sanitizeUiChoices } from '../src/app/ui-choices';
 import { latencyKey } from '../src/audio/latency';
 
 afterEach(() => {
@@ -87,6 +88,7 @@ describe('initialState', () => {
       keyboard: true,
       hoverHelp: true,
       settingsRev: 0,
+      ui: sanitizeUiChoices(null),
       guideReading: null,
       key: { phase: 'none', message: '' },
       freePhrases: [],

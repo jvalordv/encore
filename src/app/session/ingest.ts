@@ -14,7 +14,16 @@
 import { hashBytes } from '../../audio/player';
 import { isAbortError, ServiceClient, settledThrough } from '../../service/client';
 import type { SongStatus } from '../../service/types';
-import { AUDIO_EXTENSION, ingestReducer, isAudioFile, isBusy, nextQueued, stageOf, uploadingStage } from '../ingest';
+import {
+  AUDIO_EXTENSION,
+  ingestReducer,
+  isAudioFile,
+  isBusy,
+  nextQueued,
+  stageOf,
+  UNREADABLE_REASON,
+  uploadingStage,
+} from '../ingest';
 import type { IngestEvent, IngestState } from '../ingest';
 import type { KaraokeState } from '../karaoke';
 import type { LoadedSong } from '../library';
@@ -83,6 +92,14 @@ export class IngestController {
     audio.forEach((file, i) => this.files.set(firstId + i, file));
     if (idle) this.serviceDown = false;
     if (audio.length > 0 && !this.running) void this.drain(idle);
+  }
+
+  /**
+   * Clears the lines a finished drop left under the drop zone (the failures,
+   * the skipped files, the count). Does nothing while songs are being analysed.
+   */
+  dismiss(): void {
+    if (!isBusy(this.state)) this.send({ type: 'clear' });
   }
 
   /** Stops the queue's calls to the service; the page is going away. */
@@ -156,7 +173,7 @@ export class IngestController {
       // Either a newer load took the player first, and the file is analysed
       // aside, or the file would not decode, which the status line explains.
       if (core.songs.loadToken !== token + 1) await this.background(id, file);
-      else this.send({ type: 'fail', id, reason: 'It could not be read as audio.' });
+      else this.send({ type: 'fail', id, reason: UNREADABLE_REASON });
       return;
     }
     // The song counts as analysed once its melody has settled. The stems

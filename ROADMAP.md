@@ -24,7 +24,17 @@ webcam or USB mic.
 
 ## Current state
 
-- **Last done (2026-11-09): W11, a quieter left panel.** Static
+- **Last done (2026-11-09): W12, the owner's answers to the W10 and W11
+  questions.** Library Replay of another song's take now opens that song
+  (drawer left up) and plays the take; every panel choice (Library list, All
+  singers, open rows, Takes filter, Progress picker, search key box, Mic
+  check range, backing toggle, Save with backing) survives a reload; the
+  settings export also carries the panel's width and fold and those choices,
+  and Reset all and import restore them; a dropped file with no readable
+  audio is named under the drop zone, with a Dismiss. **Next:** the owner
+  tries W8 to W12 and answers the open question below; then W7. Still open
+  (owner, "I'll need to test"): whether Library Open should close the drawer.
+- **Earlier (2026-11-09): W11, a quieter left panel.** Static
   explanations (the search hint, the Devices monitoring note, the Singers
   note, the Song reference meaning line, the embed note, the lyrics and key
   field hints) moved into hover help; a small (i) beside a section title shows
@@ -1581,6 +1591,63 @@ Tracks inside a wave share no files and may run in parallel.
   - Follow-up: the dropzone text and the empty Takes line are still words.
   - Follow-up: the panel's scroll position is not kept across a fold.
   - Follow-up: the stack breakpoint is 780 px (existing), not 700 px.
+- [x] **W12: Replay opens its song, every choice survives a reload and the
+  export, unreadable drops are named** (owner answers of 2026-11-09 to the
+  questions W10 and W11 left).
+  - Replay (owner: "Why wouldn't it automatically open whatever song was
+    asked to replay? we would have kept any processed data for it stored as
+    well."). Replay of a take of another song opens that song with the same
+    loaders as Open, so stored audio, stems, melody and key come from the
+    browser and service caches and nothing stored is fetched or analysed
+    again, then plays the take once the song is in. The drawer stays up (the
+    Stop button is in it) and says "Opening <song> to replay…". While a take
+    is being recorded it only says so; a second press on a take that is
+    opening does nothing; a song that cannot be loaded (the service away, a
+    dropped file whose bytes only the service held) leaves the song in use and
+    says "Could not open <song>, so the take was not replayed." Karaoke mode
+    still shows no scores.
+  - Choices (owner: "Yes I think we should maintain all settings and choices
+    after a reload."). One typed record, `encore.ui` (`src/app/ui-choices.ts`,
+    mirrored in `state.ui`), validated field by field on read. Made
+    persistent: the Library's list (All songs or Favorites), its All singers
+    switch, which song rows are open, the Takes list's singer filter, the
+    Progress picker (the song, or all songs; cleared when the singer changes),
+    whether the YouTube key box is open once a key is saved, the Mic check's
+    voice range, the Backing notes toggle (it no longer snaps back on with
+    each song) and Save with backing. Left transient: an open drawer or
+    dialog, a playing replay, a pending delete confirmation, the search box
+    text and results, the open (i) note, the Mix choice (per song, starts on
+    Karaoke whenever stems arrive), the search chips (they follow the practice
+    mode, which is saved) and the Mic check panel's own open state. The
+    Settings drawer has no collapsible sections and the left panel has no
+    `<details>`, so there was nothing else of that kind to keep.
+  - Export (owner: "I think we would want to save everything in the export so
+    it would be exactly how it was left."). The settings file now also holds
+    the song panel's width and fold (`layout`) and the choices above (`ui`),
+    besides the settings, skin, auto-advance and singers it already had. Not
+    takes or song data. Import applies them, tolerates their absence (older
+    files) and unknown fields, and its summary names "Panel layout" and the
+    choices that changed. Reset all restores all of it (singers still kept).
+  - Dropped files (owner: "it should inform the user that there is no
+    readable audio, even if it's just an error in the status bar area that
+    shows processing of dropped files"). A first or lone file the browser
+    cannot decode is named "<name>: no readable audio in this file." under the
+    drop zone, a non-audio file keeps "<name> is not an audio file, so it was
+    skipped.", both also with the queue idle, and the lines stay until the
+    next drop or the new Dismiss button (shown when nothing is being
+    analysed).
+  - Decisions recorded from the same answers: "Find the original" stays and
+    loads the original as a song of its own (owner: "keep the find the
+    original; I think it should load as a different song anyway"); the
+    drop-zone and link wording is fine for now; Library Open closing the
+    drawer stays an open question until the owner tests it; the Bluetooth
+    warnings, the share-tab hint and the empty Takes line stay visible for
+    now.
+  - Follow-up: only the first file of a drop is decoded in the page; a later
+    file that is not audio is named with the service's reason when it
+    refuses it, and with the service away it is only added to the Library.
+  - Follow-up: the Mix choice could be remembered as a default if the owner
+    wants it; today it is per song.
 - [ ] **W7: Owner test and one bug sweep.** The owner runs the full list:
   solo with a file, a link, a prepared link; learning mode; duet on one
   mic and on two; speakers and headphones. Then one reviewer reads
@@ -1698,6 +1765,7 @@ were.
 | W9 Song reference card (measured, worktree) | 1 | 0.87 M | 15 min |
 | W10 Intake + Library takes (measured, 2 lanes) | 1 | 1.42 M | 20 min |
 | W11 Quieter, resizable left panel (measured, worktree) | 0.6 | 0.61 M | 10 min |
+| W12 Replay opens its song, choices kept, export complete (measured, worktree) | 0.7 | 0.63 M | 15 min |
 | **Total** | **about 16 (15-19)** | **about 11.5 M** | **about 5 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The
