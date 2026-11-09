@@ -68,7 +68,7 @@ export const mountMicHealthPanel: MountPanel<MicHealthPanelDeps> = (host, { stor
   const mark = doc.createElement('div');
   mark.className = 'meter-floor';
   mark.dataset.testid = 'mic-floor';
-  mark.title = 'Noise floor: the level of the room when you are not singing';
+  mark.dataset.help = 'Noise floor: the level of the room when you are not singing';
   mark.hidden = true;
   meter.append(mark);
 

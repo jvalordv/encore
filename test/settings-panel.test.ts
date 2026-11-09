@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { mountNoteGuidePanel } from '../src/app/panels/note-guide';
 import { mountSettingsPanel } from '../src/app/panels/settings';
 import type { SettingsPanelDeps, SkinPort } from '../src/app/panels/settings';
+import { loadSettings } from '../src/app/settings';
 import type { SessionCore } from '../src/app/session/core';
 import { byTestId, fakeHost } from './fake-dom';
 import type { FakeElement } from './fake-dom';
@@ -23,6 +24,7 @@ function sessionOver(core: SessionCore): SettingsPanelDeps['session'] {
       return core.current;
     },
     duet: core.duet,
+    profiles: core.profiles,
     deviceLists: { inputs: [], outputs: [] },
     onDevices: () => () => undefined,
     refreshDevices: async () => ({ inputs: [], outputs: [] }),
@@ -38,6 +40,7 @@ function sessionOver(core: SessionCore): SettingsPanelDeps['session'] {
     resetMicTuning: () => core.micCheck.resetSettings(),
     setNoteGuide: (on) => core.health.setNoteGuide(on),
     setKeyboard: (on) => core.settings.setKeyboard(on),
+    setHoverHelp: (on) => core.settings.setHoverHelp(on),
     setGuideLevel: (v) => core.mix.setGuideLevel(v),
     setBackingShown: (on) => core.backing.setShown(on),
     setMode: (m) => core.scoring.setMode(m),
@@ -121,6 +124,16 @@ describe('settings panel and inline controls', () => {
     expect(byTestId(inlineHost, 'note-guide-toggle').checked).toBe(true);
   });
 
+  it('the Hover help switch starts on, is stored, and shows in the state', () => {
+    const { h, host, open } = setup();
+    open();
+    expect(byTestId(host, 'settings-hover-help').checked).toBe(true);
+    change(byTestId(host, 'settings-hover-help'), 'checked', false);
+    expect(h.store.state.hoverHelp).toBe(false);
+    expect(h.core.current.hoverHelp).toBe(false);
+    expect(loadSettings(h.settingsStore).hoverHelp).toBe(false);
+  });
+
   it('a value changed at the inline control shows in the drawer', () => {
     const { host, inlineHost, open } = setup();
     open();
@@ -184,7 +197,7 @@ describe('settings panel and inline controls', () => {
 
 describe('Reset all, export and import in the panel', () => {
   it('asks first, then resets settings and the skin, and keeps takes', async () => {
-    const { h, host, skin, open } = setup({ noteGuide: true, keyboard: false });
+    const { h, host, skin, open } = setup({ noteGuide: true, keyboard: false, hoverHelp: false });
     await h.takeStore.save({
       songHash: 'h',
       songName: 's',
@@ -207,6 +220,10 @@ describe('Reset all, export and import in the panel', () => {
     byTestId(host, 'settings-reset-yes').fire('click');
     expect(h.core.current.noteGuide).toBe(false);
     expect(h.store.state.keyboard).toBe(true);
+    // Reset turns hover help back on.
+    expect(h.store.state.hoverHelp).toBe(true);
+    expect(h.core.current.hoverHelp).toBe(true);
+    expect(byTestId(host, 'settings-hover-help').checked).toBe(true);
     expect(skin.current()).toBe('studio');
     expect(byTestId(host, 'settings-note-guide').checked).toBe(false);
     expect(await h.takeStore.list()).toHaveLength(1);

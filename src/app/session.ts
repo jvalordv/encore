@@ -61,6 +61,7 @@ import { memoryLibraryStore, openLibraryStore } from './library';
 import type { LibraryView } from './library-state';
 import type { MixChoice } from './mix';
 import { SessionCore } from './session/core';
+import type { ProfilesController } from './session/profiles';
 import { buildParts } from './session/parts';
 import type { ImportOutcome } from './session/settings';
 import type { DeviceLists, LaneSink, SessionOptions, SessionParts } from './session/types';
@@ -125,6 +126,11 @@ export class Session {
   /** The second singer: names, colours, its mic and the turns (src/duet). */
   get duet(): DuetController {
     return this.core.duet;
+  }
+
+  /** The singer profiles: choose, add, rename, delete (src/app/profiles.ts). */
+  get profiles(): ProfilesController {
+    return this.core.profiles;
   }
 
   /** The active transport (audio player or YouTube); null without Web Audio. */
@@ -253,6 +259,11 @@ export class Session {
   /** Shows or hides the lane's piano keyboard view, remembering the choice. */
   setKeyboard(on: boolean): void {
     this.core.settings.setKeyboard(on);
+  }
+
+  /** Turns hover help popups on or off, remembering the choice. */
+  setHoverHelp(on: boolean): void {
+    this.core.settings.setHoverHelp(on);
   }
 
   /** Moves the song by whole semitones (-6..+6), kept for the song. */

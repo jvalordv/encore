@@ -44,7 +44,9 @@ describe('Reset all', () => {
     expect(now.youtubeApiKey).toBe('');
     expect(now.latencyByDevicePair).toEqual({});
     expect(now.duet.secondSinger).toBe(false);
-    expect(now.duet.names).toEqual(['Singer A', 'Singer B']);
+    // The singers are people, not preferences: a reset keeps their names.
+    expect(now.duet.names).toEqual(['Ann', 'Bo']);
+    expect(h.store.state.profiles.list.map((p) => p.name)).toEqual(['Ann', 'Bo']);
     expect(h.store.state.mode).toBe('karaoke');
     expect(h.store.state.noteGuide).toBe(false);
     expect(h.store.state.keyboard).toBe(true);

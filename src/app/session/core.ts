@@ -31,6 +31,7 @@ import { MicCheckController } from './mic-check';
 import { MicHealthController } from './mic-health';
 import { MixController } from './mix';
 import { PlaybackController } from './playback';
+import { ProfilesController } from './profiles';
 import { PrepareController } from './prepare';
 import { ScoringController } from './scoring';
 import { SearchController } from './search';
@@ -97,6 +98,7 @@ export class SessionCore {
   readonly library: LibraryController;
   readonly settings: SettingsController;
   readonly duet: DuetController;
+  readonly profiles: ProfilesController;
   readonly loop: TickLoop;
 
   constructor(init: SessionCoreInit) {
@@ -130,6 +132,7 @@ export class SessionCore {
     this.library = new LibraryController(this, init.library ?? Promise.resolve(memoryLibraryStore()));
     this.settings = new SettingsController(this);
     this.duet = new DuetController(this, init.secondParts);
+    this.profiles = new ProfilesController(this);
     this.loop = new TickLoop(this);
 
     const sinkCapable = typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;
@@ -140,6 +143,7 @@ export class SessionCore {
       scoring: this.current.scoring,
       noteGuide: this.current.noteGuide,
       keyboard: this.current.keyboard,
+      hoverHelp: this.current.hoverHelp,
     });
     this.store.patchSection('input', {
       deviceId: this.current.inputDeviceId,

@@ -34,6 +34,26 @@ export class FakeElement {
     this.attributes.set(name, value);
   }
 
+  getAttribute(name: string): string | null {
+    return this.attributes.get(name) ?? null;
+  }
+
+  /** Moves the document's focus here, as the browser's focus() does. */
+  focus(): void {
+    this.ownerDocument.activeElement = this;
+  }
+
+  /** A click from code, as HTMLElement.click(). */
+  click(): void {
+    this.fire('click');
+  }
+
+  /** True for this element or any descendant. */
+  contains(node: unknown): boolean {
+    if (node === this) return true;
+    return this.children.some((c) => c instanceof FakeElement && c.contains(node));
+  }
+
   addEventListener(type: string, fn: () => void): void {
     if (!this.listeners.has(type)) this.listeners.set(type, new Set());
     this.listeners.get(type)?.add(fn);
@@ -69,6 +89,31 @@ export class FakeElement {
 /** A fake document: makes elements and text nodes. */
 export class FakeDocument {
   activeElement: unknown = null;
+  private readonly listeners = new Map<string, Set<(event: unknown) => void>>();
+
+  addEventListener(type: string, fn: (event: unknown) => void): void {
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type)?.add(fn);
+  }
+
+  removeEventListener(type: string, fn: (event: unknown) => void): void {
+    this.listeners.get(type)?.delete(fn);
+  }
+
+  /** Delivers an event to the document's listeners, as a bubbled key or press. */
+  dispatch(type: string, event: unknown): void {
+    for (const fn of [...(this.listeners.get(type) ?? [])]) fn(event);
+  }
+
+  listenerCount(): number {
+    let n = 0;
+    for (const set of this.listeners.values()) n += set.size;
+    return n;
+  }
+
+  querySelectorAll(): unknown[] {
+    return [];
+  }
 
   createElement(tag: string): FakeElement {
     return new FakeElement(tag, this);

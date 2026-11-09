@@ -9,6 +9,8 @@
  * default), a key the file does not carry keeps its current value, and the
  * words to show the person say what changed. Pure: no storage, no DOM.
  */
+import { sanitizeList } from './profiles';
+import type { Profile } from './profiles';
 import { DEFAULT_SETTINGS, sanitizeSettings } from './settings';
 import type { Settings } from './settings';
 
@@ -22,6 +24,8 @@ export const SETTINGS_FILE_APP = 'encore-settings';
 export interface SettingsExtras {
   skin: string;
   autoAdvance: boolean;
+  /** The singer profiles (names, colours, ids; never takes). */
+  profiles?: readonly Profile[];
 }
 
 /** The plain name of each setting, for the import summary. */
@@ -41,13 +45,14 @@ export const SETTING_LABELS: Readonly<Record<keyof Settings, string>> = Object.f
   guideLevel: 'Vocal guide level',
   noteGuide: 'Note guide',
   keyboard: 'Keyboard',
+  hoverHelp: 'Hover help',
   searchProvider: 'Search provider',
   youtubeApiKey: 'YouTube key',
   duet: 'Singers',
 });
 
 const KNOWN_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<keyof Settings>;
-const TOP_LEVEL = ['app', 'version', 'settings', 'skin', 'autoAdvance'];
+const TOP_LEVEL = ['app', 'version', 'settings', 'skin', 'autoAdvance', 'profiles'];
 
 /** What reading a file produced; `null` from the parser means not ours. */
 export interface ParsedImport {
@@ -57,6 +62,8 @@ export interface ParsedImport {
   skin: string | null;
   /** The auto-advance choice, or null when the file does not carry one. */
   autoAdvance: boolean | null;
+  /** The singers the file lists, or null when it has none. */
+  profiles: Profile[] | null;
   /** Plain names of what would change, in a stable order. */
   changed: string[];
   /** How many entries were not recognised and so ignored. */
@@ -75,7 +82,14 @@ export function exportSettingsText(settings: Settings, extras: SettingsExtras, i
   const copy: Partial<Settings> = sanitizeSettings(settings);
   if (!includeKey) delete copy.youtubeApiKey;
   return JSON.stringify(
-    { app: SETTINGS_FILE_APP, version: 1, settings: copy, skin: extras.skin, autoAdvance: extras.autoAdvance },
+    {
+      app: SETTINGS_FILE_APP,
+      version: 1,
+      settings: copy,
+      skin: extras.skin,
+      autoAdvance: extras.autoAdvance,
+      profiles: extras.profiles ?? [],
+    },
     null,
     2,
   );
@@ -106,12 +120,20 @@ export function parseSettingsText(
     else ignored += 1;
   }
   const settings = sanitizeSettings(merged);
+  // The two slots' names and colours are the singers' profiles (the `profiles`
+  // list), so the duet's own copy in the file never changes them.
+  settings.duet = {
+    ...settings.duet,
+    names: [current.duet.names[0], current.duet.names[1]],
+    colours: [current.duet.colours[0], current.duet.colours[1]],
+  };
   const changed = KNOWN_KEYS.filter((k) => JSON.stringify(settings[k]) !== JSON.stringify(current[k])).map(
     (k) => SETTING_LABELS[k],
   );
   const skin = typeof raw.skin === 'string' && skinIds.includes(raw.skin) ? raw.skin : null;
   const autoAdvance = typeof raw.autoAdvance === 'boolean' ? raw.autoAdvance : null;
-  return { settings, skin, autoAdvance, changed, ignored };
+  const profiles = Array.isArray(raw.profiles) ? sanitizeList(raw.profiles) : null;
+  return { settings, skin, autoAdvance, profiles: profiles && profiles.length > 0 ? profiles : null, changed, ignored };
 }
 
 /** One plain sentence about an import, given what the app changed. */

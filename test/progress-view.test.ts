@@ -12,7 +12,7 @@ import { ALL_SONGS, defaultSong, formatValue, MEASURES, progressRows, songChoice
 import type { StateStore } from '../src/app/state';
 import type { TakeSummary } from '../src/app/takes';
 import { byTestId, fakeHost } from './fake-dom';
-import type { FakeElement } from './fake-dom';
+import type { FakeDocument, FakeElement } from './fake-dom';
 
 const DAY = 86_400_000;
 const T0 = new Date(2026, 10, 1, 12).getTime();
@@ -137,8 +137,18 @@ describe('song picker', () => {
 type Mode = 'karaoke' | 'learning';
 type Listener = (state: unknown, changed: Set<string>) => void;
 
+const PROFILES = {
+  list: [
+    { id: 'p1', name: 'Ann', colour: null },
+    { id: 'p2', name: 'Bo', colour: null },
+  ],
+  activeId: 'p1',
+  secondId: null as string | null,
+  legacyId: 'p1',
+};
+
 function fakeStore(mode: Mode) {
-  const state = { mode, song: { hash: 'h1' } };
+  const state = { mode, song: { hash: 'h1' }, profiles: { ...PROFILES }, library: { open: false } };
   const subs = new Set<Listener>();
   const store = {
     state,
@@ -151,87 +161,170 @@ function fakeStore(mode: Mode) {
     state.mode = m;
     for (const fn of subs) fn(state, new Set(['mode']));
   };
-  return { store, set, subs };
+  const emit = (...keys: string[]): void => {
+    for (const fn of subs) fn(state, new Set(keys));
+  };
+  return { store, set, subs, emit };
 }
+
+type Button = HTMLButtonElement & FakeElement;
+
+/** The panel over a fake store, with the header button and the Settings button. */
+function setup(mode: Mode, takes: TakeSummary[]) {
+  const fake = fakeStore(mode);
+  const host = fakeHost();
+  const doc = host.ownerDocument as unknown as FakeDocument;
+  const toggle = doc.createElement('button') as unknown as Button;
+  const settingsToggle = doc.createElement('button') as unknown as Button;
+  settingsToggle.setAttribute('aria-expanded', 'false');
+  const calls = { list: 0, library: [] as boolean[], settingsClicks: 0 };
+  settingsToggle.addEventListener('click', () => calls.settingsClicks++);
+  const dispose = mountProgressPanel(host, {
+    store: fake.store,
+    session: {
+      listAllTakes: () => {
+        calls.list++;
+        return Promise.resolve(takes);
+      },
+      setLibraryOpen: (open: boolean) => void calls.library.push(open),
+    },
+    toggle,
+    settingsToggle,
+  });
+  const flush = async (): Promise<void> => {
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+  };
+  return { fake, host, doc, toggle, settingsToggle, calls, dispose, flush };
+}
+
+const esc = { key: 'Escape', defaultPrevented: false, preventDefault() {} };
 
 describe('mountProgressPanel', () => {
   it('shows its button only in learning mode and opens with one point per take', async () => {
-    const fake = fakeStore('karaoke');
-    const host = fakeHost();
-    const toggle = host.ownerDocument.createElement('button') as unknown as HTMLButtonElement & FakeElement;
-    const takes = [strictTake('a', 0, 0.4, 1), strictTake('b', 1, 0.6, 1)];
-    const dispose = mountProgressPanel(host, {
-      store: fake.store,
-      session: { listAllTakes: () => Promise.resolve(takes) },
-      toggle,
-    });
-    expect(toggle.hidden).toBe(true);
-    expect(host.hidden).toBe(true);
+    const t = setup('karaoke', [strictTake('a', 0, 0.4, 1), strictTake('b', 1, 0.6, 1)]);
+    expect(t.toggle.hidden).toBe(true);
+    expect(t.host.hidden).toBe(true);
 
-    fake.set('learning');
-    expect(toggle.hidden).toBe(false);
-    toggle.fire('click');
-    expect(host.hidden).toBe(false);
-    await Promise.resolve();
-    await Promise.resolve();
-    const row = byTestId(host, 'progress-row');
+    t.fake.set('learning');
+    expect(t.toggle.hidden).toBe(false);
+    t.toggle.fire('click');
+    expect(t.host.hidden).toBe(false);
+    await t.flush();
+    const row = byTestId(t.host, 'progress-row');
     expect(byTestId(row, 'progress-spark').dataset.points).toBe('2');
-    expect(byTestId(host, 'progress-count').textContent).toContain('2 takes');
+    expect(byTestId(t.host, 'progress-count').textContent).toContain('2 takes');
+    expect(byTestId(t.host, 'progress-title').textContent).toBe('Progress: Ann');
 
-    fake.set('karaoke');
-    expect(toggle.hidden).toBe(true);
-    expect(host.hidden).toBe(true);
+    t.fake.set('karaoke');
+    expect(t.toggle.hidden).toBe(true);
+    expect(t.host.hidden).toBe(true);
 
-    dispose();
-    expect(fake.subs.size).toBe(0);
-    expect(toggle.listenerCount()).toBe(0);
+    t.dispose();
+    expect(t.fake.subs.size).toBe(0);
+    expect(t.toggle.listenerCount()).toBe(0);
+    expect(t.doc.listenerCount()).toBe(0);
   });
 
   it('loads once, redraws on a song change, and reloads only when the takes change', async () => {
-    const fake = fakeStore('learning');
-    const host = fakeHost();
-    const toggle = host.ownerDocument.createElement('button') as unknown as HTMLButtonElement & FakeElement;
-    let calls = 0;
-    const takes = [strictTake('a', 0, 0.4, 1), strictTake('b', 1, 0.6, 1, 'h2')];
-    mountProgressPanel(host, {
-      store: fake.store,
-      session: {
-        listAllTakes: () => {
-          calls++;
-          return Promise.resolve(takes);
-        },
-      },
-      toggle,
-    });
-    const flush = async (): Promise<void> => {
-      for (let i = 0; i < 4; i++) await Promise.resolve();
-    };
-    const emit = (...keys: string[]): void => {
-      for (const fn of fake.subs) fn(fake.store.state, new Set(keys));
-    };
-    toggle.fire('click');
-    await flush();
-    expect(calls).toBe(1);
+    const t = setup('learning', [strictTake('a', 0, 0.4, 1), strictTake('b', 1, 0.6, 1, 'h2')]);
+    t.toggle.fire('click');
+    await t.flush();
+    expect(t.calls.list).toBe(1);
 
-    (fake.store.state as { song: { hash: string } }).song = { hash: 'h2' };
-    emit('song');
-    await flush();
-    expect(calls).toBe(1);
+    (t.fake.store.state as { song: { hash: string } }).song = { hash: 'h2' };
+    t.fake.emit('song');
+    await t.flush();
+    expect(t.calls.list).toBe(1);
 
-    toggle.fire('click');
-    toggle.fire('click');
-    await flush();
-    expect(calls).toBe(1);
+    t.toggle.fire('click');
+    t.toggle.fire('click');
+    await t.flush();
+    expect(t.calls.list).toBe(1);
 
-    emit('takes');
-    await flush();
-    expect(calls).toBe(2);
+    t.fake.emit('takes');
+    await t.flush();
+    expect(t.calls.list).toBe(2);
 
-    toggle.fire('click');
-    emit('takes');
-    expect(calls).toBe(2);
-    toggle.fire('click');
-    await flush();
-    expect(calls).toBe(3);
+    t.toggle.fire('click');
+    t.fake.emit('takes');
+    expect(t.calls.list).toBe(2);
+    t.toggle.fire('click');
+    await t.flush();
+    expect(t.calls.list).toBe(3);
+  });
+
+  it('shows only the active singer takes and redraws when the singer changes', async () => {
+    const mine = strictTake('a', 0, 0.4, 1);
+    const old = strictTake('b', 1, 0.6, 1);
+    const hers = { ...strictTake('c', 2, 0.8, 1), profileId: 'p2' };
+    const t = setup('learning', [mine, old, hers]);
+    t.toggle.fire('click');
+    await t.flush();
+    // Two takes with no profile belong to the first singer; the third is Bo's.
+    expect(byTestId(t.host, 'progress-count').textContent).toContain('2 takes');
+
+    const state = t.fake.store.state as { profiles: typeof PROFILES };
+    state.profiles = { ...PROFILES, activeId: 'p2' };
+    t.fake.emit('profiles');
+    expect(byTestId(t.host, 'progress-title').textContent).toBe('Progress: Bo');
+    await t.flush();
+    expect(t.calls.list).toBe(2);
+    expect(byTestId(t.host, 'progress-count').textContent).toContain('1 take ');
+
+    // A singer with nothing yet sees an empty view that names them.
+    state.profiles = { ...PROFILES, list: [...PROFILES.list, { id: 'p3', name: 'Cy', colour: null }], activeId: 'p3' };
+    t.fake.emit('profiles');
+    await t.flush();
+    expect(byTestId(t.host, 'progress-count').textContent).toContain('No learning takes for Cy yet');
+    expect(t.host.byTestId('progress-row')).toBeUndefined();
+  });
+
+  it('moves focus in, and closes with the x, Escape and a press outside', () => {
+    const t = setup('learning', [strictTake('a', 0, 0.4, 1)]);
+    const closeButton = byTestId(t.host, 'progress-close');
+    const outside = t.doc.createElement('div');
+
+    t.toggle.fire('click');
+    expect(t.doc.activeElement).toBe(closeButton);
+    expect(t.calls.library).toEqual([false]);
+
+    // A press inside leaves it open.
+    t.doc.dispatch('pointerdown', { target: closeButton });
+    expect(t.host.hidden).toBe(false);
+
+    // Escape closes it and returns focus to its button.
+    t.doc.dispatch('keydown', esc);
+    expect(t.host.hidden).toBe(true);
+    expect(t.toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(t.doc.activeElement).toBe(t.toggle);
+
+    // The x does the same.
+    t.toggle.fire('click');
+    closeButton.fire('click');
+    expect(t.host.hidden).toBe(true);
+    expect(t.doc.activeElement).toBe(t.toggle);
+
+    // A press outside closes it but leaves focus where the singer put it.
+    t.toggle.fire('click');
+    outside.focus();
+    t.doc.dispatch('pointerdown', { target: outside });
+    expect(t.host.hidden).toBe(true);
+    expect(t.doc.activeElement).toBe(outside);
+
+    // Closed, Escape does nothing.
+    t.doc.dispatch('keydown', esc);
+    expect(t.host.hidden).toBe(true);
+  });
+
+  it('gives way to the Settings and Library drawers when it opens, and they to it', () => {
+    const t = setup('learning', []);
+    t.settingsToggle.setAttribute('aria-expanded', 'true');
+    t.toggle.fire('click');
+    expect(t.calls.settingsClicks).toBe(1);
+    expect(t.calls.library).toEqual([false]);
+
+    (t.fake.store.state as { library: { open: boolean } }).library = { open: true };
+    t.fake.emit('library');
+    expect(t.host.hidden).toBe(true);
   });
 });

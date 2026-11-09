@@ -61,7 +61,7 @@ function sing(h: Harness, t: number, hz: number, who: 'a' | 'b' = 'a', rms = 0.2
 describe('the settings', () => {
   it('starts with singer B off and keeps names and colours', () => {
     const { h } = { h: makeHarness() };
-    expect(h.store.state.duet).toMatchObject({ secondSinger: false, kind: 'off', names: ['Singer A', 'Singer B'] });
+    expect(h.store.state.duet).toMatchObject({ secondSinger: false, kind: 'off', names: ['Singer 1', 'Singer B'] });
     h.core.duet.setSecondSinger(true);
     h.core.duet.setName(0, '  Ann ');
     h.core.duet.setName(1, 'Bo');
@@ -88,7 +88,7 @@ describe('the settings', () => {
     h.core.duet.setColour(0, '#112233');
     const [turns, look] = lane.setTurns.mock.calls.at(-1) ?? [];
     expect(turns).toHaveLength(2);
-    expect(look).toMatchObject({ colours: ['#112233', null], names: ['Singer A', 'Singer B'] });
+    expect(look).toMatchObject({ colours: ['#112233', null], names: ['Singer 1', 'Singer 2'] });
   });
 });
 

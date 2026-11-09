@@ -83,6 +83,7 @@ describe('initialState', () => {
       scoring: 'strict',
       noteGuide: false,
       keyboard: true,
+      hoverHelp: true,
       settingsRev: 0,
       guideReading: null,
       key: { phase: 'none', message: '' },
@@ -135,6 +136,13 @@ describe('initialState', () => {
           },
         },
       ],
+      profiles: {
+        list: [{ id: 'p-initial', name: 'Singer 1', colour: null }],
+        activeId: 'p-initial',
+        secondId: null,
+        legacyId: 'p-initial',
+      },
+      profileDialog: null,
       output: { deviceId: null, label: '', selectable: false },
       latencyS: null,
       calibrating: false,
@@ -414,7 +422,7 @@ describe('formatClock and formatLatency', () => {
 describe('describeHealth', () => {
   it('reads out a fresh page', () => {
     expect(describeHealth(initialState())).toBe(
-      'mic: off · out: default · latency: not set · tracker: idle',
+      'mic: off · out: default · Mic delay: not calibrated (Mic check) · Pitch: idle',
     );
   });
 
@@ -426,7 +434,7 @@ describe('describeHealth', () => {
     s.tracker = 'running';
     s.framesPerSecond = 99.6;
     expect(describeHealth(s)).toBe(
-      'mic: Blue Yeti · out: Headphones · latency: 87 ms · tracker: 100 fps',
+      'mic: Blue Yeti · out: Headphones · Mic delay: 87 ms · Pitch: listening (100 fps)',
     );
   });
 
@@ -435,7 +443,7 @@ describe('describeHealth', () => {
     s.input = { ...s.input, open: true };
     s.tracker = 'unsupported';
     expect(describeHealth(s)).toContain('mic: open');
-    expect(describeHealth(s)).toContain('tracker: unavailable');
+    expect(describeHealth(s)).toContain('Pitch: unavailable');
   });
 });
 

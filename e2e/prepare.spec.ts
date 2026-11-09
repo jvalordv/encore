@@ -377,8 +377,8 @@ test('2. with the service not running Prepare is off, says why and points at the
   await waitForPhase('unavailable');
 
   await expect(prepareButton()).toBeDisabled();
-  await expect(prepareButton()).toHaveAttribute('title', /not running/);
-  await expect(prepareButton()).toHaveAttribute('title', /service\/README\.md/);
+  await expect(prepareButton()).toHaveAttribute('data-help', /not running/);
+  await expect(prepareButton()).toHaveAttribute('data-help', /service\/README\.md/);
   await expect(prepareNote()).toContainText('The service is not running');
   await expect(prepareNote()).toContainText('service/README.md');
   expect(service.requests.map((r) => `${r.method} ${r.path}`)).toEqual(['GET /health']);

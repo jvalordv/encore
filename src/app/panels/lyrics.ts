@@ -50,7 +50,7 @@ export const mountLyricsPanel: MountPanel<LyricsPanelDeps> = (host, { store, con
     const b = el('button', testid);
     b.type = 'button';
     b.textContent = text;
-    b.title = title;
+    b.dataset.help = title;
     return b;
   };
   const cleanups: Array<() => void> = [];

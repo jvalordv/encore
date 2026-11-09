@@ -89,6 +89,18 @@ export interface TakeSummary {
    * singer A's, so a take without this is singer A's alone (src/duet/take.ts).
    */
   duet?: DuetTake;
+  /**
+   * The singer profile that sang as singer A (src/app/profiles.ts). Absent on
+   * takes saved before profiles existed, which belong to the first profile,
+   * and on Mic check takes, which are the mic's and nobody's. The reserved
+   * value NO_SINGER marks a take kept when its singer was deleted: it is
+   * nobody's, unlike an absent field.
+   */
+  profileId?: string;
+  /** A duet take: the profile that sang as singer B, when that was recorded. */
+  profileIdB?: string;
+  /** A duet take: frames singer B's input voiced, for B's streak. */
+  voicedFramesB?: number;
 }
 
 /** What a take is: a song sung over, or the Mic check's test track. */
@@ -129,6 +141,17 @@ export interface TakeStore {
    * when given; an unknown id is not an error.
    */
   setReport(id: string, report: TakeReport, duet?: DuetTake): Promise<void>;
+  /**
+   * Rewrites who sang a take (`profileId`, `profileIdB`; a field left out is
+   * kept as it is); an unknown id is not an error.
+   */
+  setSingers(id: string, singers: TakeSingers): Promise<void>;
+}
+
+/** The two fields of a take that name its singers. */
+export interface TakeSingers {
+  profileId?: string;
+  profileIdB?: string;
 }
 
 /** Database name, version, store and index, fixed by the storage design. */
@@ -177,6 +200,9 @@ function toSummary(record: TakeRecord): TakeSummary {
   if (record.kind !== undefined) summary.kind = record.kind;
   if (record.voicedFrames !== undefined) summary.voicedFrames = record.voicedFrames;
   if (record.duet !== undefined) summary.duet = record.duet;
+  if (record.profileId !== undefined) summary.profileId = record.profileId;
+  if (record.profileIdB !== undefined) summary.profileIdB = record.profileIdB;
+  if (record.voicedFramesB !== undefined) summary.voicedFramesB = record.voicedFramesB;
   return summary;
 }
 
@@ -217,6 +243,10 @@ export function memoryTakeStore(): TakeStore {
     async setReport(id, report, duet) {
       const record = records.get(id);
       if (record) records.set(id, { ...record, report, ...(duet ? { duet } : {}) });
+    },
+    async setSingers(id, singers) {
+      const record = records.get(id);
+      if (record) records.set(id, { ...record, ...singers });
     },
   };
 }
@@ -318,6 +348,17 @@ export async function idbTakeStore(factory: IDBFactory, name: string = DB_NAME):
       request.onsuccess = () => {
         const record = request.result as TakeRecord | undefined;
         if (record) store.put({ ...record, report, ...(duet ? { duet } : {}) });
+      };
+      await done;
+    },
+    async setSingers(id, singers) {
+      const tx = db.transaction(STORE, 'readwrite');
+      const done = committed(tx);
+      const store = tx.objectStore(STORE);
+      const request = store.get(id);
+      request.onsuccess = () => {
+        const record = request.result as TakeRecord | undefined;
+        if (record) store.put({ ...record, ...singers });
       };
       await done;
     },

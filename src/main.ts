@@ -12,8 +12,10 @@
  * so there is nothing to protect; the end-to-end test drives the page through
  * it.
  */
+import './hover-help.css';
 import './library.css';
 import './lyrics.css';
+import './profiles.css';
 import './search.css';
 import './settings.css';
 import './skins/arcade.css';

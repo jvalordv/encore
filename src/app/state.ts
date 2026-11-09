@@ -32,6 +32,8 @@ import type { KaraokeState } from './karaoke';
 import { initialMicCheck } from './mic-check';
 import type { MicCheckState } from './mic-check';
 import { initialMix } from './mix';
+import { initialProfiles } from './profiles';
+import type { ProfilesData } from './profiles';
 import type { MixState } from './mix';
 import { initialCapture } from './capture';
 import type { CaptureState } from './capture';
@@ -86,6 +88,12 @@ export interface SingerState {
   input: InputState;
 }
 
+/**
+ * The in-app dialog about singer profiles that is open, or none: the form for
+ * a new singer (for singer A's slot or B's) or the list to rename and delete.
+ */
+export type ProfileDialog = { kind: 'new'; slot: 0 | 1 } | { kind: 'manage' };
+
 /** Everything the UI shows; the Session is the only writer. */
 export interface AppState {
   /** The loaded song, whatever supplies it: a file or a YouTube video. */
@@ -136,6 +144,8 @@ export interface AppState {
   noteGuide: boolean;
   /** Whether the lane's keyboard view is on. Mirrors `settings.keyboard`. */
   keyboard: boolean;
+  /** Whether hover help popups show. Mirrors `settings.hoverHelp`. */
+  hoverHelp: boolean;
   /**
    * Counts saves of the settings object, so a control for a setting the
    * state does not hold itself (auto-prepare, clarity, the service address)
@@ -169,6 +179,13 @@ export interface AppState {
   singers: SingerState[];
   /** The second singer: names, colours, how they are heard, the turns (W5). */
   duet: DuetState;
+  /**
+   * The singer profiles: the list, singer A (the active singer) and B's slot
+   * (W8). Names and colours of the two slots are mirrored into `duet`.
+   */
+  profiles: ProfilesData;
+  /** The profile dialog that is open, or null. */
+  profileDialog: ProfileDialog | null;
   output: { deviceId: string | null; label: string; selectable: boolean };
   /** Round-trip latency for the current device pair; null when not set. */
   latencyS: number | null;
@@ -222,6 +239,7 @@ export function initialState(): AppState {
     scoring: 'strict',
     noteGuide: false,
     keyboard: true,
+    hoverHelp: true,
     settingsRev: 0,
     guideReading: null,
     key: initialKey(),
@@ -235,6 +253,8 @@ export function initialState(): AppState {
     input,
     singers: [{ id: 0, input }],
     duet: initialDuet(),
+    profiles: initialProfiles(() => 'p-initial'),
+    profileDialog: null,
     output: { deviceId: null, label: '', selectable: false },
     latencyS: null,
     calibrating: false,
@@ -358,18 +378,32 @@ export function formatLatency(latencyS: number | null): string {
   return latencyS === null ? 'not set' : `${Math.round(latencyS * 1000)} ms`;
 }
 
-/** The device, latency and tracker readout for the right of the status bar. */
+/** The mic delay in the status line: the measured time, or how to get one. */
+export function describeMicDelay(latencyS: number | null): string {
+  return latencyS === null ? 'not calibrated (Mic check)' : `${Math.round(latencyS * 1000)} ms`;
+}
+
+/** The pitch tracker in the status line, in plain words. */
+export function describePitchState(state: Pick<AppState, 'tracker' | 'framesPerSecond'>): string {
+  if (state.tracker === 'unsupported') return 'unavailable';
+  if (state.tracker === 'idle') return 'idle';
+  return `listening (${Math.round(state.framesPerSecond)} fps)`;
+}
+
+/** What the status line's right side means, for its hover text. */
+export const HEALTH_HELP =
+  'Mic: the microphone in use. Out: where the sound plays. Mic delay: the time between a sound ' +
+  'playing and your mic hearing it; the Mic check or Calibrate measures it, so your singing lines up ' +
+  'with the song. Pitch: whether the app is listening to your voice (fps is how often it measures).';
+
+/** The device, mic delay and pitch readout for the right of the status bar. */
 export function describeHealth(state: AppState): string {
   const mic = state.input.open ? state.input.label || 'open' : 'off';
-  let tracker: string;
-  if (state.tracker === 'unsupported') tracker = 'unavailable';
-  else if (state.tracker === 'idle') tracker = 'idle';
-  else tracker = `${Math.round(state.framesPerSecond)} fps`;
   return [
     `mic: ${mic}`,
     `out: ${state.output.label || 'default'}`,
-    `latency: ${formatLatency(state.latencyS)}`,
-    `tracker: ${tracker}`,
+    `Mic delay: ${describeMicDelay(state.latencyS)}`,
+    `Pitch: ${describePitchState(state)}`,
   ].join(' · ');
 }
 

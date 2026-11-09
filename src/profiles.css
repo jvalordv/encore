@@ -1,0 +1,182 @@
+/*
+ * Singer profiles (W8): the header's singer dropdown, the Progress drawer at
+ * the right edge and the in-app singer dialogs. The drawer sits where the
+ * Library and Settings drawers do, slides in over the page without reflowing
+ * it, and scrolls inside itself; the panels keep the three from being open
+ * together. Colour, type, shape and motion come only from skin tokens, so all
+ * three skins read as themselves. Loaded before style.css, so a rule that has
+ * to beat one there names an id.
+ */
+
+.profile-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+}
+
+.profile-picker select {
+  max-width: 11em;
+}
+
+#progress {
+  position: fixed;
+  top: 64px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(520px, calc(100vw - 24px));
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  color: var(--color-text);
+  animation: drawer-in var(--motion-slow) var(--easing);
+}
+
+#progress[hidden] {
+  display: none;
+}
+
+/* The title carries a person's name, so its capitals are theirs to choose. */
+#progress .panel-title,
+.dialog .panel-title {
+  text-transform: none;
+}
+
+#progress:focus {
+  outline: none;
+}
+
+@keyframes drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #progress {
+    animation: none;
+  }
+}
+
+.drawer-close {
+  min-width: 2em;
+  padding: 2px 10px;
+  font-size: 1.2rem;
+  line-height: 1.2;
+}
+
+/* The dialog sits over everything, dims the page and centres its box. */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--color-bg) 72%, transparent);
+}
+
+.dialog-backdrop[hidden] {
+  display: none;
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(460px, 100%);
+  max-height: calc(100vh - 32px);
+  padding: 16px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  color: var(--color-text);
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dialog-head .panel-title {
+  margin: 0;
+}
+
+.dialog input[type='text'] {
+  width: 100%;
+  min-width: 0;
+}
+
+.manage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.manage-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 8px;
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: var(--radius);
+}
+
+.manage-row input[type='color'] {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  flex: none;
+}
+
+.manage-row input[type='text'] {
+  flex: 1;
+  min-width: 6em;
+}
+
+.manage-warning {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 3px solid var(--color-miss);
+}
+
+.danger {
+  border-color: var(--color-miss);
+}
+
+.singer-profile {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+#singers .singer-row {
+  flex-wrap: wrap;
+}
+
+#take-owner {
+  min-width: 0;
+  max-width: 100%;
+}

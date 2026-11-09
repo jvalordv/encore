@@ -26,6 +26,7 @@ import { LyricsController } from '../lyrics/controller';
 import { createLrclibClient } from '../lyrics/lrclib';
 import { lazyLyricsStore } from '../lyrics/store';
 import { downloadBlob } from './download';
+import { mountHoverHelp } from './hover-help';
 import { mountCapturePanel } from './panels/capture';
 import { mountKaraokePanel } from './panels/karaoke';
 import { mountKeyboardPanel } from './panels/keyboard';
@@ -36,6 +37,8 @@ import { mountMicCheckPanel } from './panels/mic-check';
 import { mountMicHealthPanel } from './panels/mic-health';
 import { mountModePanel } from './panels/mode';
 import { mountNoteGuidePanel } from './panels/note-guide';
+import { mountProfileDialog } from './panels/profile-dialog';
+import { mountProfilePicker } from './panels/profile-select';
 import { mountProgressPanel } from './panels/progress';
 import { mountReportPanel } from './panels/report';
 import { mountSingersPanel } from './panels/singers';
@@ -48,6 +51,7 @@ import type { Session } from './session';
 import { domSkinPort } from './skin-port';
 import {
   describeHealth,
+  HEALTH_HELP,
   describeMonitor,
   describePitch,
   formatClock,
@@ -65,6 +69,8 @@ export interface UI {
 /** Select values for "nothing chosen yet" and "the system default". */
 const NONE = '@none';
 const DEFAULT = '@default';
+/** What the output selector says when the browser can choose an output. */
+const OUTPUT_HELP = 'Where the song plays';
 /** Seconds the arrow keys seek; Shift narrows it. */
 const SEEK_STEP_S = 5;
 const SEEK_STEP_FINE_S = 1;
@@ -176,6 +182,8 @@ export function mountUI(session: Session, root: Document = document): UI {
   const loopReadout = get('loop-readout');
   const statusText = get('status-text');
   const statusHealth = get('status-health');
+  // The readout is shorthand, so its words are explained on hover.
+  statusHealth.dataset.help = HEALTH_HELP;
 
   const cleanups: Array<() => void> = [];
   const listen = <K extends keyof HTMLElementEventMap>(
@@ -279,7 +287,7 @@ export function mountUI(session: Session, root: Document = document): UI {
     prepareGroup.dataset.phase = prepare.phase;
     setText(prepareButton, view.label);
     prepareButton.disabled = view.disabled;
-    prepareButton.title = view.title;
+    prepareButton.dataset.help = view.title;
     // Rebuilt only when a line changed, so a poll that repeats itself leaves
     // the list alone.
     const signature = view.lines.join('\n');
@@ -302,7 +310,7 @@ export function mountUI(session: Session, root: Document = document): UI {
 
     if (has('song')) {
       setText(songTitle, state.song?.name ?? 'No song loaded');
-      songTitle.title = state.song?.name ?? '';
+      songTitle.dataset.help = state.song?.name ?? '';
       setText(songDuration, state.song ? formatClock(state.song.durationS) : '');
     }
 
@@ -328,7 +336,7 @@ export function mountUI(session: Session, root: Document = document): UI {
       latencyInput.disabled = busy;
       inputSelect.disabled = busy;
       outputSelect.disabled = busy || !state.output.selectable;
-      outputSelect.title = state.output.selectable ? '' : 'This browser cannot pick an output device';
+      outputSelect.dataset.help = state.output.selectable ? OUTPUT_HELP : 'This browser cannot pick an output device';
       micToggle.disabled = busy;
       // Switching reopens the mic, which would cut the stream a take or a
       // calibration is reading; the Session refuses it too.
@@ -444,8 +452,18 @@ export function mountUI(session: Session, root: Document = document): UI {
   );
   cleanups.push(mountStreakPanel(get('streak'), { store }));
   cleanups.push(
-    mountProgressPanel(get('progress'), { store, session, toggle: get<HTMLButtonElement>('progress-button') }),
+    mountProgressPanel(get('progress'), {
+      store,
+      session,
+      toggle: get<HTMLButtonElement>('progress-button'),
+      settingsToggle: get<HTMLButtonElement>('settings-toggle'),
+    }),
   );
+  // Who is singing: the header's dropdown and the dialogs it and the Singers panel open.
+  cleanups.push(mountProfilePicker(get('profile-picker'), { store, session }));
+  cleanups.push(mountProfileDialog(get('profile-dialog'), { store, session }));
+  // Hover help for every element with a data-help attribute; Settings turns it off.
+  cleanups.push(mountHoverHelp(root, store));
   // The song search is what the main area shows until a song is loaded.
   cleanups.push(
     mountSearchPanel(get('search'), { store, session, toggle: get<HTMLButtonElement>('search-toggle') }),
@@ -595,6 +613,8 @@ export function mountUI(session: Session, root: Document = document): UI {
   let swallowSpaceUp = false;
   listenDoc('keydown', (ev) => {
     if (ev.defaultPrevented || ev.ctrlKey || ev.metaKey || ev.altKey || usesKeys(ev.target)) return;
+    // A dialog over the page keeps the keys for itself.
+    if (store.state.profileDialog !== null) return;
     const step = ev.shiftKey ? SEEK_STEP_FINE_S : SEEK_STEP_S;
     switch (ev.key) {
       case ' ':

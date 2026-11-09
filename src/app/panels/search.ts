@@ -114,7 +114,7 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
   const close = element(doc, 'button', 'search-close');
   close.type = 'button';
   close.textContent = 'Close';
-  close.title = 'Back to the song';
+  close.dataset.help = 'Back to the song';
   listen(close, 'click', () => session.setSearchOpen(false));
   const keyless = element(doc, 'p', 'search-keyless', 'search-keyless song-meta');
   keyless.textContent = KEYLESS_WARNING;
@@ -198,7 +198,7 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
     item.dataset.kind = result.kind;
     const pick = element(doc, 'button', 'search-pick', 'search-pick');
     pick.type = 'button';
-    pick.title = `Load: ${result.title}`;
+    pick.dataset.help = `Load: ${result.title}`;
     const frame = doc.createElement('span');
     frame.className = 'search-thumb';
     if (result.thumbnailUrl !== '') {
@@ -239,7 +239,7 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
       const use = element(doc, 'button', 'search-use-original', 'compact');
       use.type = 'button';
       use.textContent = 'Use as original';
-      use.title = "Score the song in use against this one's melody";
+      use.dataset.help = "Score the song in use against this one's melody";
       listen(use, 'click', () => void session.useVideoAsOriginal(result.videoId));
       foot.append(use);
     }

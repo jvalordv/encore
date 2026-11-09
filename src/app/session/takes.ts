@@ -450,6 +450,12 @@ export class TakeController {
     const both = duetCapture ? this.core.scoring.duetReportsFor(duetCapture, frames) : null;
     const report = both ? both.report : this.core.scoring.reportFor(frames);
     const trace = this.buildTrace(rec, meta, tracks);
+    const voicedOf = (list: readonly TakeFrame[]): number => list.filter((f) => f.f0 > 0 && Number.isFinite(f.f0)).length;
+    // Who sang it: the active singer, and singer B's profile for a duet. The
+    // Mic check is the mic's, not a person's, so its take carries neither.
+    const { activeId, secondId } = this.core.store.state.profiles;
+    const named = meta.sections ? null : activeId;
+    const second = meta.sections || !duetCapture ? null : secondId;
     const id = await takes.save({
       trace,
       songHash: song.hash,
@@ -466,9 +472,16 @@ export class TakeController {
       ...(meta.sections ? { kind: 'mic-check' as const } : {}),
       ...(this.core.keys.shift !== 0 && !meta.sections ? { shiftSemitones: this.core.keys.shift } : {}),
       // On one mic shared by two, only A's turns count toward A's streak.
-      voicedFrames: (duetCapture?.mode === 'one-mic' ? framesFor(frames, duetCapture.turns, 0) : frames).filter(
-        (f) => f.f0 > 0 && Number.isFinite(f.f0),
-      ).length,
+      voicedFrames: voicedOf(duetCapture?.mode === 'one-mic' ? framesFor(frames, duetCapture.turns, 0) : frames),
+      ...(named ? { profileId: named } : {}),
+      ...(second && duetCapture
+        ? {
+            profileIdB: second,
+            voicedFramesB: voicedOf(
+              duetCapture.mode === 'one-mic' ? framesFor(frames, duetCapture.turns, 1) : duetCapture.framesB,
+            ),
+          }
+        : {}),
       // Frames are on song time with the latency already taken off.
       frames,
       wav: encodeWavBlob(rec.pcm, rec.sampleRate, 16),

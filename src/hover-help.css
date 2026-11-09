@@ -1,0 +1,21 @@
+/* The hover help popup (src/app/hover-help.ts): the text colour as its
+   background and the page colour as its text, so it reads on every skin. */
+.hover-help {
+  position: fixed;
+  z-index: 100;
+  max-width: min(280px, calc(100vw - 12px));
+  padding: 6px 9px;
+  background: var(--color-text);
+  border: var(--border-width) solid var(--color-accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  color: var(--color-bg);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.hover-help[hidden] {
+  display: none;
+}

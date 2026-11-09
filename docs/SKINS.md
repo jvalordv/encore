@@ -29,6 +29,10 @@ Tokens (all required, the registry test checks each CSS file defines them):
 a free phrase) and `--color-free-band` the band behind a free phrase; both are
 translucent-friendly colours that read as neither a hit nor a miss.
 
+The hover help popup (src/app/hover-help.ts) adds no token: it paints
+`--color-text` as its background with `--color-bg` as its text, so it reads on
+any skin, with `--color-accent`, `--radius`, `--border-width` and `--shadow`.
+
 `Skin` type:
 
 ```ts

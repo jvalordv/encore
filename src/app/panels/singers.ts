@@ -1,25 +1,30 @@
 /**
- * The singers panel: singer A's and singer B's names and ribbon colours, the
- * switch that turns singer B on, and, for B, a second input with its own
+ * The singers panel: who sings in each slot (a dropdown of the singer
+ * profiles, the same one as the header's for singer A), that singer's name
+ * and ribbon colour (which rename and recolour the profile), the switch that
+ * turns singer B on, and, for B, a second input with its own
  * picker, level meter, mic state, latency and Calibrate. With B on and no
  * second mic open, the two share the one mic by turns (the note under the
  * switch says how the lane's strip is clicked); with a second mic open each
  * has a mic. The picker warns beside a Bluetooth Hands-Free mic. Built once
- * and updated from `state.duet` and `state.singers`; the controller in
- * src/duet does the work.
+ * and updated from `state.duet`, `state.profiles` and `state.singers`; the
+ * duet controller in src/duet and the profiles controller do the work.
  */
 import { HANDS_FREE_WARNING, isHandsFreeLabel } from '../../duet/hands-free';
 import type { SingerIndex } from '../../duet/settings';
+import { profileById } from '../profiles';
+import type { ProfilesData } from '../profiles';
 import type { Session } from '../session';
 import type { AppState, StateStore } from '../state';
 import { meterFraction } from '../state';
 import { describeMicHealth } from './mic-health';
 import type { MountPanel } from './panel';
+import { fillProfileSelect, pickProfile, shownColour } from './profile-select';
 
 /** What the panel needs: the state, and the duet's intents and devices. */
 export interface SingersPanelDeps {
   store: StateStore;
-  session: Pick<Session, 'duet' | 'deviceLists' | 'onDevices' | 'refreshDevices'>;
+  session: Pick<Session, 'duet' | 'profiles' | 'deviceLists' | 'onDevices' | 'refreshDevices'>;
 }
 
 /** Said under the switch while B shares the one mic. */
@@ -37,17 +42,10 @@ export function turnSourceLine(source: AppState['duet']['turnSource']): string {
 
 const DEFAULT_VALUE = '@default';
 
-/** The skin's colour for a singer when it is a plain hex, else a neutral grey. */
-function skinColour(doc: Document, token: string, fallback: string): string {
-  const view = doc.defaultView;
-  const value = view ? view.getComputedStyle(doc.documentElement).getPropertyValue(token).trim() : '';
-  return /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
-}
-
 /** Builds the panel into `host`; the returned function takes it down. */
 export const mountSingersPanel: MountPanel<SingersPanelDeps> = (host, { store, session }) => {
   const doc = host.ownerDocument;
-  const { duet } = session;
+  const { duet, profiles } = session;
 
   function el<K extends keyof HTMLElementTagNameMap>(tag: K, testid: string, className = '', text = ''): HTMLElementTagNameMap[K] {
     const node = doc.createElement(tag);
@@ -64,21 +62,44 @@ export const mountSingersPanel: MountPanel<SingersPanelDeps> = (host, { store, s
     return b;
   }
 
-  /** A singer's row: colour swatch and name. */
-  function singerRow(singer: SingerIndex): { row: HTMLElement; name: HTMLInputElement; colour: HTMLInputElement } {
+  /** The profile sitting in a slot: A's is the active singer, B's the second. */
+  function slotProfile(data: ProfilesData, singer: SingerIndex) {
+    return profileById(data, singer === 0 ? data.activeId : data.secondId);
+  }
+
+  /** A singer's row: who sings (a dropdown of singers), then colour swatch and name. */
+  function singerRow(singer: SingerIndex): {
+    row: HTMLElement;
+    profile: HTMLSelectElement;
+    name: HTMLInputElement;
+    colour: HTMLInputElement;
+  } {
     const id = singer === 0 ? 'a' : 'b';
     const row = el('div', `singer-${id}-row`, 'singer-row');
+    const profile = el('select', `singer-${id}-profile`, 'singer-profile');
+    profile.setAttribute('aria-label', `Who is singer ${id.toUpperCase()}`);
+    profile.dataset.help = `Who sings as singer ${id.toUpperCase()}: their progress, streak and takes are kept apart`;
+    profile.addEventListener('change', () => pickProfile(session, store, singer, profile));
     const colour = el('input', `singer-${id}-colour`);
     colour.type = 'color';
     colour.setAttribute('aria-label', `Singer ${id.toUpperCase()} colour`);
-    colour.addEventListener('change', () => duet.setColour(singer, colour.value));
+    colour.dataset.help = `The colour of singer ${id.toUpperCase()}'s ribbon on the lane`;
+    colour.addEventListener('change', () => {
+      const who = slotProfile(store.state.profiles, singer);
+      if (who) profiles.setColour(who.id, colour.value);
+    });
     const name = el('input', `singer-${id}-name`);
     name.type = 'text';
     name.maxLength = 16;
     name.setAttribute('aria-label', `Singer ${id.toUpperCase()} name`);
-    name.addEventListener('change', () => duet.setName(singer, name.value));
-    row.append(colour, name);
-    return { row, name, colour };
+    name.dataset.help = `Rename singer ${id.toUpperCase()}`;
+    name.addEventListener('change', () => {
+      const who = slotProfile(store.state.profiles, singer);
+      // A refused name (empty, or one a singer already has) goes back to what it was.
+      if (who && profiles.rename(who.id, name.value) !== null) name.value = who.name;
+    });
+    row.append(profile, colour, name);
+    return { row, profile, name, colour };
   }
 
   const title = el('h3', 'singers-title', 'group-title', 'Singers');
@@ -96,6 +117,7 @@ export const mountSingersPanel: MountPanel<SingersPanelDeps> = (host, { store, s
   // Singer B's input, in the same order as the Devices group.
   const pick = el('select', 'singer-b-input');
   pick.setAttribute('aria-label', 'Singer B microphone');
+  pick.dataset.help = 'The microphone singer B sings into, when they have their own';
   pick.addEventListener('change', () => {
     if (pick.value === '') return;
     void duet.chooseSecondInput(pick.value === DEFAULT_VALUE ? null : pick.value);
@@ -159,12 +181,24 @@ export const mountSingersPanel: MountPanel<SingersPanelDeps> = (host, { store, s
   }
 
   let pickerKey = '';
+  let profilesKey = '';
   function render(app: AppState): void {
     const d = app.duet;
-    if (doc.activeElement !== a.name) a.name.value = d.names[0];
-    if (doc.activeElement !== b.name) b.name.value = d.names[1];
-    a.colour.value = d.colours[0] ?? skinColour(doc, '--color-singer-a', '#7a7a7a');
-    b.colour.value = d.colours[1] ?? skinColour(doc, '--color-singer-b', '#a8a8a8');
+    const data = app.profiles;
+    const who = [slotProfile(data, 0), slotProfile(data, 1)];
+    // The dropdowns are rebuilt only when the singers change: this runs with
+    // every meter tick, and redrawing would close a list the singer has open.
+    const keyOfProfiles = `${data.list.map((p) => `${p.id}:${p.name}`).join('|')}|${data.activeId}|${data.secondId}`;
+    if (keyOfProfiles !== profilesKey) {
+      profilesKey = keyOfProfiles;
+      fillProfileSelect(a.profile, data, data.activeId);
+      fillProfileSelect(b.profile, data, data.secondId);
+    }
+    a.profile.disabled = b.profile.disabled = app.recording;
+    if (doc.activeElement !== a.name) a.name.value = who[0]?.name ?? d.names[0];
+    if (doc.activeElement !== b.name) b.name.value = who[1]?.name ?? d.names[1];
+    a.colour.value = who[0] ? shownColour(doc, data, who[0]) : '#808080';
+    b.colour.value = who[1] ? shownColour(doc, data, who[1]) : '#808080';
     toggle.checked = d.secondSinger;
     b.row.hidden = !d.secondSinger;
     note.hidden = !d.secondSinger;
@@ -193,7 +227,13 @@ export const mountSingersPanel: MountPanel<SingersPanelDeps> = (host, { store, s
   const cleanups: Array<() => void> = [];
   cleanups.push(
     store.subscribe((app, changed) => {
-      if (changed.has('duet') || changed.has('singers') || changed.has('recording') || changed.has('calibrating')) {
+      if (
+        changed.has('duet') ||
+        changed.has('profiles') ||
+        changed.has('singers') ||
+        changed.has('recording') ||
+        changed.has('calibrating')
+      ) {
         render(app);
       }
     }),

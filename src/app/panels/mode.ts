@@ -37,7 +37,7 @@ export const mountModePanel: MountPanel<ModePanelDeps> = (host, { store, session
     button.type = 'button';
     button.dataset.testid = `mode-${mode}`;
     button.textContent = text;
-    button.title = title;
+    button.dataset.help = title;
     const onClick = (): void => session.setMode(mode);
     button.addEventListener('click', onClick);
     cleanups.push(() => button.removeEventListener('click', onClick));
@@ -59,7 +59,7 @@ export const mountModePanel: MountPanel<ModePanelDeps> = (host, { store, session
     button.type = 'button';
     button.dataset.testid = `scoring-${style}`;
     button.textContent = text;
-    button.title = title;
+    button.dataset.help = title;
     const onClick = (): void => session.setScoring(style);
     button.addEventListener('click', onClick);
     cleanups.push(() => button.removeEventListener('click', onClick));

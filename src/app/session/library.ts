@@ -17,6 +17,7 @@ import { describeImport, exportFavorites, parseFavorites } from '../library-shar
 import { serviceOnly } from '../library-state';
 import type { LibraryState, LibraryView } from '../library-state';
 import { addFavorite, advanceTarget, favoritesOf, moveFavorite, neighbour, removeFavorite } from '../playlist';
+import { takesOfProfile } from '../profiles';
 import type { SessionCore } from './core';
 import { messageOf } from './helpers';
 import { MIC_CHECK_SONG_KEY } from './mic-check';
@@ -51,7 +52,8 @@ export class LibraryController {
     core.store.subscribe((state, changed) => {
       if (changed.has('song')) this.onSongChange(state.song?.hash ?? null);
       if (changed.has('karaoke') || changed.has('reference')) this.notePrepared();
-      if (changed.has('takes')) void this.refreshCounts();
+      // Stars and the streak are the active singer's, so a new singer redraws them.
+      if (changed.has('takes') || changed.has('profiles')) void this.refreshCounts();
     });
   }
 
@@ -112,12 +114,15 @@ export class LibraryController {
   /** Counts the saved takes of each song for the list. */
   private async refreshCounts(): Promise<void> {
     try {
-      const takes = await (await this.core.takesReady).list();
+      const all = await (await this.core.takesReady).list();
+      const { activeId, legacyId } = this.core.store.state.profiles;
+      // Counts are the song's takes by anyone; stars and days are the active singer's.
       const counts: Record<string, number> = {};
-      for (const take of takes) {
+      for (const take of all) {
         if (take.kind === 'mic-check') continue;
         counts[take.songHash] = (counts[take.songHash] ?? 0) + 1;
       }
+      const takes = takesOfProfile(all, activeId, legacyId);
       const stars: Record<string, number> = {};
       const measures: LibraryState['songStarMeasure'] = {};
       for (const [hash, s] of Object.entries(songStarsBySong(takes))) {

@@ -61,7 +61,7 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
   const save = element(doc, 'button', 'save-melody');
   save.type = 'button';
   save.textContent = 'Save melody (.mid)';
-  save.title = 'Download the melody as a MIDI file, to open in any MIDI player.';
+  save.dataset.help = 'Download the melody as a MIDI file, to open in any MIDI player.';
   const onSave = (): void => {
     const melodyOut = session.melodyForExport();
     if (!melodyOut) return;
@@ -78,7 +78,7 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
   const backingBox = element(doc, 'div', 'backing', 'karaoke-backing');
   const showLabel = doc.createElement('label');
   showLabel.className = 'field';
-  showLabel.title = 'The backing music as grey notes behind the melody, and grey lit keys.';
+  showLabel.dataset.help = 'The backing music as grey notes behind the melody, and grey lit keys.';
   const showBacking = element(doc, 'input', 'backing-toggle');
   showBacking.type = 'checkbox';
   const onShow = (): void => session.setBackingShown?.(showBacking.checked);
@@ -87,7 +87,7 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
   showLabel.append(showBacking, doc.createTextNode(' Backing notes'));
   const withLabel = doc.createElement('label');
   withLabel.className = 'field';
-  withLabel.title = 'Save the backing as a second track in the .mid file.';
+  withLabel.dataset.help = 'Save the backing as a second track in the .mid file.';
   const withBacking = element(doc, 'input', 'save-with-backing');
   withBacking.type = 'checkbox';
   withLabel.append(withBacking, doc.createTextNode(' with backing'));
@@ -123,7 +123,7 @@ export const mountKaraokePanel: MountPanel<KaraokePanelDeps> = (host, { store, s
   guide.min = '0';
   guide.max = '1';
   guide.step = '0.05';
-  guide.title = 'How loud the original vocal is when Karaoke + vocal guide is chosen';
+  guide.dataset.help = 'How loud the original vocal is when Karaoke + vocal guide is chosen';
   const onGuide = (): void => session.setGuideLevel(guide.valueAsNumber);
   guide.addEventListener('input', onGuide);
   cleanups.push(() => guide.removeEventListener('input', onGuide));

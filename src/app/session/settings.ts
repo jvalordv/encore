@@ -6,8 +6,9 @@
  * the same intents the inline controls call (setMode, setNoteGuide,
  * setClarity, ...), one by one, so the lane, the tracker, the state and the
  * stored object all move together and there is no second source of truth.
- * Reset all and import touch settings only: takes, the Library, lyrics,
- * favorites and the per-song stores (key shift, free phrases, turns) stay.
+ * Reset all and import touch settings only: takes, singer profiles, the
+ * Library, lyrics, favorites and the per-song stores (key shift, free
+ * phrases, turns) stay; an import adds or updates the singers its file names.
  */
 import { ServiceClient } from '../../service/client';
 import { describeImport, exportSettingsText, parseSettingsText } from '../settings-io';
@@ -41,6 +42,14 @@ export class SettingsController {
     core.store.patch({ keyboard: on });
   }
 
+  /** Turns hover help popups on or off, remembering the choice. */
+  setHoverHelp(on: boolean): void {
+    const { core } = this;
+    core.current.hoverHelp = on;
+    core.persist();
+    core.store.patch({ hoverHelp: on });
+  }
+
   /** Keeps a new service address; false (and unchanged) when it is no URL. */
   setServiceUrl(text: string): boolean {
     const url = parseServiceUrl(text);
@@ -64,7 +73,8 @@ export class SettingsController {
   /** The text of a settings file; the key is in it only when asked for. */
   exportText(skin: string, includeKey: boolean): string {
     const autoAdvance = this.core.store.state.library.autoAdvance;
-    return exportSettingsText(this.core.current, { skin, autoAdvance }, includeKey);
+    const profiles = this.core.profiles.list();
+    return exportSettingsText(this.core.current, { skin, autoAdvance, profiles }, includeKey);
   }
 
   /**
@@ -83,6 +93,8 @@ export class SettingsController {
     if (parsed.autoAdvance !== null && parsed.autoAdvance !== store.state.library.autoAdvance) {
       extras.push('Auto-advance');
     }
+    // Singers from the file are added or updated, never removed, so no take loses its owner.
+    if (parsed.profiles !== null && this.core.profiles.merge(parsed.profiles) > 0) extras.push('Singers');
     this.apply(parsed.settings, parsed.autoAdvance);
     return { message: describeImport(parsed, extras), applied: true, skin: parsed.skin };
   }
@@ -119,6 +131,7 @@ export class SettingsController {
     core.scoring.setScoring(next.scoring);
     core.health.setNoteGuide(next.noteGuide);
     this.setKeyboard(next.keyboard);
+    this.setHoverHelp(next.hoverHelp);
     core.prepare.setAutoPrepareLinks(next.autoPrepareLinks);
     core.input.setClarity(next.clarityThreshold);
     if (next.youtubeApiKey !== current.youtubeApiKey) core.search.setKey(next.youtubeApiKey);
@@ -138,11 +151,9 @@ export class SettingsController {
     core.health.syncTuning();
 
     const duet = core.duet;
+    // The names and colours of the two slots are the singers' profiles, which a
+    // reset keeps (they are people, not preferences) and an import merges.
     duet.setSecondSinger(next.duet.secondSinger);
-    duet.setName(0, next.duet.names[0]);
-    duet.setName(1, next.duet.names[1]);
-    duet.setColour(0, next.duet.colours[0]);
-    duet.setColour(1, next.duet.colours[1]);
 
     void core.input.setMonitor(next.monitor);
     if (next.outputDeviceId !== current.outputDeviceId) void core.devices.chooseOutput(next.outputDeviceId);

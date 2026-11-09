@@ -85,6 +85,11 @@ export interface Settings {
   noteGuide: boolean;
   /** Whether the lane shows the piano keyboard view (lit key, voice marker). */
   keyboard: boolean;
+  /**
+   * Whether hover and focus help popups show (src/app/hover-help.ts). On by
+   * default; the labels screen readers use stay either way.
+   */
+  hoverHelp: boolean;
   /** Which search provider answers the song search; only 'youtube' exists. */
   searchProvider: SearchProviderId;
   /**
@@ -125,6 +130,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   guideLevel: DEFAULT_GUIDE_LEVEL,
   noteGuide: false,
   keyboard: true,
+  hoverHelp: true,
   searchProvider: 'youtube',
   youtubeApiKey: '',
   duet: Object.freeze(defaultDuet()) as DuetSettings,
@@ -252,6 +258,7 @@ export function sanitizeSettings(value: unknown): Settings {
     guideLevel: guide(raw.guideLevel),
     noteGuide: typeof raw.noteGuide === 'boolean' ? raw.noteGuide : DEFAULT_SETTINGS.noteGuide,
     keyboard: typeof raw.keyboard === 'boolean' ? raw.keyboard : DEFAULT_SETTINGS.keyboard,
+    hoverHelp: typeof raw.hoverHelp === 'boolean' ? raw.hoverHelp : DEFAULT_SETTINGS.hoverHelp,
     searchProvider: searchProviderId(raw.searchProvider),
     youtubeApiKey: apiKey(raw.youtubeApiKey),
     duet: sanitizeDuet(raw.duet),

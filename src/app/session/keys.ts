@@ -28,6 +28,7 @@ import type { LaneBacking } from '../../render/lane-backing';
 import type { LaneReference } from '../../render/lane-geometry';
 import type { KeyMap } from '../../service/types';
 import { loadShift, saveShift } from '../key-shift';
+import { takesOfProfile } from '../profiles';
 import type { SessionCore } from './core';
 
 /** A transform of one input at one shift, remembered so repeats cost nothing. */
@@ -179,7 +180,10 @@ export class KeyController {
   /** Reads the range from the newest learning takes of every song. */
   async refreshRange(): Promise<void> {
     try {
-      const list = await (await this.core.takesReady).list();
+      const all = await (await this.core.takesReady).list();
+      const { activeId, legacyId } = this.core.store.state.profiles;
+      // The range is the active singer's own: another singer's takes say nothing of it.
+      const list = takesOfProfile(all, activeId, legacyId);
       const spans = list.filter((t) => t.kind !== 'mic-check').map((t) => t.report?.voice?.summary.range ?? null);
       this.band = estimateRange(spans);
     } catch {

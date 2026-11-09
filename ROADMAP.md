@@ -24,6 +24,17 @@ webcam or USB mic.
 
 ## Current state
 
+- **Last done (2026-11-08): W8, singer profiles, Progress in a drawer,
+  plain transport labels.** Each singer has a profile (name, colour);
+  progress, streak, stars, bests and range are per profile, takes record
+  who sang. A header dropdown and the Singers panel's two slots choose
+  who sings; Manage singers renames and deletes (in-app confirmation
+  naming what goes). Progress is a right-side drawer. The transport and
+  status words are plain. W8b adds hover help (with a Settings switch)
+  and a keep-or-delete choice for a deleted singer's takes.
+  **Next:** W9 (song reference card), W10 (drop several mp3s, takes
+  per song in the Library, no download), W11 (quieter left panel); then
+  the owner tries two singers and W7.
 - **Last done (2026-11-08): WL4, hear the voice over the song, and
   detailed replay items.** From the owner's take of 2026-11-08 (speakers,
   webcam mic): the tracker caught 19 % of the voice and read the
@@ -1356,6 +1367,58 @@ Tracks inside a wave share no files and may run in parallel.
     kept on import (counted as a choice).
   - Follow-up: per-item replay tips fire at or past a threshold, the
     take-level tips strictly past it; unify.
+- [x] **W8: Singer profiles, Progress drawer, plain labels** (owner,
+  2026-11-08: "we should be able to easily switch between different singer
+  profiles ... delete those profiles ... a dropdown ... selectable in the
+  Singers section ... a popup window on the right side makes more sense";
+  and, of the transport row and the status line, "I'm also not sure what
+  these mean").
+  - Profiles: `src/app/profiles.ts` (pure), `session/profiles.ts`, stored
+    under `encore.profiles`; the first run makes "Singer 1" (or the W5
+    names if they were customised) and old takes belong to it. A take
+    records `profileId` and, for a duet, `profileIdB` and `voicedFramesB`
+    (top level of the record, not inside `duet`, so a karaoke-mode duet
+    take, which has no `duet` part, still counts for B's streak).
+  - Choosing: header dropdown (A), a dropdown in each Singers slot, "New
+    singer..." and "Manage singers..." in all of them; the same singer in
+    both slots trades the two (or is refused with a note when B has
+    nobody). Takes list filter: the active singer's, or All singers.
+  - Deleting: in-app dialog with "Delete <name> and N takes" and Cancel;
+    the last singer cannot go; only takes the singer sang as A are removed
+    (their part in someone else's duet take stays with that take).
+  - Settings: export carries the singer list; import adds and updates
+    singers by id and removes none; **Reset all keeps the singers** (they
+    are people, not preferences).
+  - Progress drawer: right edge, over the page, closes with the x, Escape
+    and a press outside; title names the singer.
+  - Labels: A, B, Loop, Key and the status line say what they do ("Mic
+    delay: not calibrated (Mic check)", "Pitch: idle / listening").
+  - Fixed on the way: the streak chip test used the UTC day, so it failed
+    near local midnight; it now uses the local day.
+  - Follow-up: a profile's colour is the skin's for the slot until set.
+  - Follow-up: the stars/streak numbers for B on a one-mic duet take read
+    only B's turns; a quiet B counts for nothing, as designed.
+  - Follow-up: Mic check takes are nobody's and are not removed when a
+    singer is deleted.
+  - **W8b (2026-11-08, owner: "popup tool tips and the ability to turn
+    those off in Settings"; "we can ask the user if they want to keep
+    those or not")**: hover help, a styled popup from `data-help` on any
+    element (`src/app/hover-help.ts`, about 400 ms delay, Escape and leave
+    hide it, kept in the viewport, `aria-describedby`), replacing every
+    native title; mic controls, header buttons and singer dropdowns have
+    text; Settings > Appearance > "Hover help" (default on, in the export,
+    Reset turns it on). Deleting a singer with takes now offers "Delete
+    <name> and N takes", "Delete <name>, keep N takes" and Cancel; kept
+    takes carry `profileId: 'none'` (`NO_SINGER`), list under All singers
+    as "No singer" and count for nobody; legacy takes (no `profileId`) still
+    belong to the oldest singer.
+    - Follow-up: kept "No singer" takes cannot be given to another singer
+      yet; a "Give to..." choice on the take row would do it.
+    - Follow-up: disabled controls show hover help to the mouse (found by
+      position) but not to the keyboard, since they cannot take focus;
+      `aria-disabled` instead of `disabled` would fix that.
+    - Follow-up: with Hover help off, no `aria-describedby` is attached
+      either; the aria-labels stay.
 - [ ] **W7: Owner test and one bug sweep.** The owner runs the full list:
   solo with a file, a link, a prepared link; learning mode; duet on one
   mic and on two; speakers and headphones. Then one reviewer reads
@@ -1469,6 +1532,7 @@ were.
 | W7 Test and sweep | 0.8 (0.6-1.5) | about 0.6 M | 45 min |
 | W6c Settings panel (measured, worktree) | 0.6 | 0.39 M | 5 min |
 | WL4 Voice over the song + replay detail (measured, 2 lanes) | 0.9 | 1.18 M | 15 min |
+| W8 + W8b Profiles, drawer, hover help (measured, worktree) | 1 | 1.13 M | 10 min |
 | **Total** | **about 16 (15-19)** | **about 11.5 M** | **about 5 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The

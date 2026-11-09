@@ -52,18 +52,21 @@
         <!-- The lane's keyboard view toggle, in both modes. Built by
              src/app/panels/keyboard.ts. -->
         <div id="keyboard" class="keyboard" data-testid="keyboard"></div>
-        <!-- Learning mode only: opens the Progress panel below. Wired by
+        <!-- Learning mode only: opens the Progress drawer. Wired by
              src/app/panels/progress.ts, which hides it in karaoke mode. -->
-        <button type="button" id="progress-button" class="progress-button" data-testid="progress-button" aria-controls="progress" aria-expanded="false" hidden>Progress</button>
+        <button type="button" id="progress-button" class="progress-button" data-testid="progress-button" aria-controls="progress" aria-expanded="false" data-help="The active singer's progress over their takes" hidden>Progress</button>
         <!-- Opens the Library drawer (every loaded song, and the favorites).
              Built by src/app/panels/library.ts. -->
-        <button type="button" id="library-toggle" data-testid="library-toggle" aria-controls="library" aria-expanded="false">Library</button>
+        <button type="button" id="library-toggle" data-testid="library-toggle" data-help="Every song you have loaded, and your favorites" aria-controls="library" aria-expanded="false">Library</button>
         <!-- Opens the Settings drawer (every setting in one place). Built by
              src/app/panels/settings.ts. -->
-        <button type="button" id="settings-toggle" data-testid="settings-toggle" aria-controls="settings" aria-expanded="false">Settings</button>
+        <button type="button" id="settings-toggle" data-testid="settings-toggle" data-help="Every setting in one place" aria-controls="settings" aria-expanded="false">Settings</button>
+        <!-- Who is singing (the active singer, singer A): their progress, streak
+             and takes are their own. Built by src/app/panels/profile-select.ts. -->
+        <div id="profile-picker" class="profile-picker" data-testid="profile-picker" data-keep-drawer></div>
         <div class="skin-picker">
           <label for="skin-switcher">Skin</label>
-          <select id="skin-switcher"></select>
+          <select id="skin-switcher" data-help="How the app looks"></select>
         </div>
       </header>
 
@@ -75,14 +78,14 @@
         <input id="song-input" data-testid="song-input" type="file" accept="audio/*" hidden />
         <div class="link-row">
           <input id="link-input" data-testid="link-input" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="YouTube link" aria-label="YouTube link" />
-          <button type="button" id="link-load" data-testid="link-load" title="Load the YouTube link">Load</button>
+          <button type="button" id="link-load" data-testid="link-load" data-help="Load the YouTube link">Load</button>
         </div>
         <!-- Brings the search back over a loaded song; hidden while no song is
              loaded, because the search is then what the main area shows. -->
         <button type="button" id="search-toggle" data-testid="search-toggle" aria-controls="search" aria-expanded="true" hidden>Search for a song</button>
         <!-- The song in use, starred or not, and the favorites playlist's
              Previous and Next while it runs. Built by src/app/panels/library.ts. -->
-        <button type="button" id="favorite-toggle" data-testid="favorite-toggle" aria-pressed="false" title="Keep this song in your favorites" hidden>Favorite</button>
+        <button type="button" id="favorite-toggle" data-testid="favorite-toggle" aria-pressed="false" data-help="Keep this song in your favorites" hidden>Favorite</button>
         <div id="playlist-bar" class="playlist-bar" data-testid="playlist-bar" aria-label="Favorites playlist" hidden></div>
         <!-- Off unless ticked: a link is otherwise sent to the service only when
              Prepare for scoring is pressed. Preparing downloads the video's
@@ -119,23 +122,19 @@
         <section id="lyrics" class="panel-group lyrics" data-testid="lyrics" aria-label="Lyrics" hidden></section>
         <section id="report" class="panel-group report" data-testid="report" aria-label="Learning mode" hidden></section>
 
-        <!-- Learning mode only: trends over the saved takes. Built by
-             src/app/panels/progress.ts; hidden until the header button opens it. -->
-        <section id="progress" class="panel-group progress" data-testid="progress" aria-label="Progress" hidden></section>
-
         <section class="panel-group" aria-label="Devices">
           <h3 class="group-title">Devices</h3>
           <label class="field" for="input-select">Microphone</label>
-          <select id="input-select" data-testid="input-select"></select>
+          <select id="input-select" data-testid="input-select" data-help="Which microphone to sing into"></select>
           <!-- Shown beside a Bluetooth Hands-Free mic (src/duet/hands-free.ts). -->
           <p id="input-hands-free" class="song-meta" data-testid="input-hands-free" data-kind="warn" hidden></p>
           <span id="monitor-label" class="field">Monitoring</span>
-          <div id="monitor-mode" class="segmented" data-testid="monitor-mode" role="group" aria-labelledby="monitor-label">
-            <button type="button" id="monitor-headphones" data-testid="monitor-headphones" data-mode="headphones" aria-pressed="true">Headphones</button>
-            <button type="button" id="monitor-speakers" data-testid="monitor-speakers" data-mode="speakers" aria-pressed="false">Speakers</button>
+          <div id="monitor-mode" class="segmented" data-testid="monitor-mode" data-help="Headphones use the raw mic; speakers turn on echo cancellation" role="group" aria-labelledby="monitor-label">
+            <button type="button" id="monitor-headphones" data-testid="monitor-headphones" data-help="Raw mic input, most accurate. Use when the song is not coming out of speakers." data-mode="headphones" aria-pressed="true">Headphones</button>
+            <button type="button" id="monitor-speakers" data-testid="monitor-speakers" data-help="Echo cancellation on, so the song is taken out of what the mic hears" data-mode="speakers" aria-pressed="false">Speakers</button>
           </div>
           <div id="monitor-help" class="song-meta">Speakers: echo cancellation on so the song is removed from the mic. Headphones: raw input, most accurate.</div>
-          <div id="mic-meter" class="meter" data-testid="mic-meter" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0">
+          <div id="mic-meter" class="meter" data-testid="mic-meter" data-help="How loud the mic hears you right now" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0">
             <div id="mic-meter-fill" class="meter-fill"></div>
           </div>
           <!-- The noise-floor mark, whether the mic hears you, and the speaker
@@ -143,34 +142,34 @@
           <div id="mic-health" class="mic-health" data-testid="mic-health"></div>
           <div id="mic-processing" class="song-meta" data-testid="mic-processing"></div>
           <label class="field" for="output-select">Output</label>
-          <select id="output-select" data-testid="output-select"></select>
+          <select id="output-select" data-testid="output-select" data-help="Where the song plays"></select>
           <div class="button-row">
-            <button type="button" id="refresh-devices" data-testid="refresh-devices">Refresh</button>
-            <button type="button" id="mic-toggle" data-testid="mic-toggle">Open mic</button>
+            <button type="button" id="refresh-devices" data-testid="refresh-devices" data-help="Look for microphones and speakers again, for a device you just plugged in">Refresh</button>
+            <button type="button" id="mic-toggle" data-testid="mic-toggle" data-help="Turn the microphone on or off">Open mic</button>
           </div>
         </section>
 
         <!-- Names, colours and the second singer's mic; built by
              src/app/panels/singers.ts. -->
-        <section id="singers" class="panel-group singers" data-testid="singers" aria-label="Singers"></section>
+        <section id="singers" class="panel-group singers" data-testid="singers" aria-label="Singers" data-keep-drawer></section>
 
         <section class="panel-group" aria-label="Timing and voicing">
           <h3 class="group-title">Latency</h3>
           <div class="latency-row">
-            <input id="latency-input" data-testid="latency-input" type="number" min="0" max="2000" step="1" inputmode="numeric" placeholder="ms" aria-label="Latency in milliseconds" />
+            <input id="latency-input" data-testid="latency-input" data-help="How late your voice reaches the recording, in milliseconds. Calibrate measures it." type="number" min="0" max="2000" step="1" inputmode="numeric" placeholder="ms" aria-label="Latency in milliseconds" />
             <span class="unit">ms</span>
-            <button type="button" id="calibrate-button" data-testid="calibrate" title="Play chirps and time the echo">Calibrate</button>
-            <button type="button" id="mic-check-button" data-testid="mic-check" aria-controls="mic-check" aria-expanded="false" title="A 40 second guided check of your room and mic">Mic check</button>
+            <button type="button" id="calibrate-button" data-testid="calibrate" data-help="Play chirps and time the echo">Calibrate</button>
+            <button type="button" id="mic-check-button" data-testid="mic-check" aria-controls="mic-check" aria-expanded="false" data-help="A 40 second guided check of your room and mic">Mic check</button>
           </div>
           <div id="embed-offset" class="embed-offset" data-testid="embed-offset" hidden>
             <label class="field" for="embed-offset-input">YouTube video offset</label>
             <div class="latency-row">
-              <input id="embed-offset-input" data-testid="embed-offset-input" type="number" min="-500" max="500" step="1" inputmode="numeric" placeholder="ms" aria-label="YouTube video offset in milliseconds" title="Extra delay, added to the latency while a YouTube video is loaded: the video's own sound path cannot be timed with chirps. From -500 to 500 ms." />
+              <input id="embed-offset-input" data-testid="embed-offset-input" type="number" min="-500" max="500" step="1" inputmode="numeric" placeholder="ms" aria-label="YouTube video offset in milliseconds" data-help="Extra delay, added to the latency while a YouTube video is loaded: the video's own sound path cannot be timed with chirps. From -500 to 500 ms." />
               <span class="unit">ms</span>
             </div>
           </div>
           <label class="field" for="clarity-input">Voicing threshold <output id="clarity-value" class="song-meta"></output></label>
-          <input id="clarity-input" data-testid="clarity-input" type="range" min="0.5" max="0.99" step="0.01" />
+          <input id="clarity-input" data-testid="clarity-input" data-help="How clear a sound must be to count as singing. Raise it if noise shows as notes." type="range" min="0.5" max="0.99" step="0.01" />
         </section>
 
         <!-- The guided Mic check: steps, countdown, result card. Built by
@@ -179,6 +178,7 @@
 
         <section id="takes" class="panel-group" aria-label="Takes">
           <h3 class="group-title">Takes</h3>
+          <select id="take-owner" data-testid="take-owner" aria-label="Whose takes to list"></select>
           <ul id="take-list" class="take-list" data-testid="take-list"></ul>
           <p id="take-empty" class="song-meta">No takes yet. Press Record and sing.</p>
         </section>
@@ -191,6 +191,15 @@
       <section id="settings" class="library" data-testid="settings" aria-label="Settings" hidden></section>
 
       <section id="library" class="library" data-testid="library" aria-label="Library" hidden></section>
+
+      <!-- Learning mode only: the active singer's trends over their saved
+           takes, a drawer over the page at the right. Built by
+           src/app/panels/progress.ts; opened by the header's Progress button. -->
+      <section id="progress" class="progress" data-testid="progress" aria-label="Progress" hidden></section>
+
+      <!-- Singer dialogs (new singer, manage singers). Built by
+           src/app/panels/profile-dialog.ts; open only when state.profileDialog says so. -->
+      <div id="profile-dialog" data-testid="profile-dialog-backdrop" hidden></div>
 
       <div id="stage">
         <!-- Find a song: the first thing shown with no song loaded, and on
@@ -220,19 +229,19 @@
 
       <section id="controls" aria-label="Transport">
         <div class="control-group">
-          <button type="button" id="stop-button" data-testid="stop" title="Stop and return to the start" disabled>Stop</button>
-          <button type="button" id="play-button" data-testid="play" title="Play or pause (Space)" disabled>Play</button>
-          <button type="button" id="record-button" data-testid="record" title="Record a take (R)" disabled>Record</button>
+          <button type="button" id="stop-button" data-testid="stop" data-help="Stop and return to the start" disabled>Stop</button>
+          <button type="button" id="play-button" data-testid="play" data-help="Play or pause (Space)" disabled>Play</button>
+          <button type="button" id="record-button" data-testid="record" data-help="Record a take (R)" disabled>Record</button>
         </div>
         <div class="control-group seek-group">
           <span id="time-readout" class="time" data-testid="time">0:00 / 0:00</span>
           <input id="seek-input" data-testid="seek" type="range" min="0" max="0" step="0.01" value="0" aria-label="Song position (arrows: 5 s, Shift: 1 s)" disabled />
         </div>
         <div class="control-group">
-          <button type="button" id="loop-a" class="compact" data-testid="loop-a" title="Loop starts here ([)" disabled>A</button>
-          <button type="button" id="loop-b" class="compact" data-testid="loop-b" title="Loop ends here (])" disabled>B</button>
-          <button type="button" id="loop-clear" data-testid="loop-clear" title="Loop on or off (L)" disabled>Loop</button>
-          <span id="loop-readout" class="song-meta" data-testid="loop-readout"></span>
+          <button type="button" id="loop-a" class="compact" data-testid="loop-a" data-help="Set loop start here ([)" aria-label="Set loop start here" disabled>A</button>
+          <button type="button" id="loop-b" class="compact" data-testid="loop-b" data-help="Set loop end here (])" aria-label="Set loop end here" disabled>B</button>
+          <button type="button" id="loop-clear" data-testid="loop-clear" data-help="Repeat between A and B (L)" aria-label="Repeat between A and B" aria-pressed="false" disabled>Loop</button>
+          <span id="loop-readout" class="song-meta" data-testid="loop-readout" data-help="The part of the song that repeats"></span>
         </div>
         <!-- The song's key: shift it by semitones to fit your range. Built by
              src/app/panels/key-shift.ts; shown in both modes. -->

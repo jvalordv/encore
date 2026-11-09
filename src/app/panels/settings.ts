@@ -15,6 +15,7 @@ import { isActivePhase } from '../mic-check';
 import { SETTINGS_FILE_NAME } from '../settings-io';
 import type { AppState, StateStore } from '../state';
 import type { MountPanel } from './panel';
+import { shownColour } from './profile-select';
 import { makeKit } from './settings-fields';
 import type { Choice } from './settings-fields';
 
@@ -37,6 +38,7 @@ export interface SettingsPanelDeps {
     Session,
     | 'settings'
     | 'duet'
+    | 'profiles'
     | 'deviceLists'
     | 'onDevices'
     | 'refreshDevices'
@@ -54,6 +56,7 @@ export interface SettingsPanelDeps {
     | 'setBackingShown'
     | 'setMode'
     | 'setScoring'
+    | 'setHoverHelp'
     | 'setOctaveInvariant'
     | 'setClarity'
     | 'setAutoAdvance'
@@ -261,23 +264,45 @@ export const mountSettingsPanel: MountPanel<SettingsPanelDeps> = (host, deps) =>
 
   // ---- Singers --------------------------------------------------------------
   const singers = kit.section(host, 'Singers', 'settings-singers');
+  // The two slots are singer profiles: the pick chooses who is in the slot,
+  // the name and colour fields rename and recolour that profile.
+  const slotOf = (s: AppState, i: 0 | 1) => s.profiles.list.find((p) => p.id === (i === 0 ? s.profiles.activeId : s.profiles.secondId));
+  const singerPicks: HTMLSelectElement[] = [];
   const nameAndColour = (i: 0 | 1, id: string): void => {
+    const pick = kit.select(
+      singers,
+      `Singer ${id.toUpperCase()} `,
+      `settings-singer-${id}-profile`,
+      (s) => s.profiles.list.map((p): Choice => [p.id, p.name]),
+      (s) => (i === 0 ? s.profiles.activeId : (s.profiles.secondId ?? '')),
+      (v) => void session.profiles.choose(i, v),
+    );
+    singerPicks.push(pick);
     const row = el('div', `settings-singer-${id}`, 'singer-row');
     kit.text(
       row,
       `Singer ${id.toUpperCase()} colour `,
       `settings-singer-${id}-colour`,
       'color',
-      (s) => s.duet.colours[i] ?? '#808080',
-      (v) => session.duet.setColour(i, v),
+      (s) => {
+        const who = slotOf(s, i);
+        return who ? shownColour(doc, s.profiles, who) : '#808080';
+      },
+      (v) => {
+        const who = slotOf(store.state, i);
+        if (who) session.profiles.setColour(who.id, v);
+      },
     );
     kit.text(
       row,
       `Singer ${id.toUpperCase()} name `,
       `settings-singer-${id}-name`,
       'text',
-      (s) => s.duet.names[i],
-      (v) => session.duet.setName(i, v),
+      (s) => slotOf(s, i)?.name ?? s.duet.names[i],
+      (v) => {
+        const who = slotOf(store.state, i);
+        if (who) session.profiles.rename(who.id, v);
+      },
     );
     singers.append(row);
   };
@@ -364,6 +389,7 @@ export const mountSettingsPanel: MountPanel<SettingsPanelDeps> = (host, deps) =>
   // ---- Appearance -----------------------------------------------------------
   const look = kit.section(host, 'Appearance', 'settings-appearance');
   kit.select(look, 'Skin ', 'settings-skin', () => skin.choices, () => skin.current(), (v) => skin.set(v));
+  kit.check(look, 'Hover help', 'settings-hover-help', (s) => s.hoverHelp, (v) => session.setHoverHelp(v));
 
   // ---- Reset, export, import ------------------------------------------------
   const tools = kit.section(host, 'All settings', 'settings-tools');
@@ -445,6 +471,8 @@ export const mountSettingsPanel: MountPanel<SettingsPanelDeps> = (host, deps) =>
     // the mic, and the Session refuses these changes too.
     const busy = state.recording || state.calibrating;
     inputPick.disabled = inputBPick.disabled = busy;
+    // The Session refuses a singer change mid-take; a disabled pick cannot drift.
+    for (const pick of singerPicks) pick.disabled = state.recording;
     outputPick.disabled = busy || !state.output.selectable;
     latencyField.disabled = embedField.disabled = busy;
     refresh.disabled = busy;
@@ -459,6 +487,7 @@ export const mountSettingsPanel: MountPanel<SettingsPanelDeps> = (host, deps) =>
     'input',
     'output',
     'duet',
+    'profiles',
     'latencyS',
     'embedOffsetS',
     'calibrating',
@@ -468,6 +497,7 @@ export const mountSettingsPanel: MountPanel<SettingsPanelDeps> = (host, deps) =>
     'scoring',
     'noteGuide',
     'keyboard',
+    'hoverHelp',
     'mix',
     'backing',
     'library',

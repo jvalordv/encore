@@ -213,6 +213,30 @@ so learning mode when it is up. Scoring and tips run in the browser.
   id (`GET /songs/{id}/audio`).
   Both stores sit behind adapters and fall back to memory when the browser
   refuses them.
+  *Singer profiles (W8).* The list lives under its own key, `encore.profiles`
+  (`{ list: [{ id, name, colour }], activeId, secondId, legacyId }`), behind
+  the same key-value interface, not inside `settings`, so a settings reset
+  keeps the singers. A take records `profileId` (singer A) and, for a duet,
+  `profileIdB` and `voicedFramesB` at the top level of the record (they
+  survive a re-score, and a karaoke-mode duet take has no `duet` part to
+  carry them). A take without `profileId` is the profile in `legacyId`, the
+  one the first run made, so no stored take is rewritten; a Mic check take
+  is the mic's and nobody's. Progress, the streak (`daysSung`), stars,
+  personal bests and the range estimate read `takesOfProfile(takes, id,
+  legacyId)` (`src/app/profiles.ts`), which for a duet take reads B's
+  report and B's voiced frames for B. Deleting a profile either removes the
+  takes it sang as singer A through `TakeStore.remove` or, when the singer
+  chooses to keep them, rewrites those takes' `profileId` to the reserved
+  `NO_SINGER` (`'none'`) through `TakeStore.setSingers`; B's side of any
+  duet take of the deleted singer is marked the same way in `profileIdB`.
+  The marker is an explicit "nobody", distinct from the absent field (which
+  is `legacyId`'s): `ownerOf` gives such a take no owner, so it is on no
+  profile's list, Progress, streak, stars, bests or range, and only the
+  takes list's "All singers" shows it, named "No singer". No profile can
+  have the id `'none'` (`sanitizeList` drops one). The first
+  run builds the list from the W5 `settings.duet` names and colours;
+  afterwards `duet.names` and `duet.colours` are only a mirror of the two
+  slots' profiles.
 - **Testing.** Vitest covers the DSP and logic against synthetic signals.
   `npm run e2e` drives the built app in headless Chromium with a fake mic
   (see `e2e/`); it is the only test that runs the worklets for real.
@@ -275,6 +299,28 @@ so learning mode when it is up. Scoring and tips run in the browser.
   input controller. `AppState.singers` holds one entry per singer (its mic
   state, mirrored from `input` for singer 0), and `AppState.mode` mirrors the
   `mode` setting (`'karaoke'` by default, or `'learning'`).
+  `AppState.profiles` is the singer list, singer A (the active singer, whose
+  progress every view shows) and B's slot; `AppState.profileDialog` says
+  which in-app singer dialog is open. `ProfilesController`
+  (`session/profiles.ts`) owns them: it mirrors the two slots into `duet`,
+  refuses changes while recording, and the Library and key controllers
+  re-read the active singer's numbers when `profiles` changes. The header
+  and Singers panel dropdowns share `panels/profile-select.ts`; the dialogs
+  are `panels/profile-dialog.ts`; Progress is a right-edge drawer
+  (`panels/progress.ts`, dismissal rules in `app/drawer.ts`).
+  *Hover help (W8b).* `src/app/hover-help.ts` is one document-level
+  listener: any element with `data-help="..."` gets a styled popup after
+  about 400 ms of mouse rest or keyboard focus, hidden by leave, blur,
+  Escape, a press or a scroll, placed beside the element and clamped into
+  the viewport (`stepHelp` and `placeHelp` are pure and tested). The text is
+  attached with `aria-describedby` on entering, so a screen reader hears it
+  without the delay. It replaces native `title` tooltips, which the app no
+  longer uses for help. `settings.hoverHelp` (default on, mirrored in
+  `AppState.hoverHelp`, in the settings file, and turned back on by Reset)
+  switches it off; aria-labels are untouched. The popup uses existing skin
+  tokens (`--color-text` on `--color-bg`, `--color-accent`, `--radius`,
+  `--shadow`), so no token was added. It never says anything about the
+  singing; "tips" stays the name for learning-mode coaching.
 - **Pitch lane layers.** `PitchLane` (`src/render/pitch-lane.ts`) owns the
   canvas, the resize and skin listeners and the redraw loop, and composes
   layers back to front, each a function over a `LaneView` and a `LaneStyle`:

@@ -219,7 +219,8 @@ describe('the streak chip panel', () => {
   const day = 86_400_000;
 
   it('shows the streak in both modes and hides without one', () => {
-    const today = Math.floor(Date.now() / day);
+    // The chip counts local days, so the test must too (a UTC day is off by one near midnight).
+    const today = localDay(Date.now());
     for (const mode of ['karaoke', 'learning'] as const) {
       const state = initialState();
       const store = new StateStore({ ...state, mode });

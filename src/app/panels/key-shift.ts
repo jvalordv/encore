@@ -38,6 +38,7 @@ export const mountKeyShiftPanel: MountPanel<KeyShiftPanelDeps> = (host, { store,
   const down = make('button', 'key-down', '−');
   const readout = make('span', 'key-readout', '0');
   readout.className = 'key-readout';
+  readout.setAttribute('role', 'status');
   readout.setAttribute('aria-live', 'polite');
   const up = make('button', 'key-up', '+');
   const suggest = make('button', 'key-suggested');
@@ -47,10 +48,13 @@ export const mountKeyShiftPanel: MountPanel<KeyShiftPanelDeps> = (host, { store,
   for (const b of [down, up, suggest, reset]) b.type = 'button';
   down.classList.add('compact');
   up.classList.add('compact');
-  down.title = 'Sing it a semitone lower';
-  up.title = 'Sing it a semitone higher';
-  down.setAttribute('aria-label', 'Key down one semitone');
-  up.setAttribute('aria-label', 'Key up one semitone');
+  label.dataset.help = 'Move the whole song up or down to suit your voice';
+  down.dataset.help = 'Lower the song by a semitone';
+  up.dataset.help = 'Raise the song by a semitone';
+  down.setAttribute('aria-label', 'Lower the song by a semitone');
+  up.setAttribute('aria-label', 'Raise the song by a semitone');
+  readout.dataset.help = 'Semitones from the original key';
+  readout.setAttribute('aria-label', 'Semitones from the original key');
   host.append(label, down, readout, up, suggest, reset, hint);
 
   const onDown = (): void => session.stepKey(-1);

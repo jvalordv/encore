@@ -21,7 +21,6 @@ import { isMarked } from '../../analysis/free-phrases';
 import type { Span } from '../../analysis/free-phrases';
 import { personalBest, takeStars } from '../../analysis/stars';
 import { isSharedPhrase } from '../../duet/split';
-import { takesOfSinger } from '../../duet/take';
 import type { SingerReport } from '../../duet/take';
 import { tipsFor } from '../../coach/tips';
 import type { Tip } from '../../coach/tips';
@@ -33,6 +32,7 @@ import { cardFileName, localDateString } from '../card-layout';
 import { downloadBlob } from '../download';
 import { activeSkin, personalBestText, starGlyphs, starsLineFor } from '../fun';
 import { karaokeTrackNotice, openReports, openSwitchOffer, originalQueryFor } from '../learning';
+import { takesOfCardSinger } from '../profiles';
 import { describeReport, jumpTarget } from '../report';
 import type { MomentView, ReportView } from '../report';
 import type { Session } from '../session';
@@ -140,7 +140,7 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
   function freeToggle(takeId: string, span: Span, marked: boolean, busy: boolean, testid: string): HTMLButtonElement {
     const toggle = button(marked ? 'Free' : 'Mark free', testid, () => void session.setPhraseFree(takeId, span, !marked), busy);
     toggle.setAttribute('aria-pressed', String(marked));
-    toggle.title = marked
+    toggle.dataset.help = marked
       ? 'This phrase is free: ad-libs there are judged against the key. Press to score it against the melody again.'
       : 'Judge this phrase against the key instead of the melody, for ad-libs.';
     return toggle;
@@ -191,11 +191,10 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
     const skin = activeSkin(doc);
     const stars = takeStars(report);
     const starLine = starsLineFor(report, skin);
-    // Each singer's best is among their own takes, so the two never mix.
-    const best =
-      who.singer === 0
-        ? personalBest(take, state.takes)
-        : personalBest({ ...take, report }, takesOfSinger(state.takes, 1));
+    // Each singer's best is among the takes that singer's profile sang, so
+    // two singers (and the two parts of a duet) never mix.
+    const own = takesOfCardSinger(state.takes, take, who.singer, state.profiles.legacyId);
+    const best = personalBest({ ...take, report }, own);
     const bestLine = best === null ? '' : personalBestText(best, skin);
     if (starLine) {
       const row = el('p', 'report-stars', 'report-stars', `${starGlyphs(stars)} ${starLine}`);

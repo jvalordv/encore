@@ -3,10 +3,14 @@
  * while it plays), Delete (two presses, since a take cannot be recovered) and,
  * in learning mode for a take that has a report, Report, which opens or closes
  * the take's card (panels/report.ts). A take timed against a YouTube video
- * says its timing is approximate. The list and its empty line are in
- * index.html; this fills them from `state.takes`.
+ * says its timing is approximate. The list, its filter and its empty line are
+ * in index.html; this fills them from `state.takes`. The list shows the
+ * active singer's takes (those they sang, as singer A or B), with an "All
+ * singers" choice that also names who sang each take, and lists the takes kept
+ * after their singer was deleted as sung by "No singer".
  */
 import { downloadBlob } from '../download';
+import { activeProfile, involvesProfile, ownerName } from '../profiles';
 import type { Session } from '../session';
 import { formatClock } from '../state';
 import type { AppState, StateStore } from '../state';
@@ -26,6 +30,7 @@ const WATCHED: ReadonlyArray<keyof AppState> = [
   'calibrating',
   'mode',
   'reportTakeId',
+  'profiles',
 ];
 
 /** What the panel needs: the state to draw, and the intents it calls. */
@@ -39,7 +44,10 @@ export const mountTakesPanel: MountPanel<TakesPanelDeps> = (host, { store, sessi
   const doc = host.ownerDocument;
   const list = host.querySelector<HTMLElement>('#take-list');
   const empty = host.querySelector<HTMLElement>('#take-empty');
-  if (!list || !empty) throw new Error('index.html is missing #take-list or #take-empty');
+  const scopePick = host.querySelector<HTMLSelectElement>('#take-owner');
+  if (!list || !empty || !scopePick) throw new Error('index.html is missing #take-list, #take-empty or #take-owner');
+  /** Whose takes the list shows; 'mine' is the active singer's. */
+  let scope: 'mine' | 'all' = 'mine';
   const timers = new Set<ReturnType<typeof setTimeout>>();
 
   function button(text: string, testid: string, onClick: () => void): HTMLButtonElement {
@@ -51,7 +59,7 @@ export const mountTakesPanel: MountPanel<TakesPanelDeps> = (host, { store, sessi
     return b;
   }
 
-  function row(take: TakeSummary, number: number, state: AppState): HTMLLIElement {
+  function row(take: TakeSummary, number: number, state: AppState, byName: boolean): HTMLLIElement {
     const active = take.id === state.playingTakeId;
     const busy = state.recording || state.calibrating;
     const item = doc.createElement('li');
@@ -63,7 +71,9 @@ export const mountTakesPanel: MountPanel<TakesPanelDeps> = (host, { store, sessi
     const time = new Date(take.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const label = doc.createElement('span');
     label.className = 'take-label';
-    label.textContent = `Take ${number} · ${formatClock(take.durationS)} · ${time}`;
+    label.dataset.testid = 'take-label';
+    const owner = byName ? ownerName(take, state.profiles) : undefined;
+    label.textContent = `Take ${number} · ${owner ? `${owner} · ` : ''}${formatClock(take.durationS)} · ${time}`;
 
     const play = button(active ? 'Stop' : 'Play', 'take-play', () => {
       if (active) session.stopTake();
@@ -98,9 +108,9 @@ export const mountTakesPanel: MountPanel<TakesPanelDeps> = (host, { store, sessi
       });
     };
     const saveWav = button('Save WAV', 'take-save-wav', save('wav'));
-    saveWav.title = 'Download this take\'s audio';
+    saveWav.dataset.help = 'Download this take\'s audio';
     const saveJson = button('Save JSON', 'take-save-json', save('json'));
-    saveJson.title = 'Download this take\'s pitch frames and mic settings';
+    saveJson.dataset.help = 'Download this take\'s pitch frames and mic settings';
 
     item.append(label, play, del, saveWav, saveJson);
     // Karaoke mode shows nothing of the measurements, even on a take that has them.
@@ -126,10 +136,43 @@ export const mountTakesPanel: MountPanel<TakesPanelDeps> = (host, { store, sessi
   }
 
   function render(state: AppState): void {
-    const { takes } = state;
-    list!.replaceChildren(...takes.map((t, i) => row(t, takes.length - i, state)));
+    const { profiles } = state;
+    const me = activeProfile(profiles);
+    // A Mic check take is the mic's, not a singer's, so every list keeps it.
+    const takes =
+      scope === 'all'
+        ? state.takes
+        : state.takes.filter((t) => t.kind === 'mic-check' || involvesProfile(t, me.id, profiles.legacyId));
+    // The first label names the singer, so it is redrawn when a name changes.
+    if (scopePick!.dataset.shownName !== me.name) {
+      scopePick!.dataset.shownName = me.name;
+      scopePick!.replaceChildren(
+        ...(
+          [
+            ['mine', `${me.name}'s takes`],
+            ['all', 'All singers'],
+          ] as const
+        ).map(([value, text]) => {
+          const o = doc.createElement('option');
+          o.value = value;
+          o.textContent = text;
+          return o;
+        }),
+      );
+    }
+    scopePick!.value = scope;
+    list!.replaceChildren(...takes.map((t, i) => row(t, takes.length - i, state, scope === 'all')));
     empty!.hidden = takes.length > 0;
+    empty!.textContent =
+      scope === 'all' || state.takes.length === 0
+        ? 'No takes yet. Press Record and sing.'
+        : `No takes by ${me.name} for this song yet. Press Record and sing.`;
   }
+  const onScope = (): void => {
+    scope = scopePick.value === 'all' ? 'all' : 'mine';
+    render(store.state);
+  };
+  scopePick.addEventListener('change', onScope);
 
   const unsubscribe = store.subscribe((state, changed) => {
     if (WATCHED.some((key) => changed.has(key))) render(state);
@@ -138,6 +181,7 @@ export const mountTakesPanel: MountPanel<TakesPanelDeps> = (host, { store, sessi
 
   return () => {
     unsubscribe();
+    scopePick.removeEventListener('change', onScope);
     for (const timer of timers) clearTimeout(timer);
     timers.clear();
     list.replaceChildren();

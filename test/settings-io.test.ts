@@ -29,6 +29,18 @@ describe('exportSettingsText', () => {
     expect(file.settings.youtubeApiKey).toBe(current.youtubeApiKey);
   });
 
+  it('carries the hover help switch out and back in', () => {
+    const quiet = sanitizeSettings({ hoverHelp: false });
+    const file = JSON.parse(exportSettingsText(quiet, extras, false));
+    expect(file.settings.hoverHelp).toBe(false);
+    const parsed = parseSettingsText(JSON.stringify(file), DEFAULT_SETTINGS, SKINS);
+    expect(parsed?.settings.hoverHelp).toBe(false);
+    expect(parsed?.changed).toContain('Hover help');
+    // A file with no such key leaves the switch where it was; a bad value reads as on.
+    expect(parseSettingsText(JSON.stringify({ app: SETTINGS_FILE_APP, settings: {} }), quiet, SKINS)?.settings.hoverHelp).toBe(false);
+    expect(sanitizeSettings({ hoverHelp: 'no' }).hoverHelp).toBe(true);
+  });
+
   it('round-trips through the parser', () => {
     const parsed = parseSettingsText(exportSettingsText(current, extras, true), DEFAULT_SETTINGS, SKINS);
     expect(parsed?.settings).toEqual(current);

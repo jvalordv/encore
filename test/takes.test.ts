@@ -108,6 +108,18 @@ describe.each(stores)('%s', (_name, open) => {
     expect(await store.get('no-such-take')).toBeNull();
   });
 
+  it('rewrites who sang a take and leaves the rest of it alone', async () => {
+    const store = await open();
+    const id = await store.save(make({ createdAt: 5, profileId: 'p1', profileIdB: 'p2' }));
+    await store.setSingers(id, { profileId: 'none' });
+    expect((await store.list())[0]).toMatchObject({ profileId: 'none', profileIdB: 'p2' });
+    await store.setSingers(id, { profileIdB: 'none' });
+    expect((await store.get(id))?.profileIdB).toBe('none');
+    expect((await store.get(id))?.frames).toEqual(make().frames);
+    await store.setSingers('no-such-take', { profileId: 'none' });
+    expect(await store.get('no-such-take')).toBeNull();
+  });
+
   it('keeps the clock a take was recorded on, in the list and in the full take', async () => {
     const store = await open();
     const engine = await store.save(make({ clock: 'engine', createdAt: 1 }));

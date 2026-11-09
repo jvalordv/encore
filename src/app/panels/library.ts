@@ -168,7 +168,7 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
     starButton.dataset.focus = `${entry.id}:star`;
     const load = make('button', 'library-load', 'library-load');
     load.type = 'button';
-    load.title = `Load: ${entry.title}`;
+    load.dataset.help = `Load: ${entry.title}`;
     const name = make('span', 'library-title', 'library-title');
     name.textContent = view.title;
     const meta = make('span', 'library-meta', 'song-meta');
@@ -226,7 +226,7 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
       void session.removeLibraryEntry(entry.id);
     });
     remove.dataset.focus = `${entry.id}:remove`;
-    remove.title = 'Takes of this song are kept';
+    remove.dataset.help = 'Takes of this song are kept';
     actions.append(remove);
     item.append(starButton, load, actions);
     return item;
