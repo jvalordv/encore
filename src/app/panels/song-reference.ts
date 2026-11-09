@@ -74,6 +74,10 @@ export const mountSongReferencePanel: MountPanel<SongReferencePanelDeps> = (host
   const title = doc.createElement('h3');
   title.className = 'group-title';
   title.textContent = 'Song reference';
+  title.dataset.testid = 'reference-title';
+  // What the card means for learning mode is the title's help, not a line of
+  // its own; it is empty in karaoke mode, so no (i) shows there.
+  title.dataset.info = '';
   // Where focus goes when the prompt's button that held it goes away.
   title.tabIndex = -1;
   const facts = make('ul', 'reference-facts', 'reference-facts song-meta');
@@ -82,7 +86,6 @@ export const mountSongReferencePanel: MountPanel<SongReferencePanelDeps> = (host
   const key = doc.createElement('li');
   key.dataset.testid = 'reference-key';
   facts.append(melody, key);
-  const meaning = make('p', 'reference-meaning', 'song-meta');
 
   // The prompt: the question, its two answers and the setting it can turn on.
   const prompt = make('div', 'reference-prompt', 'reference-prompt');
@@ -118,7 +121,7 @@ export const mountSongReferencePanel: MountPanel<SongReferencePanelDeps> = (host
   note.setAttribute('aria-live', 'polite');
   const hint = make('p', 'reference-hint', 'song-meta');
 
-  host.append(title, facts, meaning, prompt, get, stop, steps, note, hint);
+  host.append(title, facts, prompt, get, stop, steps, note, hint);
 
   const setText = (el: HTMLElement, text: string): void => {
     if (el.textContent !== text) el.textContent = text;
@@ -148,8 +151,7 @@ export const mountSongReferencePanel: MountPanel<SongReferencePanelDeps> = (host
     host.dataset.armed = String(state.songRef.armed);
     setText(melody, view.melody);
     setText(key, view.key);
-    setText(meaning, view.meaning);
-    meaning.hidden = view.meaning === '';
+    title.dataset.help = view.meaning;
 
     prompt.hidden = !view.prompt.shown;
     setText(promptText, view.prompt.text);

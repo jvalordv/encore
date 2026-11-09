@@ -24,7 +24,19 @@ webcam or USB mic.
 
 ## Current state
 
-- **Last done (2026-11-09): W10, no YouTube download, search first,
+- **Last done (2026-11-09): W11, a quieter left panel.** Static
+  explanations (the search hint, the Devices monitoring note, the Singers
+  note, the Song reference meaning line, the embed note, the lyrics and key
+  field hints) moved into hover help; a small (i) beside a section title shows
+  the same words as an in-panel note even with Hover help off. The panel's
+  right edge is a draggable, keyboard-reachable separator (220 px to half the
+  window, default 280), folds into a slim icon rail when pulled under 160 px
+  or by the new buttons, and remembers its size in this browser.
+  **Next:** the owner tries W8 to W11 (two singers, a YouTube link with
+  Get the melody and the tab share, several mp3s dropped at once, the
+  Library's takes, the panel) and answers the questions from 2026-11-09;
+  then W7.
+- **Earlier (2026-11-09): W10, no YouTube download, search first,
   several songs analysed up front, takes per song in the Library.** The download is gone from the app: Get
   the melody arms the recording of the song's sound for the first take. The
   left bar runs Search for a song, Add a YouTube link, the drop zone; the drop
@@ -1534,6 +1546,41 @@ Tracks inside a wave share no files and may run in parallel.
     across a reload.
   - Follow-up: a duet take lists under both singers' counts but shows one
     singer's name under All singers.
+- [x] **W11: A quieter left panel, resizable and foldable** (owner,
+  2026-11-08: "move towards tooltips so we can clean up some of the text in
+  the bars, the left panel feels really busy ... drag to expand or minimize
+  the left panel").
+  - Words to help: the search hint and keyless warning (now the Find a song
+    title's help, the Search button's and the box's), the API key note (on the
+    key field), the Devices monitoring line (the Devices title's help), the
+    Singers note (the Singers title and the Second singer box), the Song
+    reference meaning line (the title's help, empty in karaoke mode so no
+    (i) shows there), the embed note (shortened, rest in its help), the
+    lyrics paste hint. A title with `data-info` and `data-help` gets an (i)
+    button (`panels/left-panel.ts`): press or Enter/Space opens the words as a
+    note under the title, Escape or a second press closes, one open at a time,
+    `aria-expanded` and `aria-controls` set, works with Hover help off.
+  - Kept as words: live status and progress lines, the ingest bar and its
+    failures, the reference card's what-Encore-has lines and its prompt, notes
+    and hints that tell the singer what to do now (the share-tab-audio hint,
+    the Bluetooth Hands-Free warning, the Mic check steps, the empty Takes
+    line), every report and learning notice.
+  - Panel size: a `role="separator"` handle in the gap beside the panel
+    (arrows 16 px, Shift 48 px, Home narrowest, End widest, Enter folds), width
+    220 px to 50 % of the window (and never so wide the stage drops under the
+    player's 520 px), default 280 px (220 px under 900 px). Pulled under 160 px,
+    or the header button, folds it to a 52 px rail with one icon per section on
+    the page (a click unfolds and scrolls there). Stored under
+    `encore.panel`; not in the settings file (a width suits one screen, so it
+    does not travel); Reset all restores it. Under 780 px (where the panel
+    already stacks above the stage) there is no handle, only the fold button.
+    Pure rules in `src/app/panel-layout.ts` (test/panel-layout.test.ts).
+  - Follow-up: the Latency, Takes and Mic check sections have no (i) because
+    they carry no static explanation; add words and a `data-info` title if
+    wanted.
+  - Follow-up: the dropzone text and the empty Takes line are still words.
+  - Follow-up: the panel's scroll position is not kept across a fold.
+  - Follow-up: the stack breakpoint is 780 px (existing), not 700 px.
 - [ ] **W7: Owner test and one bug sweep.** The owner runs the full list:
   solo with a file, a link, a prepared link; learning mode; duet on one
   mic and on two; speakers and headphones. Then one reviewer reads
@@ -1650,6 +1697,7 @@ were.
 | W8 + W8b Profiles, drawer, hover help (measured, worktree) | 1 | 1.13 M | 10 min |
 | W9 Song reference card (measured, worktree) | 1 | 0.87 M | 15 min |
 | W10 Intake + Library takes (measured, 2 lanes) | 1 | 1.42 M | 20 min |
+| W11 Quieter, resizable left panel (measured, worktree) | 0.6 | 0.61 M | 10 min |
 | **Total** | **about 16 (15-19)** | **about 11.5 M** | **about 5 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The

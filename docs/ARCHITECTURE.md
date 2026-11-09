@@ -338,6 +338,21 @@ so learning mode when it is up. Scoring and tips run in the browser.
   tokens (`--color-text` on `--color-bg`, `--color-accent`, `--radius`,
   `--shadow`), so no token was added. It never says anything about the
   singing; "tips" stays the name for learning-mode coaching.
+- **Left panel chrome (W11).** `src/app/panels/left-panel.ts` adds two
+  things to markup other files own. (1) A title with `data-info` and
+  `data-help` gets an (i) button and an inline note with the same words
+  (one open at a time, Escape or a second press closes, works with Hover
+  help off); a panel changes the words by changing `data-help`, and an empty
+  one hides the button (the Song reference title in karaoke mode). (2) The
+  `#panel-resizer` separator in the gap beside `#song-panel` resizes the
+  panel by pointer capture (rAF-throttled) or keys, and folds it into the
+  `#panel-rail` icon strip. The width reaches CSS as `--panel-w` on `#app`
+  (the grid's first column), so the stage fills the rest and `PitchLane`'s own
+  ResizeObserver re-measures the canvas. The limits, drag threshold, key steps
+  and stored-text parsing are pure in `src/app/panel-layout.ts`. The layout
+  lives under `encore.panel`, outside the settings file and the state store
+  (it is a per-screen view choice, like the skin); Reset all calls its
+  `reset`. Colours come from existing skin tokens.
 - **Pitch lane layers.** `PitchLane` (`src/render/pitch-lane.ts`) owns the
   canvas, the resize and skin listeners and the redraw loop, and composes
   layers back to front, each a function over a `LaneView` and a `LaneStyle`:

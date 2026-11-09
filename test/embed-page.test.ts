@@ -10,6 +10,7 @@
  * end run, which is not part of CI).
  */
 import { describe, expect, it } from 'vitest';
+import { MIN_WIDTH, NARROW_DEFAULT_WIDTH } from '../src/app/panel-layout';
 
 const rawHtml = import.meta.glob<string>('../index.html', {
   query: '?raw',
@@ -132,7 +133,7 @@ describe('index.html for preparing a linked song', () => {
   });
 
   it('tells the singer in the embed note that the melody can be got', () => {
-    const note = /id="embed-note"[^>]*>([^<]*)</.exec(html)?.[1] ?? '';
+    const note = /id="embed-note"[^>]*data-help="([^"]*)"/.exec(html)?.[1] ?? '';
     expect(note).toMatch(/Get the melody/);
     expect(note).not.toMatch(/not built yet/);
   });
@@ -185,10 +186,13 @@ describe('style.css keeps the player inside the page at every width', () => {
 
   it('stacks the song panel above the stage before the stage is narrower than the frame', () => {
     const blocks = mediaBlocks();
-    // Below 900 px the song column is at most this wide.
+    // Below 900 px the song column starts this wide (--panel-w falls back to
+    // it); the least a person can drag it to is the same width.
     const narrowColumns = blocks.find((b) => b.maxWidth === 900)?.body ?? '';
-    const songColumn = Number(/minmax\(\s*\d+px,\s*(\d+)px\s*\)/.exec(narrowColumns)?.[1]);
+    const songColumn = Number(/var\(--panel-w,\s*(\d+)px\)/.exec(narrowColumns)?.[1]);
     expect(songColumn).toBeGreaterThan(0);
+    expect(songColumn).toBe(NARROW_DEFAULT_WIDTH);
+    expect(MIN_WIDTH).toBeLessThanOrEqual(songColumn);
     const stacked = blocks.find((b) => /grid-template-columns:\s*minmax\(0,\s*1fr\)/.test(b.body));
     expect(stacked).toBeDefined();
     // Beside the song column the stage is the window less these.
@@ -220,7 +224,7 @@ describe('index.html for the karaoke track', () => {
   });
 
   it('no longer says in the embed note that the stems and melody are unbuilt', () => {
-    const note = /id="embed-note"[^>]*>([^<]*)</.exec(html)?.[1] ?? '';
+    const note = /id="embed-note"[^>]*data-help="([^"]*)"/.exec(html)?.[1] ?? '';
     expect(note).toMatch(/karaoke track and the melody/);
     expect(note).not.toMatch(/stems are not built/);
   });

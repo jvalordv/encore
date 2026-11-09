@@ -56,8 +56,18 @@ export const SETUP_STEPS: readonly string[] = [
   'Paste the key into the field below and press Save key. It stays in this browser and goes only to Google.',
 ];
 
-/** Shown beside the button while no key is set, whatever else is said. */
+/** Shown beside the button while no key is set (and in the title's help). */
 export const KEYLESS_WARNING = "YouTube's own results include videos that will not play here.";
+
+/** What the YouTube API key field is. */
+export const KEY_HELP =
+  'Your own YouTube Data API v3 key. It stays in this browser and goes only to Google. ' +
+  'The free quota is about 100 searches a day; README.md says how to make a key.';
+
+/** The search's explanation, by whether there is a key: the title's hover help and (i) note. */
+export function helpText(keyless: boolean): string {
+  return keyless ? `${HINT_WITHOUT_KEY} ${KEYLESS_WARNING}` : HINT_WITH_KEY;
+}
 
 function element<K extends keyof HTMLElementTagNameMap>(
   doc: Document,
@@ -87,6 +97,8 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
   const title = doc.createElement('h2');
   title.className = 'panel-title';
   title.textContent = 'Find a song';
+  title.dataset.testid = 'search-heading';
+  title.dataset.info = '';
 
   const form = element(doc, 'form', 'search-form', 'search-bar');
   form.noValidate = true;
@@ -117,16 +129,17 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
   close.textContent = 'Close';
   close.dataset.help = 'Back to the song';
   listen(close, 'click', () => session.setSearchOpen(false));
-  const keyless = element(doc, 'p', 'search-keyless', 'search-keyless song-meta');
-  keyless.textContent = KEYLESS_WARNING;
-  form.append(input, chips, go, close, keyless);
+  // Visible, not only in the title's help: it is the one place that says
+  // YouTube's own results may not play here.
+  const keylessLine = element(doc, 'p', 'search-keyless', 'search-keyless song-meta');
+  keylessLine.textContent = KEYLESS_WARNING;
+  form.append(input, chips, go, close, keylessLine);
   listen(form, 'submit', (ev) => {
     ev.preventDefault();
     // Straight from the submit, so the new tab a keyless search opens is allowed.
     session.searchSongs(input.value);
   });
 
-  const hint = element(doc, 'p', 'search-hint', 'search-hint song-meta');
   const status = element(doc, 'p', 'search-status', 'search-status song-meta');
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
@@ -149,11 +162,12 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
   keyForget.type = 'button';
   keyForget.textContent = 'Forget key';
   keyForm.append(keyInput, keySave, keyForget);
+  // The note stays visible inside the box: the quota and the README pointer
+  // must be readable without hover help.
+  keyInput.dataset.help = 'Paste your YouTube Data API v3 key';
   const keyNote = doc.createElement('p');
   keyNote.className = 'song-meta';
-  keyNote.textContent =
-    'Your own YouTube Data API v3 key. It stays in this browser and goes only to Google. ' +
-    'The free quota is about 100 searches a day; README.md says how to make a key.';
+  keyNote.textContent = KEY_HELP;
   keyBox.append(keyForm, keyNote);
   listen(keyForm, 'submit', (ev) => {
     ev.preventDefault();
@@ -183,7 +197,7 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
   consoleLink.textContent = 'Open the Google Cloud console';
   setup.append(setupSummary, setupSteps, consoleLink);
 
-  host.append(title, form, hint, status, list, setup, keyBox);
+  host.append(title, form, status, list, setup, keyBox);
 
   listen(toggle, 'click', () => {
     const opening = host.hidden;
@@ -257,11 +271,14 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
     );
     form.dataset.phase = search.phase;
     go.textContent = searchesExternally(search) ? 'Search on YouTube' : 'Search';
-    keyless.hidden = !searchesExternally(search);
+    // What used to be two lines under the box is now the title's help: hover
+    // for it, or press the (i) beside the title (src/app/panels/left-panel.ts).
+    const keyless = searchesExternally(search);
+    title.dataset.help = helpText(keyless);
+    go.dataset.help = keyless ? "Open YouTube's own search in a new tab" : 'Search for this song';
+    input.dataset.help = 'A song or an artist';
+    keylessLine.hidden = !keyless;
 
-    const idle = search.phase === 'idle' && search.message === '';
-    setText(hint, idle ? (searchesExternally(search) ? HINT_WITHOUT_KEY : HINT_WITH_KEY) : '');
-    hint.hidden = hint.textContent === '';
     setText(status, search.message !== '' ? search.message : describeResults(search));
     status.hidden = status.textContent === '';
     status.dataset.code = search.errorCode ?? '';

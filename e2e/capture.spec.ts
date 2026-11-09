@@ -130,7 +130,8 @@ test('Get the melody says the song will be recorded in the first take, and start
   await expect(page.getByTestId('reference-melody')).toHaveText('Melody: none');
   await expect(page.getByTestId('reference-key')).toHaveText('Key: none');
   // Karaoke mode (the default) shows nothing about learning mode.
-  await expect(page.getByTestId('reference-meaning')).toBeHidden();
+  await expect(page.getByTestId('reference-title')).toHaveAttribute('data-help', '');
+  await expect(page.getByTestId('song-reference').getByTestId('info-button')).toBeHidden();
   await getMelody();
 
   const armed = "Encore will record the song's sound while you sing your first take.";

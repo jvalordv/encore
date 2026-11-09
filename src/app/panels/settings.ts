@@ -69,6 +69,8 @@ export interface SettingsPanelDeps {
     | 'resetAllSettings'
     | 'setLibraryOpen'
   >;
+  /** The song panel's layout, which Reset all puts back to its default. */
+  layout?: { reset(): void };
   /** The header button that opens the drawer. */
   toggle: HTMLButtonElement;
   /** The header's Mic check button; the panel's own button presses it. */
@@ -85,7 +87,7 @@ const ms = (s: number | null): string => (s === null ? '' : String(Math.round(s 
 
 /** Builds the drawer into `host`; the returned function takes it down. */
 export const mountSettingsPanel: MountPanel<SettingsPanelDeps> = (host, deps) => {
-  const { store, session, toggle, micCheckToggle, skin, download } = deps;
+  const { store, session, toggle, micCheckToggle, skin, download, layout } = deps;
   const doc = host.ownerDocument;
   const kit = makeKit(doc);
   const { el } = kit;
@@ -413,6 +415,7 @@ export const mountSettingsPanel: MountPanel<SettingsPanelDeps> = (host, deps) =>
     endConfirm();
     if (session.resetAllSettings()) {
       skin.set(skin.defaultId);
+      layout?.reset();
       notice.textContent = 'Every setting is back to its default.';
     } else notice.textContent = 'Finish recording, calibrating or the Mic check first.';
   });

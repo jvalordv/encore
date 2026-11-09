@@ -71,7 +71,18 @@
       </header>
 
       <aside id="song-panel" aria-label="Song">
-        <h2 class="panel-title">Song</h2>
+        <!-- The panel's header: its title and the button that folds it into the
+             rail below. Wired, with the drag handle after the panel and the rail,
+             by src/app/panels/left-panel.ts. -->
+        <div class="panel-head">
+          <h2 class="panel-title">Song</h2>
+          <button type="button" id="panel-collapse" class="panel-collapse" data-testid="panel-collapse" aria-controls="song-panel" aria-expanded="true" aria-label="Collapse the song panel" data-help="Fold this panel into a slim rail of icons">&#8249;</button>
+        </div>
+        <!-- Shown instead of the panel's sections while it is folded: the expand
+             button, then one icon per section that has something to show. -->
+        <nav id="panel-rail" class="panel-rail" data-testid="panel-rail" aria-label="Song panel sections">
+          <button type="button" id="panel-expand" class="panel-expand" data-testid="panel-expand" aria-controls="song-panel" aria-expanded="false" aria-label="Expand the song panel" data-help="Open the panel again">&#8250;</button>
+        </nav>
         <!-- Find a song comes first. The button brings the search back over a
              loaded song; hidden while no song is loaded, because the search is
              then shown anyway. The search itself is built by
@@ -80,10 +91,10 @@
         <section id="search" class="search" data-testid="search" aria-label="Find a song"></section>
         <!-- Then a YouTube link, then the drop zone for audio files. -->
         <div class="link-row">
-          <input id="link-input" data-testid="link-input" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="Add a YouTube link" aria-label="YouTube link" />
+          <input id="link-input" data-testid="link-input" data-help="Paste the link of a YouTube video, then press Load" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="Add a YouTube link" aria-label="YouTube link" />
           <button type="button" id="link-load" data-testid="link-load" data-help="Load the YouTube link">Load</button>
         </div>
-        <div id="dropzone" class="dropzone" data-testid="dropzone" role="button" tabindex="0">
+        <div id="dropzone" class="dropzone" data-testid="dropzone" data-help="Each song is analysed up front by the service, one at a time, so it is ready when you pick it" role="button" tabindex="0">
           Drop mp3 files here, or click to choose them
         </div>
         <input id="song-input" data-testid="song-input" type="file" accept="audio/*" multiple hidden />
@@ -97,7 +108,7 @@
         <div class="song-info">
           <div id="song-title" class="song-title" data-testid="song-title">No song loaded</div>
           <div id="song-duration" class="song-meta" data-testid="song-duration"></div>
-          <p id="embed-note" class="song-meta" data-testid="embed-note" hidden>Playing in YouTube's player. Live pitch and takes work here, with approximate timing. Get the melody to have the app play it on its own clock, with a karaoke track and the melody.</p>
+          <p id="embed-note" class="song-meta" data-testid="embed-note" data-help="Live pitch and takes work here, with approximate timing. Get the melody to have the app play it on its own clock, with a karaoke track and the melody." hidden>Playing in YouTube's player. Live pitch and takes work here, with approximate timing.</p>
         </div>
         <!-- The Song reference card, shown while a YouTube video is the song:
              what Encore has for it (melody, key), what that means for learning
@@ -118,8 +129,8 @@
         <section id="lyrics" class="panel-group lyrics" data-testid="lyrics" aria-label="Lyrics" hidden></section>
         <section id="report" class="panel-group report" data-testid="report" aria-label="Learning mode" hidden></section>
 
-        <section class="panel-group" aria-label="Devices">
-          <h3 class="group-title">Devices</h3>
+        <section id="devices" class="panel-group" aria-label="Devices">
+          <h3 class="group-title" data-info data-help="Headphones: the raw mic, most accurate; use them when the song is not coming out of speakers. Speakers: echo cancellation is on, so the song is taken out of what the mic hears. Refresh looks for a device you just plugged in.">Devices</h3>
           <label class="field" for="input-select">Microphone</label>
           <select id="input-select" data-testid="input-select" data-help="Which microphone to sing into"></select>
           <!-- Shown beside a Bluetooth Hands-Free mic (src/duet/hands-free.ts). -->
@@ -129,7 +140,6 @@
             <button type="button" id="monitor-headphones" data-testid="monitor-headphones" data-help="Raw mic input, most accurate. Use when the song is not coming out of speakers." data-mode="headphones" aria-pressed="true">Headphones</button>
             <button type="button" id="monitor-speakers" data-testid="monitor-speakers" data-help="Echo cancellation on, so the song is taken out of what the mic hears" data-mode="speakers" aria-pressed="false">Speakers</button>
           </div>
-          <div id="monitor-help" class="song-meta">Speakers: echo cancellation on so the song is removed from the mic. Headphones: raw input, most accurate.</div>
           <div id="mic-meter" class="meter" data-testid="mic-meter" data-help="How loud the mic hears you right now" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0">
             <div id="mic-meter-fill" class="meter-fill"></div>
           </div>
@@ -149,7 +159,7 @@
              src/app/panels/singers.ts. -->
         <section id="singers" class="panel-group singers" data-testid="singers" aria-label="Singers" data-keep-drawer></section>
 
-        <section class="panel-group" aria-label="Timing and voicing">
+        <section id="timing" class="panel-group" aria-label="Timing and voicing">
           <h3 class="group-title">Latency</h3>
           <div class="latency-row">
             <input id="latency-input" data-testid="latency-input" data-help="How late your voice reaches the recording, in milliseconds. Calibrate measures it." type="number" min="0" max="2000" step="1" inputmode="numeric" placeholder="ms" aria-label="Latency in milliseconds" />
@@ -179,6 +189,10 @@
           <p id="take-empty" class="song-meta">No takes yet. Press Record and sing.</p>
         </section>
       </aside>
+
+      <!-- The drag handle on the panel's right edge (resize, fold, unfold); it
+           sits in the gap beside the panel. Wired by src/app/panels/left-panel.ts. -->
+      <div id="panel-resizer" class="panel-resizer" data-testid="panel-resizer" role="separator" aria-orientation="vertical" aria-controls="song-panel" aria-label="Resize the song panel" aria-valuemin="52" aria-valuemax="640" aria-valuenow="280" tabindex="0" data-help="Drag to resize the panel, or use the arrow keys. Enter folds it."></div>
 
       <!-- The Library drawer, over the page at the right. Built by
            src/app/panels/library.ts. -->

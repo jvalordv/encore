@@ -150,7 +150,8 @@ test('1. a recording puts the melody on the card and a Melody badge in the Libra
   await expect(page.getByTestId('reference-melody')).toHaveText('Melody: from this video');
   await expect(page.getByTestId('reference-key')).toHaveText('Key: estimated from the song');
   // Karaoke mode (the default) shows nothing about learning mode.
-  await expect(page.getByTestId('reference-meaning')).toBeHidden();
+  await expect(page.getByTestId('reference-title')).toHaveAttribute('data-help', '');
+  await expect(page.getByTestId('song-reference').getByTestId('info-button')).toBeHidden();
   await expect(page.getByTestId('reference-get')).toBeHidden();
   expect(service.count('POST', '/songs/url')).toBe(0);
 
@@ -207,7 +208,7 @@ test('4. karaoke mode never prompts', async () => {
 
 test('5. "Do this for every song" is kept by Get the melody, and then a song arms the recording with no prompt', async () => {
   await openWithLink({ mode: 'learning' });
-  await expect(page.getByTestId('reference-meaning')).toContainText('learning mode comments on your voice only');
+  await expect(page.getByTestId('reference-title')).toHaveAttribute('data-help', /learning mode comments on your voice only/);
   // Ticking the box alone starts nothing and saves nothing.
   await page.getByTestId('reference-every-song').check();
   await page.waitForTimeout(300);

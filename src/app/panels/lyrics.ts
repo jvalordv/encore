@@ -17,6 +17,10 @@ import type { MountPanel } from './panel';
 
 /** The most lyrics text taken, as a file size or a pasted length. */
 export const LYRICS_MAX_BYTES = 1_000_000;
+/** What the section's title explains, on hover and in its (i) note. */
+export const LYRICS_HELP =
+  'Find synced lyrics on LRCLIB, or paste them here: LRC with [mm:ss.xx] stamps, or plain text. ' +
+  'You can also drop a .lrc file.';
 /** What the status says when a file or paste is over the cap. */
 export const LYRICS_TOO_LARGE_LINE = 'That file is too large for lyrics.';
 
@@ -61,6 +65,8 @@ export const mountLyricsPanel: MountPanel<LyricsPanelDeps> = (host, { store, con
 
   const title = el('h3', undefined, 'group-title');
   title.textContent = 'Lyrics';
+  title.dataset.info = '';
+  title.dataset.help = LYRICS_HELP;
   const titleInput = el('input', 'lyrics-title');
   titleInput.type = 'text';
   titleInput.placeholder = 'Title';
@@ -75,7 +81,8 @@ export const mountLyricsPanel: MountPanel<LyricsPanelDeps> = (host, { store, con
 
   const paste = el('textarea', 'lyrics-paste');
   paste.rows = 3;
-  paste.placeholder = 'Or paste lyrics here (LRC with [mm:ss.xx] stamps, or plain text), or drop a .lrc file';
+  paste.placeholder = 'Or paste lyrics here, or drop a .lrc file';
+  paste.dataset.help = LYRICS_HELP;
   paste.setAttribute('aria-label', 'Paste lyrics');
   const useButton = button('Use pasted text', 'lyrics-use', 'Read the pasted text as this song’s lyrics');
   const fileInput = el('input', 'lyrics-file');

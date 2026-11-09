@@ -32,6 +32,7 @@ import { mountIngestPanel } from './panels/ingest';
 import { mountKaraokePanel } from './panels/karaoke';
 import { mountKeyboardPanel } from './panels/keyboard';
 import { mountKeyShiftPanel } from './panels/key-shift';
+import { mountLeftPanel } from './panels/left-panel';
 import { mountLibraryPanel } from './panels/library';
 import { mountLyricsPanel } from './panels/lyrics';
 import { mountMicCheckPanel } from './panels/mic-check';
@@ -435,11 +436,17 @@ export function mountUI(session: Session, root: Document = document): UI {
     mountSearchPanel(get('search'), { store, session, toggle: get<HTMLButtonElement>('search-toggle') }),
   );
 
+  // The song panel's (i) notes, drag handle, fold and rail; after the panels
+  // above, which build the titles the notes attach to.
+  const leftPanel = mountLeftPanel(root);
+  cleanups.push(leftPanel.dispose);
+
   // Every setting in one drawer; the controls above stay where they are.
   cleanups.push(
     mountSettingsPanel(get('settings'), {
       store,
       session,
+      layout: leftPanel,
       toggle: get<HTMLButtonElement>('settings-toggle'),
       micCheckToggle: get<HTMLButtonElement>('mic-check-button'),
       skin: domSkinPort(window),

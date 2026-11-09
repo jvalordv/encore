@@ -376,7 +376,7 @@ test('1. loading a link asks the service only whether it runs; Get the melody ar
   const state = await appState();
   expect(state.clock).toBe('embed');
   expect(state.song).toEqual({ name: TITLE, durationS: VIDEO_S, hash: SONG_ID });
-  await expect(page.getByTestId('embed-note')).toContainText('Get the melody');
+  await expect(page.getByTestId('embed-note')).toHaveAttribute('data-help', /Get the melody/);
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('encore.settings') ?? '{}'));
   expect(saved.autoPrepareLinks).toBeUndefined();
 

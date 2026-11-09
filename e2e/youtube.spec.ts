@@ -283,6 +283,7 @@ test('3. pasting a link anywhere loads it: the title, the length, a cued player 
   );
   await expect(page.getByTestId('embed-region')).toBeVisible();
   await expect(page.getByTestId('embed-note')).toBeVisible();
+  await expect(page.getByTestId('embed-note')).toContainText('approximate timing');
   await expect(page.getByTestId('embed-offset')).toBeVisible();
   await expect(page.getByTestId('play')).toBeEnabled();
 

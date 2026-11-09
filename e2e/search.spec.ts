@@ -221,9 +221,14 @@ test('with no song the search tops the left bar, then the link box, then the dro
 
 test('with no key a search opens YouTube in a new tab and asks the API nothing', async () => {
   await freshPage();
-  await expect(page.getByTestId('search-hint')).toContainText("opens YouTube's own search");
+  await expect(page.getByTestId('search-heading')).toHaveAttribute('data-help', /opens YouTube's own search/);
   await expect(page.getByTestId('search-go')).toHaveText('Search on YouTube');
+  await expect(page.getByTestId('search-heading')).toHaveAttribute('data-help', /will not play here/);
+  // The warning and the key note are readable text, not only hover help.
+  await expect(page.getByTestId('search-keyless')).toBeVisible();
   await expect(page.getByTestId('search-keyless')).toContainText('will not play here');
+  await page.getByTestId('search-key-box').locator('summary').click();
+  await expect(page.getByTestId('search-key-box')).toContainText('free quota is about 100 searches a day');
   const before = queries.length;
   const opened = context.waitForEvent('page');
   await runSearch('adele hello');
@@ -267,7 +272,7 @@ test('a key is saved, shown as saved and kept across a reload', async () => {
   await freshPage();
   expect((await readAppState(page)).search.hasKey).toBe(true);
   await expect(page.getByTestId('search-key-box').locator('summary')).toHaveText('YouTube API key (saved)');
-  await expect(page.getByTestId('search-hint')).toContainText('pick a result');
+  await expect(page.getByTestId('search-heading')).toHaveAttribute('data-help', /pick a result/);
 });
 
 test('a search with the key renders the grid with badges, lengths and thumbnails', async () => {

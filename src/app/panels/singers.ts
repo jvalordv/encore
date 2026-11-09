@@ -103,6 +103,8 @@ export const mountSingersPanel: MountPanel<SingersPanelDeps> = (host, { store, s
   }
 
   const title = el('h3', 'singers-title', 'group-title', 'Singers');
+  // How the second singer is heard is the title's help (see left-panel.ts).
+  title.dataset.info = '';
   const a = singerRow(0);
   const toggleLabel = doc.createElement('label');
   toggleLabel.className = 'field singer-toggle';
@@ -111,7 +113,6 @@ export const mountSingersPanel: MountPanel<SingersPanelDeps> = (host, { store, s
   toggle.addEventListener('change', () => duet.setSecondSinger(toggle.checked));
   toggleLabel.append(toggle, ' Second singer');
   const b = singerRow(1);
-  const note = el('p', 'singers-note', 'song-meta');
   const turnsLine = el('p', 'singers-turns', 'song-meta');
 
   // Singer B's input, in the same order as the Devices group.
@@ -155,7 +156,7 @@ export const mountSingersPanel: MountPanel<SingersPanelDeps> = (host, { store, s
     el('div', 'singer-b-buttons', 'button-row'),
   );
   (micRow.lastElementChild as HTMLElement).append(calibrate, close);
-  host.append(title, a.row, toggleLabel, b.row, note, turnsLine, micRow);
+  host.append(title, a.row, toggleLabel, b.row, turnsLine, micRow);
 
   function renderPicker(app: AppState): void {
     const want = app.duet.deviceIdB ?? (app.singers[1]?.input.open ? DEFAULT_VALUE : '');
@@ -201,8 +202,9 @@ export const mountSingersPanel: MountPanel<SingersPanelDeps> = (host, { store, s
     b.colour.value = who[1] ? shownColour(doc, data, who[1]) : '#808080';
     toggle.checked = d.secondSinger;
     b.row.hidden = !d.secondSinger;
-    note.hidden = !d.secondSinger;
-    note.textContent = d.kind === 'two-mics' ? TWO_MICS_NOTE : TURNS_NOTE;
+    const help = d.secondSinger ? (d.kind === 'two-mics' ? TWO_MICS_NOTE : TURNS_NOTE) : '';
+    title.dataset.help = help;
+    toggle.dataset.help = help;
     turnsLine.hidden = d.kind !== 'one-mic';
     turnsLine.textContent = turnSourceLine(d.turnSource);
     micRow.hidden = !d.secondSinger;

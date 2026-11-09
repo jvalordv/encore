@@ -44,7 +44,9 @@ body {
 #app {
   --embed-w: clamp(480px, 32vw, 640px);
   display: grid;
-  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  /* --panel-w is the song panel's width; src/app/panels/left-panel.ts sets it
+     (the chosen width, or the rail's) and src/app/panel-layout.ts holds the limits. */
+  grid-template-columns: var(--panel-w, 280px) minmax(0, 1fr);
   grid-template-rows: auto minmax(var(--stage-min, 0px), 1fr) auto auto;
   grid-template-areas:
     'topbar topbar'
@@ -317,7 +319,7 @@ input[type='range'] {
 
 @media (max-width: 900px) {
   #app {
-    grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+    grid-template-columns: var(--panel-w, 220px) minmax(0, 1fr);
   }
 }
 
@@ -355,6 +357,155 @@ input[type='range'] {
 
   #app[data-embed='on'] {
     --stage-min: calc(var(--embed-w) * 9 / 16 + 32px + 12px + 160px + 16px);
+  }
+}
+
+/* ---- Song panel chrome: header, rail, drag handle, (i) notes --------------- */
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* The small square buttons: fold, unfold, the rail's icons and the (i). */
+.panel-collapse,
+.panel-expand,
+.rail-item {
+  display: inline-grid;
+  place-items: center;
+  min-width: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  line-height: 1;
+}
+
+.panel-collapse,
+.panel-expand {
+  font-size: 1.2rem;
+}
+
+.rail-item {
+  font-size: 0.8rem;
+}
+
+.info-button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 0;
+  width: 1.5em;
+  height: 1.5em;
+  margin-left: 8px;
+  padding: 0;
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-style: italic;
+  line-height: 1;
+  text-transform: none;
+  vertical-align: middle;
+}
+
+.info-note {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+/* The rail replaces the panel's sections while it is folded. */
+.panel-rail {
+  display: none;
+}
+
+/* The 52 px rail must never grow a scrollbar that squeezes its 32 px icons. */
+#app[data-panel='rail'] #song-panel {
+  padding: 8px 0;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+#app[data-panel='rail'] #song-panel::-webkit-scrollbar {
+  display: none;
+}
+
+#app[data-panel='rail'] #song-panel > :not(.panel-rail) {
+  display: none;
+}
+
+#app[data-panel='rail'] .panel-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The drag handle sits in the gap beside the panel; its grip is the thin bar. */
+.panel-resizer {
+  grid-area: song;
+  justify-self: end;
+  align-self: stretch;
+  position: relative;
+  z-index: 2;
+  width: 12px;
+  margin-right: -12px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.panel-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  width: 4px;
+  height: 48px;
+  max-height: 100%;
+  transform: translateY(-50%);
+  background: var(--color-accent-2);
+  border-radius: var(--radius);
+  opacity: 0.55;
+  transition: opacity var(--motion-fast) var(--easing);
+}
+
+.panel-resizer:hover::after,
+.panel-resizer:focus-visible::after,
+#app.is-resizing .panel-resizer::after {
+  background: var(--color-accent);
+  opacity: 1;
+}
+
+.panel-resizer:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+#app.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* At phone width the panel stacks above the stage: no handle, and the fold
+   makes the rail a row of icons. */
+@media (max-width: 780px) {
+  .panel-resizer {
+    display: none;
+  }
+
+  #app[data-panel='rail'] #song-panel {
+    padding: 8px 16px;
+  }
+
+  #app[data-panel='rail'] .panel-rail {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 }
 
