@@ -132,7 +132,6 @@ export class SettingsController {
     core.health.setNoteGuide(next.noteGuide);
     this.setKeyboard(next.keyboard);
     this.setHoverHelp(next.hoverHelp);
-    core.prepare.setAutoPrepareLinks(next.autoPrepareLinks);
     core.songReference.setAutoReference(next.autoReference);
     core.input.setClarity(next.clarityThreshold);
     if (next.youtubeApiKey !== current.youtubeApiKey) core.search.setKey(next.youtubeApiKey);

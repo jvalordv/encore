@@ -3,18 +3,18 @@
  * song plays in the embedded player, which Encore cannot hear, so learning
  * mode can only comment on the singer's voice until the service has the song's
  * sound and has read a melody and a key from it. There is one way to say yes to
- * that, and this file holds the words and the decisions around it: what Encore
- * has for the song (`melodySourceOf`, `keySourceOf`), what that means for
- * learning mode, the card's view (`describeSongReference`), what to do when
- * the download fails (`fallbackFor`: record the song's sound during the first
- * take instead), and when to ask or to go ahead without asking (`offerFor`).
- * Pure, so each is tested without a page; the Session's controller
- * (session/song-reference.ts) acts on them and the panel
- * (panels/song-reference.ts) draws the view.
+ * that: Encore records the song's sound from the tab during the first take.
+ * This file holds the words and the decisions around it: what Encore has for
+ * the song (`melodySourceOf`, `keySourceOf`), what that means for learning
+ * mode, the card's view (`describeSongReference`), and when to ask or to go
+ * ahead without asking (`offerFor`). Pure, so each is tested without a page;
+ * the Session's controller (session/song-reference.ts) acts on them and the
+ * panel (panels/song-reference.ts) draws the view.
  *
- * Both ways of getting the melody are opt-in (docs/ARCHITECTURE.md): nothing
+ * Getting the melody is opt-in (docs/ARCHITECTURE.md): nothing is recorded or
  * leaves for the service until the singer presses the button, answers the
- * prompt, or has turned on the automatic setting.
+ * prompt, or has turned on the automatic setting, and then only at a Play or
+ * Record press that can ask for the share.
  */
 import type { TakeReport } from '../analysis/score';
 import { classifyResult } from '../search/classify';
@@ -37,19 +37,17 @@ export type KeySource = 'none' | 'song' | 'singing';
 /** What the card remembers beyond the states it reads. */
 export interface SongRefState {
   /**
-   * The download failed and the next Play or Record press starts recording
-   * the song's sound from this tab, alongside the take.
+   * The melody was asked for and the next Play or Record press starts
+   * recording the song's sound from this tab, alongside the take.
    */
   armed: boolean;
-  /** The service's own words for why the download failed, cleaned; else ''. */
-  details: string;
   /** The singer chose "Not now" for this song in this session. */
   declined: boolean;
 }
 
 /** The state of a page whose song has no reference asked for. */
 export function initialSongRef(): SongRefState {
-  return { armed: false, details: '', declined: false };
+  return { armed: false, declined: false };
 }
 
 /** The label of the one button. */
@@ -60,32 +58,14 @@ export const PROMPT_TEXT = 'Get the melody so learning mode can score you?';
 export const NOT_NOW_LABEL = 'Not now';
 /** The prompt's checkbox, bound to the automatic setting. */
 export const EVERY_SONG_LABEL = 'Do this for every song';
-/** The label of the control that borrows the original's melody. */
-export const FIND_ORIGINAL_LABEL = 'Find the original';
 /** The label of the early end of a recording of the song's sound. */
 export const STOP_RECORDING_LABEL = 'Stop recording';
 
-/** Said when the download failed and the song's sound will be recorded. */
-export const BLOCKED_NOTE =
-  "YouTube blocked the download, so Encore will record the song's sound while you sing your first take.";
-/**
- * Said when the download failed for a reason other than YouTube's block (a
- * private video, a lost connection, audio that would not decode): recording
- * the song's sound would not mend it, so nothing is armed.
- */
-export const DOWNLOAD_ERROR_NOTE =
-  'The download did not work, so Encore could not get the melody. Get the melody tries again.';
-/** Said when the download failed and this browser cannot record a tab. */
-export const BLOCKED_NO_RECORDING_NOTE =
-  "YouTube blocked the download, and this browser cannot record the song's sound. " +
-  'Use Chrome or Edge to get the melody.';
-/**
- * Said when a download the singer did not ask for (the automatic send of a
- * link) failed: nothing is armed, and the button tries again and records.
- */
-export const DOWNLOAD_FAILED_NOTE =
-  "The download did not work. Get the melody tries again and, if it fails, records the song's sound " +
-  'while you sing.';
+/** Said once the melody is asked for and the song's sound will be recorded. */
+export const ARMED_NOTE = "Encore will record the song's sound while you sing your first take.";
+/** Said when this browser cannot record a tab's sound. */
+export const NO_RECORDING_NOTE =
+  "This browser cannot record the song's sound, so Encore cannot get the melody. Use Chrome or Edge.";
 /** What to do next, under the note that says the sound will be recorded. */
 export const ARMED_HINT =
   "Press Record, then choose this tab in the share dialog with 'Share tab audio' on. " +
@@ -97,15 +77,10 @@ export const SERVICE_DOWN_NOTE =
   'it. The video plays as before.';
 /** The note while the button is on offer. */
 export const READY_NOTE =
-  "Downloads this video's audio through the local service to read its melody " +
-  'and key. See service/README.md.';
+  "Records this video's sound from this tab while you sing the first take, then " +
+  'the local service reads its melody and key. See service/README.md.';
 /** The hint under a karaoke or instrumental video. */
-export const KARAOKE_HINT =
-  'This looks like a karaoke track, so there is no singing in it to read. ' +
-  'Find the original to borrow its melody.';
-/** The hover text of Find the original before the song is on the service. */
-export const FIND_ORIGINAL_FIRST_TITLE =
-  "Get the melody first, so Encore has this song's sound to match against the original.";
+export const KARAOKE_HINT = 'This looks like a karaoke track, so there is no singing in it to read.';
 /** The note while a prepared song waits for its melody. */
 export const READING_NOTE = 'Reading the melody…';
 
@@ -171,52 +146,6 @@ export function titleLooksKaraoke(title: string, channel = ''): boolean {
   return classifyResult(title, channel) === 'karaoke';
 }
 
-/**
- * The service's words for a failure, without the sentences that point at
- * cookies, which Encore never uses for the download. What is left goes under
- * the card's Details, never as its main text.
- */
-export function plainDetails(raw: string): string {
-  const sentences = raw.split(/(?<=[.!?])\s+/);
-  return sentences
-    .filter((sentence) => !/cookie/i.test(sentence))
-    .join(' ')
-    .trim();
-}
-
-/**
- * True when a failure's text is YouTube turning the download away (the bot
- * check, a forbidden or rate-limited request), the one failure that recording
- * the song's sound from the tab gets around.
- */
-export function looksBlocked(failure: string): boolean {
-  return /sign in to confirm|not a bot|cookies|http error (403|429)|too many requests/i.test(failure);
-}
-
-/** What a failed download leads to. */
-export interface Fallback {
-  /** True when capture is armed for the next Play or Record press. */
-  arm: boolean;
-  /** The plain sentence for the card and the status line. */
-  note: string;
-  /** The cleaned service text for Details. */
-  details: string;
-}
-
-/**
- * The decision after the download failed: when YouTube blocked it, the singer
- * asked for the melody and this browser can share a tab's sound, record the
- * song's sound during the first take; otherwise say so and arm nothing. Any
- * other failure only says the download did not work. A failure of a download
- * the singer did not ask for (the automatic send of a link) arms nothing
- * either, so no share prompt appears out of the blue.
- */
-export function fallbackFor(failure: string, captureSupported: boolean, asked = true): Fallback {
-  if (!looksBlocked(failure)) return { arm: false, note: DOWNLOAD_ERROR_NOTE, details: plainDetails(failure) };
-  const note = !captureSupported ? BLOCKED_NO_RECORDING_NOTE : asked ? BLOCKED_NOTE : DOWNLOAD_FAILED_NOTE;
-  return { arm: captureSupported && asked, note, details: plainDetails(failure) };
-}
-
 /** What the card does about a song's missing melody without being asked. */
 export type Offer = 'none' | 'prompt' | 'auto';
 
@@ -234,6 +163,8 @@ export interface OfferInput {
   capture: CaptureState['phase'];
   /** The video says karaoke or instrumental: no singing in it to read. */
   karaoke: boolean;
+  /** This browser can share a tab's sound; without that nothing can be asked. */
+  recordable: boolean;
 }
 
 /**
@@ -241,11 +172,13 @@ export interface OfferInput {
  * nothing. Only learning mode ever asks: karaoke mode never prompts and never
  * starts by itself. A karaoke track has no singing to read, so it is never
  * offered either; the plain button stays for a singer who wants it anyway.
- * The service must be there (phase 'ready') and nothing else must be under way
- * for this song.
+ * The service must be there (phase 'ready'), this browser must be able to
+ * record the song's sound, and nothing else must be under way for this song.
+ * An automatic start only arms the recording: the share is asked for at the
+ * next Play or Record press.
  */
 export function offerFor(input: OfferInput): Offer {
-  if (input.mode !== 'learning' || input.prepare !== 'ready') return 'none';
+  if (input.mode !== 'learning' || input.prepare !== 'ready' || !input.recordable) return 'none';
   if (input.melody !== 'none' || input.armed || input.capture !== 'idle' || input.karaoke) return 'none';
   if (input.autoReference) return 'auto';
   return input.declined ? 'none' : 'prompt';
@@ -285,14 +218,10 @@ export interface SongRefView {
   note: string;
   /** A second, smaller line: what to do next, or why the video has no melody. */
   hint: string;
-  /** The cleaned service error, for the Details disclosure; '' hides it. */
-  details: string;
   /** The primary button, shown unless something else says it or nothing is left to get. */
   button: { shown: boolean; disabled: boolean; label: string; title: string };
   /** Stop for an early end of the recording of the song's sound. */
   stop: { shown: boolean; disabled: boolean };
-  /** Find the original, for a karaoke video whose melody is not borrowed yet. */
-  findOriginal: { shown: boolean; disabled: boolean; title: string };
   /** The in-app prompt, with its checkbox state; shown in place of the button. */
   prompt: { shown: boolean; text: string; auto: boolean };
 }
@@ -314,6 +243,7 @@ export function describeSongReference(input: SongRefInput): SongRefView {
     melody: melodySource,
     capture: capture.phase,
     karaoke,
+    recordable: input.captureSupported,
   });
 
   let note = '';
@@ -336,8 +266,17 @@ export function describeSongReference(input: SongRefInput): SongRefView {
       title = SERVICE_DOWN_NOTE;
       break;
     case 'ready':
-      note = READY_NOTE;
-      title = READY_NOTE;
+      if (!input.captureSupported) {
+        disabled = true;
+        note = NO_RECORDING_NOTE;
+        title = NO_RECORDING_NOTE;
+      } else if (songRef.armed) {
+        note = ARMED_NOTE;
+        hint = ARMED_HINT;
+      } else {
+        note = READY_NOTE;
+        title = READY_NOTE;
+      }
       break;
     case 'preparing':
       disabled = true;
@@ -353,9 +292,7 @@ export function describeSongReference(input: SongRefInput): SongRefView {
       note = prepare.message;
       break;
     case 'failed':
-      if (!looksBlocked(prepare.message)) note = DOWNLOAD_ERROR_NOTE;
-      else if (songRef.armed) note = BLOCKED_NOTE;
-      else note = input.captureSupported ? DOWNLOAD_FAILED_NOTE : BLOCKED_NO_RECORDING_NOTE;
+      note = songRef.armed ? ARMED_NOTE : prepare.message;
       hint = songRef.armed ? ARMED_HINT : '';
       break;
   }
@@ -378,8 +315,6 @@ export function describeSongReference(input: SongRefInput): SongRefView {
 
   const nothingLeft = phase === 'none' || phase === 'prepared' || melodySource !== 'none';
   const prompt = offer === 'prompt';
-  const failed = phase === 'failed' && songRef.details !== '' && !recording;
-  const onService = phase === 'prepared';
   return {
     visible: phase !== 'none',
     melodySource,
@@ -391,14 +326,8 @@ export function describeSongReference(input: SongRefInput): SongRefView {
     lines,
     note,
     hint,
-    details: failed ? songRef.details : '',
-    button: { shown: !nothingLeft && !prompt, disabled, label: GET_MELODY_LABEL, title },
+    button: { shown: !nothingLeft && !prompt && !songRef.armed, disabled, label: GET_MELODY_LABEL, title },
     stop: { shown: capture.phase === 'capturing', disabled: !canStop(capture) },
-    findOriginal: {
-      shown: karaoke && phase !== 'none',
-      disabled: !onService || input.align.phase === 'working',
-      title: onService ? '' : FIND_ORIGINAL_FIRST_TITLE,
-    },
     prompt: { shown: prompt, text: PROMPT_TEXT, auto: input.autoReference },
   };
 }

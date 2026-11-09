@@ -89,16 +89,15 @@ describe('labels', () => {
 });
 
 describe('rowOf', () => {
-  it('puts source, length, last played and takes in the meta line', () => {
-    const view = rowOf(entry('a', { lastPlayedAt: 1000, stems: true }), 2, 1000 + 60_000);
-    expect(view.meta).toEqual(['Upload', '2:05', '1 min ago', '2 takes']);
+  it('puts source, length and last played in the meta line', () => {
+    const view = rowOf(entry('a', { lastPlayedAt: 1000, stems: true }), 1000 + 60_000);
+    expect(view.meta).toEqual(['Upload', '2:05', '1 min ago']);
     expect(view.badge?.label).toBe('Backing');
   });
 
-  it('leaves out an unknown length and a zero take count', () => {
+  it('leaves out an unknown length', () => {
     const view = rowOf(
       entry('yt-aaaaaaaaaaa', { source: 'youtube', videoId: 'aaaaaaaaaaa', durationS: 0, lastPlayedAt: null }),
-      0,
       5,
     );
     expect(view.meta).toEqual(['YouTube', 'never played']);

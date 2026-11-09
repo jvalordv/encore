@@ -1,0 +1,63 @@
+/*
+ * The bar under the drop zone (src/app/panels/ingest.ts): one line, one
+ * progress bar for every song dropped together, and a line for each song that
+ * failed. Colour, type and shape come only from the skin tokens.
+ */
+
+.ingest {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ingest[hidden] {
+  display: none;
+}
+
+.ingest-line {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ingest-bar {
+  display: block;
+  width: 100%;
+  height: 10px;
+  appearance: none;
+  overflow: hidden;
+  background: var(--color-surface-2);
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: var(--radius);
+  accent-color: var(--color-hit);
+}
+
+.ingest-bar::-webkit-progress-bar {
+  background: var(--color-surface-2);
+}
+
+.ingest-bar::-webkit-progress-value {
+  background: var(--color-hit);
+  transition: width var(--motion-fast) var(--easing);
+}
+
+.ingest-bar::-moz-progress-bar {
+  background: var(--color-hit);
+}
+
+.ingest-bar[hidden] {
+  display: none;
+}
+
+.ingest-problems {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.ingest-problems[hidden] {
+  display: none;
+}

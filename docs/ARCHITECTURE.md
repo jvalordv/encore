@@ -82,8 +82,8 @@ so learning mode when it is up. Scoring and tips run in the browser.
   live pitch drawn as usual. It needs no service and downloads nothing.
   - *Two modes, one clock.* **Embedded:** the player supplies sound and
     picture and our song time follows its `getCurrentTime()`. **Prepared:**
-    once the service has fetched and analysed the song (P2-T1d), our audio
-    engine supplies the sound and the clock, and the embed becomes a muted
+    once the service holds a recording of the song's sound and has analysed
+    it (P2-T1d, W10a), our audio engine supplies the sound and the clock, and the embed becomes a muted
     picture re-synced to it. Coaching wins ties (CLAUDE.md): the engine has a
     sample-accurate clock, a calibrated output latency, and stems; the
     embed's audio cannot be routed through Web Audio (cross-origin), cannot
@@ -128,9 +128,11 @@ so learning mode when it is up. Scoring and tips run in the browser.
   - *Recording the song's sound* (WL3a: `src/audio/tab-capture.ts`,
     `src/audio/capture-assembler.ts`, `src/app/capture.ts`,
     `src/app/session/capture.ts`; service `routes/capture.py`; reached
-    through the Song reference card, W9). The route into the same prepare
-    path when yt-dlp is blocked. Opt-in: it starts only after a failed
-    download, on the singer's next Play or Record press (a user gesture),
+    through the Song reference card, W9). Since W10a it is the only way a
+    YouTube song gets a melody: Encore no longer asks the service to download
+    a link (the owner, 2026-11-08, after YouTube's bot check kept blocking it).
+    Opt-in: it starts on the singer's next Play or Record press (a user
+    gesture) after Get the melody, or after the Settings switch armed it,
     which asks for a tab share (`getDisplayMedia`, audio on), drops the
     video track at once, seeks the embed to 0 and plays it once the share
     is answered, so the recording runs alongside the first take and no
@@ -144,23 +146,26 @@ so learning mode when it is up. Scoring and tips run in the browser.
     largest gap; the video ending, or Stop at 90% or more, encodes a 16-bit
     WAV and posts it to `POST /songs/url/{id}/capture`, which stores it as
     `yt-<id>` with `audio_source: "capture"` and the fetch step done. The
-    browser then runs the ordinary prepared-link flow, which finds that song
-    in the cache. A song that already has a download keeps it as the source
-    and the capture is stored as `capture.wav` beside it (the response says
+    browser then reads that song back with `GET /songs/yt-<id>` and takes it
+    over (below). A song that already had audio keeps it as the source and the
+    capture is stored as `capture.wav` beside it (the response says
     `alongside`), for a later cross-check. The capture is the tab's output,
     not the mic, and is never routed to the speakers. Tests use
     `?captureFake` (a tone in place of the share).
-  - *Prepared mode, as built* (P2-T1d: `src/service/client.ts`,
-    `src/app/prepare.ts`, `src/audio/embed-follower.ts`). Opt-in: loading
-    a link sends only `GET /health` (no link data); the link goes to
-    `POST /songs/url` only on a Get the melody press (the Song reference
-    card), with `autoPrepareLinks` on (default off), or with
-    `autoReference` on in learning mode (default off). Health is re-checked on focus, so
-    starting the service enables the button without a reload. Polling backs off
-    from 500 ms to a 2 s cap and settles when fetch is done or any step has
-    failed. The switch waits for a take in progress or starting, and for
-    the AudioContext clock to actually move (it can lag `resume()` by up to
-    about a second; capped at 2 s), then makes the audio player the active
+  - *Prepared mode, as built* (P2-T1d, trimmed by W10a:
+    `src/service/client.ts`, `src/app/prepare.ts`,
+    `src/audio/embed-follower.ts`). The link is never sent to the service
+    (`POST /songs/url` has no caller in the app; the route stays in the
+    service, unused, and a ROADMAP follow-up deletes it). Loading a link sends
+    only `GET /health` (no link data), and health is re-checked on focus, so
+    starting the service enables the button without a reload. The prepared
+    flow starts after a recording was uploaded: `adoptHeldSong` reads
+    `GET /songs/yt-<id>`, polls with a backoff from 500 ms to a 2 s cap until
+    the fetch step is done or any step has failed, and fetches the audio; the
+    audio the service lost is reported at once, not asked for again. The
+    switch waits for a take in progress or starting, and for the AudioContext
+    clock to actually move (it can lag `resume()` by up to about a second;
+    capped at 2 s), then makes the audio player the active
     transport at the embed's position, keyed `yt-<id>` so takes over the
     embed and over the prepared audio share one list (prepared takes carry
     `clock: "engine"`; `embedOffsetS` no longer applies). The embed is
@@ -263,14 +268,19 @@ so learning mode when it is up. Scoring and tips run in the browser.
     copying the transport into the store and lane, the ad notice.
   - `playback.ts`, `PlaybackController`: play, pause, stop, seek, nudge and
     the loop A/B controls, each a guard over the active transport.
-  - `prepare.ts`, `PrepareController`: the service probe, the preparation
-    attempt and the switch to prepared audio, with the embed follower. After
-    the switch it hands the song's status to `stems.follow`.
+  - `prepare.ts`, `PrepareController`: the service probe, taking over the
+    uploaded recording of the linked video and the switch to prepared audio,
+    with the embed follower. After the switch it hands the song's status to
+    `stems.follow`. It never sends a link to the service.
+  - `ingest.ts`, `IngestController`: songs dropped or chosen together
+    (below, "Songs dropped together"). The pure queue and its words are in
+    `src/app/ingest.ts`; the panel under the drop zone is
+    `panels/ingest.ts`.
   - `stems.ts`, `StemsController`: the karaoke track of the song in use. A
     dropped file is sent to `POST /songs` once it has loaded (after a health
     check, in the background; with the service away the song plays as before
     and the panel says so in one line, and a return to the window asks
-    again), a prepared link is followed from its status. Either way it
+    again), a prepared recording is followed from its status. Either way it
     polls through separation, downloads and decodes both stems into the mix,
     polls through the reference step and puts the melody on the lane. One
     run belongs to one song: a newer song taking over (`reset`) aborts the
@@ -688,29 +698,64 @@ always skips.
     than the API (III.I.14), and its general terms restrict downloading.
     Preparing is therefore opt-in, labelled as such in the UI and in
     `service/README.md`, and the embedded path never depends on it.
+    Since W10a the app does not download at all: the download was the part that
+    YouTube's bot check kept refusing and that the policies above forbid
+    most plainly, so it was removed from the app (the owner, 2026-11-08: "if
+    this doesn't work at all, then I don't see any reason to keep it as an
+    option"). What remains is the singer's own recording of the song's sound.
     Opting in is one early, clear choice (W9, owner 2026-11-08), the
     **Song reference** card in the song panel (`src/app/song-reference.ts`,
     `src/app/panels/song-reference.ts`, `src/app/session/song-reference.ts`).
     It states what Encore has for the song (melody: none, from this video,
     from the original; key: none, from the song, from the singing) and
     what that means for learning mode, with one button, "Get the melody".
-    The button downloads first (the prepare flow); any failure, YouTube's
-    bot check included, says in plain words that the song's sound will be
-    recorded during the first take and arms the recording for the next Play
-    or Record press, with the service's own text under Details and never
-    advice about cookies. In learning mode a YouTube song with no melody
+    The button arms the recording of the song's sound for the next Play or
+    Record press and says so in plain words ("Encore will record the song's
+    sound while you sing your first take"); nothing is downloaded and no
+    service text is shown. In learning mode a YouTube song with no melody
     opens the card with a prompt ("Get the melody so learning mode can
     score you?", Not now, Do this for every song). That checkbox is the
     Settings switch "Get the song reference automatically" (off by default,
     saved and exported with the settings); with it on, loading a song in
-    learning mode starts the button without the prompt. "Not now" is kept
-    per song for the session. Karaoke mode never prompts and never starts
-    by itself; the button is there if the singer wants the karaoke track.
-    When the melody arrives (download, recording, or an aligned original),
-    earlier learning takes whose report had no melody are scored again from
-    their stored frames. The Library marks each song Melody, Key or Backing.
-    Shipping both in one distributed app is a decision for the owner; for
-    personal use on their own machine they are the owner's to make.
+    learning mode arms the recording without the prompt, so the first Play or
+    Record asks for the share. A browser that cannot share a tab's sound is
+    told so and asked nothing. "Not now" is kept per song for the session.
+    Karaoke mode never prompts and never arms by itself; the button is there
+    if the singer wants the karaoke track. When the melody arrives (recording,
+    or an aligned original), earlier learning takes whose report had no melody
+    are scored again from their stored frames; when only the song's key
+    arrives, earlier learning takes whose voice was not judged on the song's
+    key are scored again against it (karaoke takes have no report and stay
+    as they are). The Library marks each song Melody, Key or Backing.
+    "Find the original" no longer offers to use a video as the original (that
+    needed the service to download it); it still searches for the original so
+    it can be loaded as a song of its own.
+    Shipping the recording in one distributed app is a decision for the owner;
+    for personal use on their own machine it is the owner's to make.
+- **Songs dropped together (W10a, owner 2026-11-08).** The song panel runs
+  top to bottom: Search for a song, Add a YouTube link, then the drop zone for
+  audio files. The drop zone and the file picker take several files. Each
+  audio file is added to the Library, and with the service running it is
+  uploaded and analysed up front (separation into stems, key, melody), one
+  file at a time, so a song is ready before it is opened. The first file of a
+  drop loads and plays at once, as one dropped file always has, and its
+  analysis is the stems controller's own; the rest are analysed in the
+  background without touching the song in use, and files dropped while the
+  queue runs join its end. ONE bar and one line under the drop zone
+  ("Analysing 2 of 5: name (separating)") show the whole queue; a song that
+  fails is named with a plain reason and the others go on, and a file that is
+  not audio is skipped with a line. With no service the songs are still added
+  and the bar says once that the analysis needs it. Each finished song gets its
+  Melody, Key or Backing badge. The queue's rules are pure
+  (`src/app/ingest.ts`, `test/ingest.test.ts`).
+- **Takes per song in the Library (W10b, owner 2026-11-08).**
+  `state.library.takes` holds the summaries of every song take (never the WAVs), read by the
+  Library controller when the drawer opens, a take is saved, deleted or
+  re-scored, or the singer changes. `src/app/song-takes.ts` is the pure
+  part (whose takes count, grouping by song, the "N takes · last sung"
+  line, a take's learning-mode share and stars); the panel's Replay,
+  Open and Delete call the takes controller's own replay and delete and
+  the Library's load, and karaoke mode never asks for the figures.
 - **Two modes (owner, 2026-10-27; note guide added 2026-11-05).** Karaoke
   mode is the default and shows no scores, misses or tips; it judges nothing
   unless the singer turns the note guide on. The note guide is an opt-in,

@@ -28,13 +28,18 @@ export interface SettingsExtras {
   profiles?: readonly Profile[];
 }
 
+/**
+ * Settings the app once had and has dropped. An older export may still carry
+ * them; they are skipped without being counted as unrecognised.
+ */
+const RETIRED_KEYS: readonly string[] = ['autoPrepareLinks'];
+
 /** The plain name of each setting, for the import summary. */
 export const SETTING_LABELS: Readonly<Record<keyof Settings, string>> = Object.freeze({
   inputDeviceId: 'Microphone',
   outputDeviceId: 'Output',
   monitor: 'Monitor mode',
   serviceUrl: 'Service address',
-  autoPrepareLinks: 'Auto-prepare links',
   autoReference: 'Get the song reference automatically',
   clarityThreshold: 'Clarity threshold',
   octaveInvariant: 'Octave invariance',
@@ -118,7 +123,7 @@ export function parseSettingsText(
   for (const key of Object.keys(given)) {
     // A key the app does not have is counted, never copied.
     if ((KNOWN_KEYS as string[]).includes(key)) merged[key] = given[key];
-    else ignored += 1;
+    else if (!RETIRED_KEYS.includes(key)) ignored += 1;
   }
   const settings = sanitizeSettings(merged);
   // The two slots' names and colours are the singers' profiles (the `profiles`

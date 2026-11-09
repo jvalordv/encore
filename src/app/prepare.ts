@@ -1,18 +1,19 @@
 /**
- * Preparing a linked song for scoring, apart from the Session that acts on it.
+ * Taking over a linked song's audio, apart from the Session that acts on it.
  * Two halves. The first is what the song panel knows: `PrepareState` (a phase,
  * the steps the service last reported and one message) and the wording of its
  * steps (`stepLines`), which the Song reference card shows
  * (src/app/song-reference.ts), tested without a page. The second is
- * `prepareLink`, the flow from a link to the song's audio bytes: add the link
- * to the service, wait for the fetch step, download the audio, and add the
- * link once more if the service says the audio has gone. It takes the client
- * and an AbortSignal, so a newer load can stop it and a test can run it
- * against a stub.
+ * `adoptHeldSong`, the flow from a song the service already holds (the
+ * recording of the video's sound, once uploaded) to its audio bytes: wait for
+ * the fetch step, then download the audio. Encore never asks the service to
+ * download a YouTube link; the only YouTube song the service holds is one the
+ * singer's own recording put there. The flow takes the client and an
+ * AbortSignal, so a newer load can stop it and a test can run it against a
+ * stub.
  *
- * Nothing here decides that a song is prepared. The Session does, on a press
- * of Get the melody or the automatic settings (all opt-in; see the policy
- * note in service/README.md), and it alone loads the bytes into the audio
+ * Nothing here decides that a song is prepared. The Session does, once a
+ * recording has been uploaded, and it alone loads the bytes into the audio
  * engine and switches the clock.
  */
 import { failedStep, isAbortError, ServiceError, settledAs } from '../service/client';
@@ -23,12 +24,12 @@ import type { SongStatus, SongSteps, StepName, StepStatus } from '../service/typ
 /**
  * Where a linked song stands on the way to prepared audio. 'none': no video is
  * the song, nothing to show. 'checking': asking the service whether it runs.
- * 'unavailable': it does not, so Prepare is off. 'ready': it does, and Prepare
- * waits for a press. 'preparing': the service is fetching the audio. 'loading':
- * the audio is fetched and is being downloaded and decoded. 'waiting': it is
- * ready, but a take is being recorded on the video. 'prepared': the app's own
- * audio is the song. 'failed': it stopped with a reason, and can be added
- * again.
+ * 'unavailable': it does not, so the melody cannot be had. 'ready': it does,
+ * and the song's sound can be recorded. 'preparing': the service is working on
+ * the recording. 'loading': the audio is being downloaded and decoded.
+ * 'waiting': it is ready, but a take is being recorded on the video.
+ * 'prepared': the app's own audio is the song. 'failed': it stopped with a
+ * reason.
  */
 export type PreparePhase =
   | 'none'
@@ -70,11 +71,11 @@ export const PREPARED_NOTE =
 /** Why a preparation failed when the service stopped answering. */
 export const SERVICE_STOPPED =
   'The service stopped answering. Check that it is running (service/README.md), ' +
-  'then add the song again.';
+  'then try again.';
 /** Why a preparation failed when the service no longer has the song. */
-export const SONG_FORGOTTEN = 'The service no longer has this song. Add it again.';
+export const SONG_FORGOTTEN = 'The service no longer has this song.';
 /** Why a preparation failed when the service has no audio to give. */
-export const AUDIO_MISSING = 'The service has no audio for this song, even after adding it again.';
+export const AUDIO_MISSING = 'The service has no audio for this song.';
 
 /** How each step is named to the person. */
 export const STEP_LABELS: Readonly<Record<StepName, string>> = {
@@ -90,7 +91,7 @@ function percent(progress: number): number {
   return Math.round(Math.min(1, Math.max(0, Number.isFinite(progress) ? progress : 0)) * 100);
 }
 
-/** One step in a line: "Fetching audio 45%", "Fetching audio: waiting", ... */
+/** One step in a line: "Separating the vocal 45%", "Finding the key: waiting", ... */
 export function describeStep(name: StepName, step: StepStatus): string {
   const label = STEP_LABELS[name];
   switch (step.state) {
@@ -123,15 +124,15 @@ export function stepLines(steps: SongSteps | null): string[] {
   ).map((name) => describeStep(name, steps[name]));
 }
 
-/** The address the service is given for a video, in the one form it takes. */
-export function canonicalWatchUrl(videoId: string): string {
-  return `https://www.youtube.com/watch?v=${videoId}`;
+/** The id the service files a recorded YouTube video under. */
+export function heldSongId(videoId: string): string {
+  return `yt-${videoId}`;
 }
 
 /** Why a step failed, in the service's words when it gave any. */
 export function describeFailure(status: SongStatus, step: StepName): string {
   const reason = status.steps[step].error?.trim();
-  return reason || `${STEP_LABELS[step]} failed. Add the song again to retry.`;
+  return reason || `${STEP_LABELS[step]} failed.`;
 }
 
 /** A failed call, said so the person knows what to do next. */
@@ -153,72 +154,68 @@ export function describeServiceError(error: unknown): string {
   return error instanceof Error && error.message ? error.message : String(error);
 }
 
-/** The slice of ServiceClient that prepareLink uses. */
+/** The slice of ServiceClient that adoptHeldSong uses. */
 export interface PrepareClient {
-  createSongFromUrl(url: string, signal?: AbortSignal): Promise<SongStatus>;
+  getSong(id: string, signal?: AbortSignal): Promise<SongStatus>;
   pollSong(id: string, options?: PollOptions): Promise<PollOutcome>;
   fetchSongAudio(id: string, signal?: AbortSignal): Promise<ArrayBuffer>;
 }
 
-/** How prepareLink reports on its way and is stopped. */
+/** How adoptHeldSong reports on its way and is stopped. */
 export interface PrepareHooks {
   /** Stops the flow wherever it is; the result is then 'aborted'. */
   signal: AbortSignal;
-  /** The service's latest word on the steps: after adding, and every poll. */
+  /** The service's latest word on the steps: first, and every poll. */
   onSteps(steps: SongSteps): void;
   /** The fetch is done and the audio is being downloaded. */
   onLoading(steps: SongSteps): void;
 }
 
-/** What prepareLink ends with. */
+/** What adoptHeldSong ends with. */
 export type PrepareOutcome =
   | { kind: 'audio'; bytes: ArrayBuffer; status: SongStatus }
   | { kind: 'failed'; message: string }
   | { kind: 'aborted' };
 
 /**
- * Takes a link from the service to the song's audio. The link is added (a song
- * the service already has is a cache hit), its status is polled until the
- * fetch step is done, and the audio is downloaded. A failed step ends it with
- * that step's error. A 409 from the audio route means the cache lost the file,
- * and the link is added again once, which makes the service fetch it afresh;
- * a second 409 is reported. Any failure becomes a message in `failed`, and a
- * stop through the signal is 'aborted', never a failure.
+ * Takes a song the service holds to its audio. Its status is read, polled
+ * until the fetch step is done, and the audio is downloaded. A failed step
+ * ends it with that step's error, and so does audio the service no longer has.
+ * Any failure becomes a message in `failed`, and a stop through the signal is
+ * 'aborted', never a failure.
  */
-export async function prepareLink(
+export async function adoptHeldSong(
   client: PrepareClient,
-  url: string,
+  songId: string,
   hooks: PrepareHooks,
 ): Promise<PrepareOutcome> {
   const { signal } = hooks;
   try {
-    for (let round = 0; round < 2; round += 1) {
-      let status = await client.createSongFromUrl(url, signal);
-      hooks.onSteps(status.steps);
-      if (settledAs(status) === null) {
-        const outcome = await client.pollSong(status.song_id, {
-          signal,
-          onUpdate: (update) => hooks.onSteps(update.steps),
-        });
-        if (outcome.kind === 'aborted') return { kind: 'aborted' };
-        if (outcome.kind === 'failed') {
-          return { kind: 'failed', message: describeFailure(outcome.status, outcome.step) };
-        }
-        status = outcome.status;
+    let status = await client.getSong(songId, signal);
+    hooks.onSteps(status.steps);
+    if (settledAs(status) === null) {
+      const outcome = await client.pollSong(status.song_id, {
+        signal,
+        onUpdate: (update) => hooks.onSteps(update.steps),
+      });
+      if (outcome.kind === 'aborted') return { kind: 'aborted' };
+      if (outcome.kind === 'failed') {
+        return { kind: 'failed', message: describeFailure(outcome.status, outcome.step) };
       }
-      const failed = settledAs(status) === 'failed' ? failedStep(status) : null;
-      if (failed !== null) return { kind: 'failed', message: describeFailure(status, failed) };
-
-      hooks.onLoading(status.steps);
-      try {
-        const bytes = await client.fetchSongAudio(status.song_id, signal);
-        return { kind: 'audio', bytes, status };
-      } catch (error) {
-        const lost = error instanceof ServiceError && error.kind === 'not-fetched';
-        if (!lost) throw error;
-      }
+      status = outcome.status;
     }
-    return { kind: 'failed', message: AUDIO_MISSING };
+    const failed = settledAs(status) === 'failed' ? failedStep(status) : null;
+    if (failed !== null) return { kind: 'failed', message: describeFailure(status, failed) };
+
+    hooks.onLoading(status.steps);
+    try {
+      const bytes = await client.fetchSongAudio(status.song_id, signal);
+      return { kind: 'audio', bytes, status };
+    } catch (error) {
+      const lost = error instanceof ServiceError && error.kind === 'not-fetched';
+      if (!lost) throw error;
+      return { kind: 'failed', message: AUDIO_MISSING };
+    }
   } catch (error) {
     if (signal.aborted || isAbortError(error)) return { kind: 'aborted' };
     return { kind: 'failed', message: describeServiceError(error) };

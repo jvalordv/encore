@@ -21,7 +21,7 @@ import { fakeLane, FakeTransport, makeHarness, songInfo } from './session-harnes
 
 const hoisted = vi.hoisted(() => ({
   measureLatency: vi.fn(),
-  prepareLink: vi.fn(),
+  adoptHeldSong: vi.fn(),
   followers: [] as Array<{ start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> }>,
 }));
 
@@ -31,7 +31,7 @@ vi.mock('../src/audio/latency', async (importOriginal) => ({
 }));
 vi.mock('../src/app/prepare', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/app/prepare')>()),
-  prepareLink: hoisted.prepareLink,
+  adoptHeldSong: hoisted.adoptHeldSong,
 }));
 vi.mock('../src/audio/embed-follower', () => ({
   EmbedFollower: class {
@@ -52,7 +52,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   hoisted.measureLatency.mockReset();
-  hoisted.prepareLink.mockReset();
+  hoisted.adoptHeldSong.mockReset();
   hoisted.followers.length = 0;
 });
 
@@ -489,7 +489,7 @@ describe('TakeController', () => {
   });
 });
 
-describe('PrepareController', () => {
+describe('PrepareController (taking over the recording)', () => {
   function linked() {
     const h = makeHarness();
     const embed = new FakeEmbed();
@@ -506,8 +506,8 @@ describe('PrepareController', () => {
   it('hands a going song from the video to the app, muting the video', async () => {
     const { h, embed } = linked();
     vi.spyOn(ServiceClient.prototype, 'health').mockResolvedValue(true);
-    hoisted.prepareLink.mockResolvedValue(audio);
-    await h.core.prepare.prepare();
+    hoisted.adoptHeldSong.mockResolvedValue(audio);
+    await h.core.prepare.adopt();
 
     const [file, name, key] = h.player.load.mock.calls[0];
     expect(file.name).toBe('abc123.flac');
@@ -524,23 +524,13 @@ describe('PrepareController', () => {
   it("then follows the service for the song's karaoke track", async () => {
     const { h } = linked();
     vi.spyOn(ServiceClient.prototype, 'health').mockResolvedValue(true);
-    hoisted.prepareLink.mockResolvedValue(audio);
+    hoisted.adoptHeldSong.mockResolvedValue(audio);
     const follow = vi.spyOn(h.core.stems, 'follow').mockImplementation(() => undefined);
-    await h.core.prepare.prepare();
+    await h.core.prepare.adopt();
     expect(follow).toHaveBeenCalledWith(audio.status);
   });
 
-  it('says so, and offers nothing, when the service has stopped', async () => {
-    const { h, embed } = linked();
-    vi.spyOn(ServiceClient.prototype, 'health').mockResolvedValue(false);
-    await h.core.prepare.prepare();
-    expect(h.store.state.prepare.phase).toBe('unavailable');
-    expect(h.store.state.status.kind).toBe('warn');
-    expect(hoisted.prepareLink).not.toHaveBeenCalled();
-    expect(embed.mute).not.toHaveBeenCalled();
-  });
-
-  it('shows Prepare after a check, and checks again on request', async () => {
+  it('shows the melody on offer after a check, and checks again on request', async () => {
     const { h, embed } = linked();
     const health = vi.spyOn(ServiceClient.prototype, 'health').mockResolvedValue(false);
     await h.core.prepare.probeService(embed as unknown as YouTubeTransport);
@@ -548,30 +538,20 @@ describe('PrepareController', () => {
     health.mockResolvedValue(true);
     h.core.prepare.checkService();
     await vi.waitFor(() => expect(h.store.state.prepare.phase).toBe('ready'));
-    expect(hoisted.prepareLink).not.toHaveBeenCalled();
-  });
-
-  it('sends the link by itself after the check when the setting is on', async () => {
-    const { h, embed } = linked();
-    h.core.prepare.setAutoPrepareLinks(true);
-    expect(loadSettings(h.settingsStore).autoPrepareLinks).toBe(true);
-    vi.spyOn(ServiceClient.prototype, 'health').mockResolvedValue(true);
-    hoisted.prepareLink.mockResolvedValue(audio);
-    await h.core.prepare.probeService(embed as unknown as YouTubeTransport);
-    await vi.waitFor(() => expect(h.store.state.prepare.phase).toBe('prepared'));
+    expect(hoisted.adoptHeldSong).not.toHaveBeenCalled();
   });
 
   it('is ended by a newer load, which takes the player and leaves the video unmuted', async () => {
     const { h, embed } = linked();
     vi.spyOn(ServiceClient.prototype, 'health').mockResolvedValue(true);
     let finish!: (outcome: unknown) => void;
-    hoisted.prepareLink.mockImplementation(
+    hoisted.adoptHeldSong.mockImplementation(
       () =>
         new Promise((resolve) => {
           finish = resolve;
         }),
     );
-    const run = h.core.prepare.prepare();
+    const run = h.core.prepare.adopt();
     await vi.waitFor(() => expect(h.store.state.prepare.phase).toBe('preparing'));
     await h.core.songs.loadSong(new File(['x'], 'next.mp3'));
     finish(audio);
@@ -586,9 +566,9 @@ describe('PrepareController', () => {
   it('waits for a take being recorded before it switches', async () => {
     const { h, embed } = linked();
     vi.spyOn(ServiceClient.prototype, 'health').mockResolvedValue(true);
-    hoisted.prepareLink.mockResolvedValue(audio);
+    hoisted.adoptHeldSong.mockResolvedValue(audio);
     h.store.patch({ recording: true });
-    const run = h.core.prepare.prepare();
+    const run = h.core.prepare.adopt();
     await vi.waitFor(() => expect(h.store.state.prepare.phase).toBe('waiting'));
     expect(embed.mute).not.toHaveBeenCalled();
     h.store.patch({ recording: false });

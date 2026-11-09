@@ -1,20 +1,21 @@
 /**
  * The Song reference in the session: the one place that turns "Get the
- * melody" into the right mechanism. It tries the download first (the Prepare
- * flow, session/prepare.ts); if that fails for any reason it arms the
- * recording of the song's sound (session/capture.ts) for the next Play or
- * Record press, which is a user gesture and so can ask for Chrome's share
- * prompt, and the recording then runs alongside the take. It also holds the
- * rest of the card's behaviour: the prompt in learning mode, the automatic
- * setting that skips it, "Not now" for the session, the early end of a
- * recording once a take ends, and scoring earlier takes again when the melody
- * arrives. Both mechanisms underneath are unchanged in how they talk to the
- * service. The words and decisions are pure (src/app/song-reference.ts).
+ * melody" into action. For a YouTube song the service already holds from an
+ * earlier session, that means taking it over at once; otherwise it means
+ * arming the recording of the song's sound (session/capture.ts) for the next
+ * Play or Record press, which is a user gesture and so can ask for Chrome's
+ * share prompt; the recording then runs alongside the take. Encore never
+ * downloads the video.
+ * It also holds the rest of the card's behaviour: the prompt in learning mode,
+ * the automatic setting that arms the recording without the prompt, "Not now"
+ * for the session, the early end of a recording once a take ends, and scoring
+ * earlier takes again when the melody or the key arrives. The words and
+ * decisions are pure (src/app/song-reference.ts).
  */
 import { canStop } from '../capture';
 import { originalQueryFor } from '../learning';
 import { skippedForNoVocal } from '../reference';
-import { fallbackFor, melodySourceOf, offerFor, titleLooksKaraoke } from '../song-reference';
+import { melodySourceOf, NO_RECORDING_NOTE, offerFor, titleLooksKaraoke } from '../song-reference';
 import type { AppState } from '../state';
 import type { SessionCore } from './core';
 
@@ -25,18 +26,24 @@ function rescoredStatus(count: number): string {
     : `Your ${count} earlier takes were scored again with the melody.`;
 }
 
+/** Said when earlier takes were scored again against the key that came. */
+function rescoredKeyStatus(count: number): string {
+  return count === 1
+    ? 'Your earlier take was scored again with the key.'
+    : `Your ${count} earlier takes were scored again with the key.`;
+}
+
 /** Drives the Song reference card for the song in use. */
 export class SongReferenceController {
   // Songs the singer said "Not now" to, by song hash, for this page's life.
   private readonly declined = new Set<string>();
   // Songs the automatic setting has already started since they loaded, so a
-  // run that ends without a melody is not started again at once.
+  // song whose recording ends without a melody is not armed again at once.
   private readonly started = new Set<string>();
-  // True from a press (or an automatic start) of Get the melody until its
-  // download has ended: only a download that was asked for arms the recording.
-  private asked = false;
   // The melody last scored against, so a repeat of the same one scores nothing.
   private rescored = '';
+  // The key last scored against, likewise.
+  private rescoredKey = '';
 
   constructor(private readonly core: SessionCore) {
     core.store.subscribe((state, changed) => this.onChange(state, changed));
@@ -49,22 +56,29 @@ export class SongReferenceController {
   }
 
   /**
-   * "Get the melody": downloads the song through the service, and if that
-   * fails arms the recording of its sound for the next take. Does nothing
-   * unless the card is offering it.
+   * "Get the melody": arms the recording of the song's sound for the next
+   * Play or Record press. Does nothing unless the card is offering it, and
+   * says so when this browser cannot record a tab.
    */
   async getMelody(): Promise<void> {
     const { core } = this;
     if (core.capture.busy) return;
     const { phase } = core.store.state.prepare;
     if (phase !== 'ready' && phase !== 'failed') return;
-    // A press starts afresh: an earlier failure's arm and details go.
-    this.asked = true;
-    this.patch({ armed: false, details: '' });
     // An earlier recording's failure ("The share was cancelled") would
     // otherwise keep speaking over the new try's note and hint.
     core.capture.clearFinished();
-    await core.prepare.prepare();
+    // A recording made in an earlier session is already the service's: take it
+    // over at once, with no share prompt and no replay.
+    if (await core.prepare.adoptIfHeld()) return;
+    const { phase: after } = core.store.state.prepare;
+    if (core.capture.busy || (after !== 'ready' && after !== 'failed')) return;
+    if (!core.capture.supported) {
+      core.store.setStatus(NO_RECORDING_NOTE, 'warn');
+      return;
+    }
+    this.patch({ armed: true });
+    core.store.setStatus("Encore will record the song's sound while you sing your first take.");
   }
 
   /** "Not now": the prompt stays away for this song until the page reloads. */
@@ -77,15 +91,15 @@ export class SongReferenceController {
   /** True when a Play or Record press would start the recording of the song's sound. */
   get hasArmed(): boolean {
     const { songRef, prepare } = this.core.store.state;
-    return songRef.armed && prepare.phase === 'failed' && !!this.core.songs.embed;
+    const open = prepare.phase === 'ready' || prepare.phase === 'failed';
+    return songRef.armed && open && !!this.core.songs.embed;
   }
 
   /**
-   * Called by a Play or Record press. When the download failed and the
-   * recording is armed, starts it now (the share prompt wants this gesture)
-   * and returns the promise that resolves once the share has been answered,
-   * so the song starts after it and not under the dialog; null when there is
-   * nothing armed.
+   * Called by a Play or Record press. When the recording is armed, starts it
+   * now (the share prompt wants this gesture) and returns the promise that
+   * resolves once the share has been answered, so the song starts after it and
+   * not under the dialog; null when there is nothing armed.
    */
   takeArmed(): Promise<void> | null {
     if (!this.hasArmed) return null;
@@ -93,31 +107,11 @@ export class SongReferenceController {
     return this.core.capture.start();
   }
 
-  /**
-   * The download failed (the Prepare flow's last word). Arms the recording
-   * when this browser can make one and says in plain words what will happen;
-   * the service's own text goes only into the card's Details. A failure after
-   * a recording was sent on is that recording's, and keeps the service's words.
-   */
-  downloadFailed(message: string): void {
-    const { core } = this;
-    const { store } = core;
-    const { phase } = store.state.capture;
-    if (phase === 'uploading' || phase === 'preparing') {
-      store.setStatus(message, 'error');
-      return;
-    }
-    const fallback = fallbackFor(message, core.capture.supported, this.asked);
-    this.asked = false;
-    this.patch({ armed: fallback.arm, details: fallback.details });
-    store.setStatus(fallback.note, 'warn');
-  }
-
   private patch(fields: Partial<AppState['songRef']>): void {
     const { store } = this.core;
     const next = { ...store.state.songRef, ...fields };
     const now = store.state.songRef;
-    if (next.armed !== now.armed || next.details !== now.details || next.declined !== now.declined) {
+    if (next.armed !== now.armed || next.declined !== now.declined) {
       store.patch({ songRef: next });
     }
   }
@@ -131,21 +125,19 @@ export class SongReferenceController {
       void this.core.capture.stop();
     }
     if (changed.has('reference')) this.rescoreEarlierTakes(state);
+    if (changed.has('key')) this.rescoreForKey(state);
   }
 
   /** Keeps what the card remembers in step with the song in use. */
   private syncSong(state: AppState): void {
-    if (state.prepare.phase === 'none') {
-      this.started.clear();
-      this.asked = false;
-    }
+    if (state.prepare.phase === 'none') this.started.clear();
     const hash = state.song?.hash;
     const declined = hash !== undefined && this.declined.has(hash);
-    if (state.prepare.phase === 'none') this.patch({ armed: false, details: '', declined });
+    if (state.prepare.phase === 'none') this.patch({ armed: false, declined });
     else this.patch({ declined });
   }
 
-  /** With the automatic setting on, starts "Get the melody" without the prompt. */
+  /** With the automatic setting on, arms "Get the melody" without the prompt. */
   private startAutomatically(state: AppState): void {
     const hash = state.song?.hash;
     if (!hash || this.started.has(hash)) return;
@@ -159,6 +151,7 @@ export class SongReferenceController {
       melody: melodySourceOf(state.reference),
       capture: state.capture.phase,
       karaoke: titleLooksKaraoke(query.title, query.channel) || skippedForNoVocal(state.reference),
+      recordable: this.core.capture.supported,
     });
     if (offer !== 'auto') return;
     this.started.add(hash);
@@ -178,6 +171,30 @@ export class SongReferenceController {
         // Karaoke mode shows nothing from learning mode, this line included.
         if (count > 0 && this.core.store.state.mode === 'learning') {
           this.core.store.setStatus(rescoredStatus(count));
+        }
+      })
+      .catch(() => {
+        // The old reports stay; the singer can sing again.
+      });
+  }
+
+  /**
+   * Scores the song's earlier learning takes against a key that has just
+   * arrived, alone or before a melody: the melody's own re-score reaches only
+   * takes that had no melody, and leaves the rest judged on the singing's own
+   * key.
+   */
+  private rescoreForKey(state: AppState): void {
+    const { key, song } = state;
+    if (key.phase !== 'ready' || !song) return;
+    const which = song.hash;
+    if (which === this.rescoredKey) return;
+    this.rescoredKey = which;
+    void this.core.scoring
+      .rescoreWithKey()
+      .then((count) => {
+        if (count > 0 && this.core.store.state.mode === 'learning') {
+          this.core.store.setStatus(rescoredKeyStatus(count));
         }
       })
       .catch(() => {

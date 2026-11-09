@@ -32,6 +32,16 @@ import type { PracticeMode } from '../settings';
 import type { TakeFrame } from '../take-trace';
 import type { SessionCore } from './core';
 
+/**
+ * True for a learning take whose voice was measured against something other
+ * than the song's key (a key estimated from the singing, or none). A take with
+ * no report, or none of the voice, is a karaoke take and never needs it.
+ */
+function needsKey(report: TakeReport | undefined): boolean {
+  const reference = report?.voice?.reference;
+  return reference !== undefined && reference !== 'song_key';
+}
+
 /** Scores the singing against the melody and the key, in learning mode only. */
 export class ScoringController {
   private reference: ScoreReference | null = null;
@@ -185,8 +195,8 @@ export class ScoringController {
   }
 
   /**
-   * Scores the song's earlier takes again once its melody has arrived (from the
-   * download, a recording of its sound, or an aligned original). Only takes
+   * Scores the song's earlier takes again once its melody has arrived (from a
+   * recording of its sound, or an aligned original). Only takes
    * whose report had no melody to compare with are touched, each from its
    * stored frames in the style it was scored in, so a take already judged
    * against a melody and a take sung in karaoke mode (which has no report)
@@ -211,6 +221,44 @@ export class ScoringController {
         await takes.setReport(take.id, both.report, both.duet);
       } else {
         await takes.setReport(take.id, this.scoreIn(take.frames, style, shift));
+      }
+      count += 1;
+    }
+    if (count > 0) await core.takes.refreshTakes();
+    return count;
+  }
+
+  /**
+   * Scores the song's earlier learning takes again once its key has arrived
+   * (alone, or before a melody does). Only takes whose report had no song key
+   * to judge freestyle against (the key it used was estimated from the
+   * singing, or there was none) are touched, each from its stored frames in the
+   * style it was scored in; a take still not judged on the song's key after the
+   * re-score keeps its old report. A take sung in karaoke mode has no report
+   * and stays as it is. Resolves with how many takes got a new report.
+   */
+  async rescoreWithKey(): Promise<number> {
+    const { core } = this;
+    const hash = core.store.state.song?.hash;
+    if (!hash || this.keyMap() === null) return 0;
+    const takes = await core.takesReady;
+    let count = 0;
+    for (const summary of await takes.list(hash)) {
+      if (summary.kind === 'mic-check' || !needsKey(summary.report)) continue;
+      const take = await takes.get(summary.id);
+      // Another song may have taken over while the take was read.
+      if (core.store.state.song?.hash !== hash) break;
+      if (!take?.report || !needsKey(take.report)) continue;
+      const style = take.report.style ?? 'strict';
+      const shift = take.shiftSemitones ?? 0;
+      if (take.duet) {
+        const both = this.scoreDuet(captureOf(take.duet, take.duetFramesB), take.frames, style, shift);
+        if (both.report.voice?.reference !== 'song_key') continue;
+        await takes.setReport(take.id, both.report, both.duet);
+      } else {
+        const report = this.scoreIn(take.frames, style, shift);
+        if (report.voice?.reference !== 'song_key') continue;
+        await takes.setReport(take.id, report);
       }
       count += 1;
     }

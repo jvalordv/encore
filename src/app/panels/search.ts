@@ -1,6 +1,7 @@
 /**
- * The search panel: the first thing the main area shows when no song is
- * loaded, and reachable again through the Search button once one is. A box and
+ * The search panel: the top of the song panel (the left bar), shown when no
+ * song is loaded and reachable again through the Search button once one is,
+ * with the YouTube link box and the drop zone below it. A box and
  * a chip (Karaoke versions or Originals) make a search; the results are a grid
  * of cards, each with a thumbnail, title, channel, length and a Karaoke or
  * Original badge; clicking a card loads it like a pasted link, and a karaoke
@@ -23,7 +24,7 @@ export interface SearchPanelDeps {
   store: StateStore;
   session: Pick<
     Session,
-    'searchSongs' | 'findOriginal' | 'pickResult' | 'setSearchFilter' | 'setSearchOpen' | 'setSearchKey' | 'useVideoAsOriginal'
+    'searchSongs' | 'findOriginal' | 'pickResult' | 'setSearchFilter' | 'setSearchOpen' | 'setSearchKey'
   >;
   /** The button in the song panel that brings the search back over a loaded song. */
   toggle: HTMLButtonElement;
@@ -233,22 +234,11 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
       listen(original, 'click', () => session.findOriginal(result));
       foot.append(original);
     }
-    // Looking for a karaoke video's original: the pick can be matched to it
-    // without becoming the song in use.
-    if (store.state.search.originalOf !== null && store.state.song !== null) {
-      const use = element(doc, 'button', 'search-use-original', 'compact');
-      use.type = 'button';
-      use.textContent = 'Use as original';
-      use.dataset.help = "Score the song in use against this one's melody";
-      listen(use, 'click', () => void session.useVideoAsOriginal(result.videoId));
-      foot.append(use);
-    }
     item.append(pick, foot);
     return item;
   }
 
   let shownResults: SearchResult[] | null = null;
-  const app = host.closest<HTMLElement>('#app');
   const setText = (el: HTMLElement, text: string): void => {
     if (el.textContent !== text) el.textContent = text;
   };
@@ -258,7 +248,6 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
     const hasSong = state.song !== null;
     const visible = searchVisible(hasSong, search);
     host.hidden = !visible;
-    if (app) app.dataset.search = visible ? 'on' : 'off';
     toggle.hidden = !hasSong;
     toggle.setAttribute('aria-expanded', String(visible));
     close.hidden = !hasSong;
@@ -301,6 +290,5 @@ export const mountSearchPanel: MountPanel<SearchPanelDeps> = (host, { store, ses
   return () => {
     for (const cleanup of cleanups.splice(0)) cleanup();
     host.replaceChildren();
-    if (app) delete app.dataset.search;
   };
 };

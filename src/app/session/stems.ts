@@ -61,6 +61,8 @@ export class StemsController {
   private job: Job | null = null;
   // The file whose upload found no service, kept to send once one answers.
   private heldFile: File | null = null;
+  // The run begun for each dropped file, by the file itself (see runOf).
+  private readonly fileRuns = new WeakMap<File, { epoch: number; done: Promise<void> }>();
   private laneReference: LaneReference | null = null;
   // The Mic check's own melody, shown and compared in place of the song's.
   private transientReference: LaneReference | null = null;
@@ -78,7 +80,20 @@ export class StemsController {
   beginFile(file: File): void {
     this.reset();
     this.heldFile = file;
-    void this.runFile(file);
+    const run = { epoch: this.epoch, done: this.runFile(file) };
+    this.fileRuns.set(file, run);
+  }
+
+  /**
+   * The run begun for this very file, or undefined when it never began (the
+   * file would not decode, or a newer load won). `done` resolves when the run
+   * ends, whichever way: finished, failed, no service, or replaced; `replaced`
+   * says whether another song has taken over since it began.
+   */
+  runOf(file: File): { done: Promise<void>; replaced: () => boolean } | undefined {
+    const run = this.fileRuns.get(file);
+    if (!run) return undefined;
+    return { done: run.done, replaced: () => run.epoch !== this.epoch };
   }
 
   /**

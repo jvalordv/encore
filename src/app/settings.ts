@@ -47,15 +47,10 @@ export interface Settings {
   /** Base URL of the optional Python service, without a trailing slash. */
   serviceUrl: string;
   /**
-   * Send a YouTube link to the service as soon as it loads, which downloads
-   * its audio. Off unless the singer turns it on: otherwise a link is only
-   * sent when Get the melody is pressed.
-   */
-  autoPrepareLinks: boolean;
-  /**
-   * Learning mode gets a YouTube song's reference (its melody and key) as the
-   * song loads, without asking. Off unless the singer turns it on: otherwise
-   * the song panel asks once per song (src/app/song-reference.ts).
+   * Learning mode arms the recording of a YouTube song's sound (for its melody
+   * and key) as the song loads, without asking, so the first Play or Record
+   * asks for the share. Off unless the singer turns it on: otherwise the song
+   * panel asks once per song (src/app/song-reference.ts).
    */
   autoReference: boolean;
   /** Clarity at or above which a pitch frame counts as voiced, 0..1. */
@@ -125,7 +120,6 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   outputDeviceId: null,
   monitor: 'headphones',
   serviceUrl: 'http://localhost:8765',
-  autoPrepareLinks: false,
   autoReference: false,
   clarityThreshold: DEFAULT_CLARITY,
   octaveInvariant: false,
@@ -248,10 +242,6 @@ export function sanitizeSettings(value: unknown): Settings {
     outputDeviceId: deviceId(raw.outputDeviceId),
     monitor: monitorMode(raw.monitor),
     serviceUrl: parseServiceUrl(raw.serviceUrl) ?? DEFAULT_SETTINGS.serviceUrl,
-    autoPrepareLinks:
-      typeof raw.autoPrepareLinks === 'boolean'
-        ? raw.autoPrepareLinks
-        : DEFAULT_SETTINGS.autoPrepareLinks,
     autoReference:
       typeof raw.autoReference === 'boolean' ? raw.autoReference : DEFAULT_SETTINGS.autoReference,
     clarityThreshold: clarity(raw.clarityThreshold),
@@ -317,7 +307,18 @@ export function loadSettings(store: KeyValueStore): Settings {
   if (text === null) return sanitizeSettings(null);
   try {
     const parsed: unknown = JSON.parse(text);
-    if (store.get(MIGRATED_KEY) !== null) return sanitizeSettings(parsed);
+    if (store.get(MIGRATED_KEY) !== null) {
+      const settings = sanitizeSettings(parsed);
+      // A setting the app no longer has is rewritten away, once, silently.
+      if (isRecord(parsed) && 'autoPrepareLinks' in parsed) {
+        try {
+          saveSettings(store, settings);
+        } catch {
+          // Still dropped in memory; it is tried again next time.
+        }
+      }
+      return settings;
+    }
     const settings = sanitizeSettings(migrateLegacy(parsed));
     try {
       saveSettings(store, settings);

@@ -33,7 +33,6 @@ describe('DEFAULT_SETTINGS', () => {
       outputDeviceId: null,
       monitor: 'headphones',
       serviceUrl: 'http://localhost:8765',
-      autoPrepareLinks: false,
       autoReference: false,
       clarityThreshold: 0.85,
       octaveInvariant: false,
@@ -89,7 +88,7 @@ describe('loadSettings', () => {
           outputDeviceId: 7,
           monitor: 'loudspeakers',
           serviceUrl: 'ftp://nope',
-          autoPrepareLinks: 'yes',
+          autoReference: 'yes',
           clarityThreshold: 0.75,
           octaveInvariant: 'yes',
           latencyByDevicePair: { 'latency.a|b': 0.12 },
@@ -102,7 +101,6 @@ describe('loadSettings', () => {
       outputDeviceId: null,
       monitor: 'headphones',
       serviceUrl: DEFAULT_SETTINGS.serviceUrl,
-      autoPrepareLinks: false,
       autoReference: false,
       clarityThreshold: 0.75,
       octaveInvariant: false,
@@ -256,18 +254,22 @@ describe('loadSettings', () => {
     }
   });
 
-  it('keeps automatic preparing off unless the stored value is exactly true', () => {
-    expect(DEFAULT_SETTINGS.autoPrepareLinks).toBe(false);
-    expect(sanitizeSettings({ autoPrepareLinks: true }).autoPrepareLinks).toBe(true);
-    expect(sanitizeSettings({ autoPrepareLinks: false }).autoPrepareLinks).toBe(false);
+  it('keeps the automatic song reference off unless the stored value is exactly true', () => {
+    expect(DEFAULT_SETTINGS.autoReference).toBe(false);
+    expect(sanitizeSettings({ autoReference: true }).autoReference).toBe(true);
+    expect(sanitizeSettings({ autoReference: false }).autoReference).toBe(false);
     for (const bad of ['true', 'yes', 1, 0, null, undefined, {}, [true]]) {
-      expect(sanitizeSettings({ autoPrepareLinks: bad }).autoPrepareLinks, String(bad)).toBe(false);
+      expect(sanitizeSettings({ autoReference: bad }).autoReference, String(bad)).toBe(false);
     }
   });
 
-  it('reads settings saved before preparing existed as off', () => {
-    const old = JSON.stringify({ inputDeviceId: 'mic-1', embedOffsetS: 0.04 });
-    expect(loadSettings(storeWith(old)).autoPrepareLinks).toBe(false);
+  it('drops the retired download setting from a saved value, once and silently', () => {
+    const store = storeWith(JSON.stringify({ inputDeviceId: 'mic-1', autoPrepareLinks: true }));
+    store.set('settings-migrated', '1');
+    const loaded = loadSettings(store);
+    expect(loaded).not.toHaveProperty('autoPrepareLinks');
+    expect(loaded.inputDeviceId).toBe('mic-1');
+    expect(JSON.parse(store.get('settings') ?? 'null')).not.toHaveProperty('autoPrepareLinks');
   });
 
   it('reads settings saved before the embed existed as no offset', () => {
@@ -306,7 +308,6 @@ describe('saveSettings', () => {
     outputDeviceId: 'out-1',
     monitor: 'speakers',
     serviceUrl: 'http://127.0.0.1:9999',
-    autoPrepareLinks: true,
     autoReference: true,
     clarityThreshold: 0.8,
     octaveInvariant: true,
@@ -360,19 +361,19 @@ describe('saveSettings', () => {
     });
   });
 
-  it('round-trips the automatic-prepare choice both ways', () => {
-    for (const autoPrepareLinks of [true, false]) {
+  it('round-trips the automatic song reference choice both ways', () => {
+    for (const autoReference of [true, false]) {
       const store = memoryStore();
-      saveSettings(store, { ...custom, autoPrepareLinks });
-      expect(JSON.parse(store.get('settings') ?? 'null').autoPrepareLinks).toBe(autoPrepareLinks);
-      expect(loadSettings(store).autoPrepareLinks).toBe(autoPrepareLinks);
+      saveSettings(store, { ...custom, autoReference });
+      expect(JSON.parse(store.get('settings') ?? 'null').autoReference).toBe(autoReference);
+      expect(loadSettings(store).autoReference).toBe(autoReference);
     }
   });
 
-  it('never persists an automatic-prepare value that is not a boolean', () => {
+  it('never persists an automatic song reference value that is not a boolean', () => {
     const store = memoryStore();
-    saveSettings(store, { ...custom, autoPrepareLinks: 'yes' as unknown as boolean });
-    expect(JSON.parse(store.get('settings') ?? 'null').autoPrepareLinks).toBe(false);
+    saveSettings(store, { ...custom, autoReference: 'yes' as unknown as boolean });
+    expect(JSON.parse(store.get('settings') ?? 'null').autoReference).toBe(false);
   });
 
   it('writes a clamped embed offset, never a wild one', () => {

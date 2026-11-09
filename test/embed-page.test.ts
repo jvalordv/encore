@@ -59,8 +59,8 @@ describe('index.html for the YouTube embed', () => {
     expect(html).toContain('<meta name="referrer" content="strict-origin-when-cross-origin"');
   });
 
-  it('invites a pasted link in the dropzone', () => {
-    expect(html).toContain('Drop an mp3 here, click to choose one, or paste a YouTube link');
+  it('invites dropped files in the dropzone, and a pasted link in the box above it', () => {
+    expect(html).toContain('Drop mp3 files here, or click to choose them');
   });
 
   it('has a link box and a Load button', () => {
@@ -98,19 +98,20 @@ describe('index.html for the YouTube embed', () => {
 });
 
 describe('index.html for preparing a linked song', () => {
-  it('has an automatic-prepare checkbox that starts off, worded as the policy note needs', () => {
-    const box = tagOf('auto-prepare');
-    expect(box).toContain('type="checkbox"');
-    expect(box).not.toMatch(/\bchecked\b/);
-    expect(html).toContain(
-      'Download YouTube audio as soon as a link loads, in any mode (this downloads the audio; see service/README.md)',
-    );
+  it('has no download checkbox: Encore never asks the service to download a link', () => {
+    expect(html).not.toContain('id="auto-prepare"');
+    expect(html).not.toMatch(/Download YouTube audio/i);
   });
 
-  it('keeps the checkbox and its words in one label, so the words toggle it', () => {
-    const label = /<label[^>]*\bfor="auto-prepare"[^>]*>([\s\S]*?)<\/label>/.exec(html)?.[1] ?? '';
-    expect(label).toContain('id="auto-prepare"');
-    expect(label).toContain('downloads the audio');
+  it('orders the song panel: search, then the YouTube link, then the drop zone and its bar', () => {
+    const order = ['id="search"', 'id="link-input"', 'id="dropzone"', 'id="ingest"'].map((id) => html.indexOf(id));
+    for (const at of order) expect(at).toBeGreaterThan(html.indexOf('id="song-panel"'));
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(html.indexOf('id="search"')).toBeLessThan(html.indexOf('id="stage"'));
+  });
+
+  it('lets the file input take several songs at once', () => {
+    expect(tagOf('song-input')).toMatch(/ multiple /);
   });
 
   it('holds the Song reference card in the song panel, hidden until a video is the song', () => {

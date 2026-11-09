@@ -262,29 +262,13 @@ describe('ServiceClient.health', () => {
   });
 });
 
-describe('ServiceClient.createSongFromUrl', () => {
-  const LINK = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
-
-  it('posts the link as JSON and answers with the status', async () => {
-    const status = song(step('queued'));
-    const { client, calls } = clientFor(() => json(status));
-    expect(await client.createSongFromUrl(LINK)).toEqual(status);
-    expect(calls[0].url).toBe(`${BASE}/songs/url`);
-    expect(calls[0].init.method).toBe('POST');
-    expect(new Headers(calls[0].init.headers).get('content-type')).toBe('application/json');
-    expect(JSON.parse(String(calls[0].init.body))).toEqual({ url: LINK });
-  });
-
-  it('reads a cache hit as the status it is, fetch done and all', async () => {
-    const status = song(step('done', 1));
-    const { client } = clientFor(() => json(status));
-    expect((await client.createSongFromUrl(LINK)).steps.fetch.state).toBe('done');
-  });
-
+// Every call shares one way of turning a failure into a ServiceError; getSong
+// stands for them here.
+describe('ServiceClient request failures', () => {
   it('turns a 422 into a rejection that carries the service\'s plain reason', async () => {
     const detail = 'This video is 20 min long; the limit is 15 min (ENCORE_MAX_SONG_S).';
     const { client } = clientFor(() => json({ detail }, 422));
-    const error = await failureOf(client.createSongFromUrl(LINK));
+    const error = await failureOf(client.getSong(ID));
     expect(error).toBeInstanceOf(ServiceError);
     expect(error).toMatchObject({ kind: 'rejected', status: 422, message: detail });
   });
@@ -292,7 +276,7 @@ describe('ServiceClient.createSongFromUrl', () => {
   it('turns a 502 into a rejection that carries yt-dlp\'s text and the update hint', async () => {
     const detail = 'YouTube lookup failed: ERROR: Video unavailable. Update yt-dlp: uv lock --upgrade-package yt-dlp';
     const { client } = clientFor(() => json({ detail }, 502));
-    expect(await failureOf(client.createSongFromUrl(LINK))).toMatchObject({
+    expect(await failureOf(client.getSong(ID))).toMatchObject({
       kind: 'rejected',
       status: 502,
       message: detail,
@@ -301,7 +285,7 @@ describe('ServiceClient.createSongFromUrl', () => {
 
   it('says something when a refusal has no readable reason', async () => {
     const { client } = clientFor(() => new Response('<html>bad gateway</html>', { status: 502 }));
-    expect(await failureOf(client.createSongFromUrl(LINK))).toMatchObject({
+    expect(await failureOf(client.getSong(ID))).toMatchObject({
       kind: 'rejected',
       message: 'The service refused the request (HTTP 502).',
     });
@@ -309,26 +293,26 @@ describe('ServiceClient.createSongFromUrl', () => {
 
   it('is unreachable when there is no answer, and when the answer takes over 30 s', async () => {
     const refused = clientFor(() => Promise.reject(new TypeError('Failed to fetch')));
-    const error = await failureOf(refused.client.createSongFromUrl(LINK));
+    const error = await failureOf(refused.client.getSong(ID));
     expect(error).toMatchObject({ kind: 'unreachable', status: null });
     expect((error as ServiceError).cause).toBeInstanceOf(TypeError);
 
     expect(REQUEST_TIMEOUT_MS).toBe(30_000);
     const slow = clientFor(silence);
-    const pending = failureOf(slow.client.createSongFromUrl(LINK));
+    const pending = failureOf(slow.client.getSong(ID));
     await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
     expect(await pending).toMatchObject({ kind: 'unreachable' });
     expect(vi.getTimerCount()).toBe(0);
   });
 
   it('is unexpected for a server error, for a body that is not JSON, and for a status it cannot use', async () => {
-    expect(await failureOf(clientFor(() => json({ detail: 'boom' }, 500)).client.createSongFromUrl(LINK))).toMatchObject(
+    expect(await failureOf(clientFor(() => json({ detail: 'boom' }, 500)).client.getSong(ID))).toMatchObject(
       { kind: 'unexpected', status: 500, message: 'The service answered with an error (HTTP 500).' },
     );
-    expect(await failureOf(clientFor(() => new Response('oops')).client.createSongFromUrl(LINK))).toMatchObject({
+    expect(await failureOf(clientFor(() => new Response('oops')).client.getSong(ID))).toMatchObject({
       kind: 'unexpected',
     });
-    expect(await failureOf(clientFor(() => json({ song_id: ID })).client.createSongFromUrl(LINK))).toMatchObject({
+    expect(await failureOf(clientFor(() => json({ song_id: ID })).client.getSong(ID))).toMatchObject({
       kind: 'unexpected',
     });
   });
@@ -336,7 +320,7 @@ describe('ServiceClient.createSongFromUrl', () => {
   it('throws an AbortError, not a ServiceError, when the caller aborts', async () => {
     const { client } = clientFor(silence);
     const controller = new AbortController();
-    const pending = failureOf(client.createSongFromUrl(LINK, controller.signal));
+    const pending = failureOf(client.getSong(ID, controller.signal));
     controller.abort();
     const error = await pending;
     expect(isAbortError(error)).toBe(true);

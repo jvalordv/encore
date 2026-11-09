@@ -41,6 +41,8 @@ import { initialCapture } from './capture';
 import type { CaptureState } from './capture';
 import { initialAlign } from './align';
 import type { AlignState } from './align';
+import { initialIngest } from './ingest';
+import type { IngestState } from './ingest';
 import { initialPrepare } from './prepare';
 import type { PrepareState } from './prepare';
 import { initialReference } from './reference';
@@ -118,8 +120,10 @@ export interface AppState {
   prepare: PrepareState;
   /** The recording of the linked video's sound from this tab. */
   capture: CaptureState;
-  /** The Song reference card's own memory: armed recording, details, Not now. */
+  /** The Song reference card's own memory: armed recording, Not now. */
   songRef: SongRefState;
+  /** The songs dropped together and analysed up front: the queue under the drop zone. */
+  ingest: IngestState;
   /**
    * Where the song stands on the way to its karaoke track (upload, the
    * service's steps, the stems), whatever the song's source.
@@ -152,7 +156,7 @@ export interface AppState {
   hoverHelp: boolean;
   /**
    * Counts saves of the settings object, so a control for a setting the
-   * state does not hold itself (auto-prepare, clarity, the service address)
+   * state does not hold itself (auto song reference, clarity, the service address)
    * can redraw when the Settings panel or an import changes it.
    */
   settingsRev: number;
@@ -233,6 +237,7 @@ export function initialState(): AppState {
     prepare: initialPrepare(),
     capture: initialCapture(),
     songRef: initialSongRef(),
+    ingest: initialIngest(),
     karaoke: initialKaraoke(),
     mix: initialMix(DEFAULT_GUIDE_LEVEL),
     reference: initialReference(),

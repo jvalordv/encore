@@ -9,6 +9,7 @@ import type { StarMeasureId } from '../analysis/stars';
 import type { SongSummary } from '../service/types';
 import type { LibraryEntry } from './library';
 import { favoritesOf } from './playlist';
+import type { TakeSummary } from './takes';
 
 /** Which list the panel shows. */
 export type LibraryView = 'all' | 'favorites';
@@ -34,8 +35,11 @@ export interface LibraryState {
   open: boolean;
   view: LibraryView;
   entries: LibraryEntry[];
-  /** Takes saved per song hash. */
-  takeCounts: Record<string, number>;
+  /**
+   * Every song take saved, newest first, as summaries (never the recordings):
+   * the rows count and list them per song and per singer (song-takes.ts).
+   */
+  takes: TakeSummary[];
   /** Best learning-take stars (0..3) per song hash. */
   songStars: Record<string, number>;
   /** The measure each song's stars were earned on (its latest take's). */
@@ -56,7 +60,7 @@ export function initialLibrary(autoAdvance = true): LibraryState {
     open: false,
     view: 'all',
     entries: [],
-    takeCounts: {},
+    takes: [],
     songStars: {},
     songStarMeasure: {},
     daysSung: [],
@@ -140,17 +144,16 @@ export function takesLabel(count: number): string {
 /** What a Library row says about a song, as separate short pieces. */
 export interface RowView {
   title: string;
-  /** Source, length, last played, takes: the grey line under the title. */
+  /** Source, length and last played: the grey line under the title. */
   meta: string[];
   /** The reference badge; null for a song with no reference. */
   badge: ReferenceBadge | null;
 }
 
 /** The words of one Library row. */
-export function rowOf(entry: LibraryEntry, takeCount: number, now: number): RowView {
+export function rowOf(entry: LibraryEntry, now: number): RowView {
   const length = lengthLabel(entry.durationS);
   const meta = [sourceLabel(entry), ...(length !== '' ? [length] : []), playedLabel(entry.lastPlayedAt, now)];
-  if (takeCount > 0) meta.push(takesLabel(takeCount));
   return { title: entry.title, meta, badge: referenceBadge(entry) };
 }
 

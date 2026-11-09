@@ -1,32 +1,29 @@
 /**
- * Controller tests for the Song reference on the fake-parts harness: a failed
- * download arms the recording of the song's sound (with the service's words
- * kept for Details), the next Play or Record press starts it before the song
- * does, the automatic setting and "Not now" decide whether learning mode asks,
- * a melody that arrives scores earlier voice-only takes again, and the
- * Library's Melody and Key flags follow what arrives.
+ * Controller tests for the Song reference on the fake-parts harness: Get the
+ * melody arms the recording of the song's sound (nothing is downloaded), the
+ * next Play or Record press starts it before the song does, the automatic
+ * setting and "Not now" decide whether learning mode asks or arms by itself, a
+ * melody that arrives scores earlier voice-only takes again, a key that arrives
+ * alone scores earlier takes against it, and the Library's Melody and Key flags
+ * follow what arrives.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildScoreReference } from '../src/analysis/score';
 import { referenceBadge } from '../src/app/library-state';
 import { initialCapture } from '../src/app/capture';
-import {
-  BLOCKED_NOTE,
-  BLOCKED_NO_RECORDING_NOTE,
-  DOWNLOAD_ERROR_NOTE,
-  DOWNLOAD_FAILED_NOTE,
-} from '../src/app/song-reference';
+import { ARMED_NOTE, NO_RECORDING_NOTE } from '../src/app/song-reference';
 import { loadSettings } from '../src/app/settings';
 import type { YouTubeTransport } from '../src/audio/youtube-transport';
-import { ServiceClient } from '../src/service/client';
+import { ServiceClient, ServiceError } from '../src/service/client';
 import { FakeTransport, fakeLane, makeHarness, songInfo } from './session-harness';
 import type { Harness } from './session-harness';
+import type { KeyMap } from '../src/service/types';
 
-const hoisted = vi.hoisted(() => ({ prepareLink: vi.fn() }));
+const hoisted = vi.hoisted(() => ({ adoptHeldSong: vi.fn() }));
 
 vi.mock('../src/app/prepare', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/app/prepare')>()),
-  prepareLink: hoisted.prepareLink,
+  adoptHeldSong: hoisted.adoptHeldSong,
 }));
 vi.mock('../src/audio/embed-follower', () => ({
   EmbedFollower: class {
@@ -37,15 +34,14 @@ vi.mock('../src/audio/embed-follower', () => ({
 
 beforeEach(() => {
   vi.spyOn(ServiceClient.prototype, 'health').mockResolvedValue(true);
+  // By default the service holds nothing for the video.
+  vi.spyOn(ServiceClient.prototype, 'getSong').mockRejectedValue(new ServiceError('not-found', 'No such song.', 404));
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
-  hoisted.prepareLink.mockReset();
+  hoisted.adoptHeldSong.mockReset();
 });
-
-const BOT_CHECK =
-  "Sign in to confirm you’re not a bot. This helps protect our community. Use --cookies-from-browser or --cookies for the authentication.";
 
 /** A stand-in for the linked video. */
 class FakeEmbed extends FakeTransport {
@@ -66,105 +62,91 @@ function linked(saved?: Record<string, unknown>) {
   return { h, embed };
 }
 
-/** Makes the download fail the way YouTube's bot check does. */
-function downloadFails(message = BOT_CHECK): void {
-  hoisted.prepareLink.mockResolvedValue({ kind: 'failed', message });
-}
-
 /** Lets this browser record a tab, without a real share. */
 function canRecord(h: Harness, supported = true): void {
   vi.spyOn(h.core.capture, 'supported', 'get').mockReturnValue(supported);
 }
 
-describe('Get the melody, when the download fails', () => {
-  it('arms the recording and says so in plain words, with the service text only in Details', async () => {
+describe('Get the melody', () => {
+  it('arms the recording and says so in plain words, with no download and no service text', async () => {
     const { h } = linked();
     canRecord(h);
-    downloadFails();
-    await h.core.songReference.getMelody();
-    expect(h.store.state.prepare.phase).toBe('failed');
-    expect(h.store.state.songRef.armed).toBe(true);
-    expect(h.store.state.status).toEqual({ text: BLOCKED_NOTE, kind: 'warn' });
-    expect(h.store.state.songRef.details).toContain('Sign in to confirm');
-    expect(h.store.state.songRef.details).not.toMatch(/cookie/i);
-  });
-
-  it('arms it for YouTube turning the request away, not only the bot check', async () => {
-    const { h } = linked();
-    canRecord(h);
-    downloadFails('Download failed: ERROR: HTTP Error 403: Forbidden.');
     await h.core.songReference.getMelody();
     expect(h.store.state.songRef.armed).toBe(true);
-    expect(h.store.state.status.text).toBe(BLOCKED_NOTE);
+    expect(h.store.state.status).toEqual({ text: ARMED_NOTE, kind: 'info' });
+    expect(hoisted.adoptHeldSong).not.toHaveBeenCalled();
+    expect(h.store.state.prepare.phase).toBe('ready');
   });
 
-  it('arms nothing for a failure a recording of the tab cannot mend', async () => {
+  it('takes over a recording the service already holds, with no arming and no share prompt', async () => {
     const { h } = linked();
     canRecord(h);
-    for (const message of [
-      'The service stopped answering. Check that it is running.',
-      'The prepared audio could not be loaded: decode error',
-    ]) {
-      downloadFails(message);
-      await h.core.songReference.getMelody();
-      expect(h.store.state.songRef.armed).toBe(false);
-      expect(h.store.state.status).toEqual({ text: DOWNLOAD_ERROR_NOTE, kind: 'warn' });
-    }
+    const done = { state: 'done', progress: 1, error: null, detail: null } as const;
+    vi.spyOn(ServiceClient.prototype, 'getSong').mockResolvedValue({
+      song_id: 'yt-abc123',
+      title: 'Video',
+      duration_s: 30,
+      source: 'youtube',
+      steps: { fetch: done, separation: done, key: done, reference: done, lyrics: { ...done, state: 'skipped' } },
+    });
+    hoisted.adoptHeldSong.mockResolvedValue({ kind: 'aborted' });
+    await h.core.songReference.getMelody();
+    expect(hoisted.adoptHeldSong).toHaveBeenCalledTimes(1);
+    expect(h.store.state.songRef.armed).toBe(false);
+  });
+
+  it('arms the recording when the service holds the song but its fetch is not done', async () => {
+    const { h } = linked();
+    canRecord(h);
+    const queued = { state: 'queued', progress: 0, error: null, detail: null } as const;
+    vi.spyOn(ServiceClient.prototype, 'getSong').mockResolvedValue({
+      song_id: 'yt-abc123',
+      title: 'Video',
+      duration_s: 30,
+      source: 'youtube',
+      steps: { fetch: queued, separation: queued, key: queued, reference: queued, lyrics: queued },
+    });
+    await h.core.songReference.getMelody();
+    expect(hoisted.adoptHeldSong).not.toHaveBeenCalled();
+    expect(h.store.state.songRef.armed).toBe(true);
   });
 
   it('clears a finished recording attempt, so its words do not outlast the next try', async () => {
     const { h } = linked();
     canRecord(h);
     h.store.patch({ capture: { ...initialCapture(), phase: 'failed', message: 'The share was cancelled.' } });
-    downloadFails();
     await h.core.songReference.getMelody();
     expect(h.store.state.capture.phase).toBe('idle');
     expect(h.store.state.songRef.armed).toBe(true);
   });
 
-  it('arms nothing when this browser cannot record a tab', async () => {
+  it('arms nothing, and says so, when this browser cannot record a tab', async () => {
     const { h } = linked();
     canRecord(h, false);
-    downloadFails();
     await h.core.songReference.getMelody();
     expect(h.store.state.songRef.armed).toBe(false);
-    expect(h.store.state.status.text).toBe(BLOCKED_NO_RECORDING_NOTE);
+    expect(h.store.state.status).toEqual({ text: NO_RECORDING_NOTE, kind: 'warn' });
   });
 
-  it('arms nothing after a download nobody asked for, such as an automatic send of the link', async () => {
+  it('does nothing while the service is away or a recording is under way', async () => {
     const { h } = linked();
     canRecord(h);
-    downloadFails();
-    await h.core.prepare.prepare();
-    expect(h.store.state.prepare.phase).toBe('failed');
+    h.store.patch({ prepare: { phase: 'unavailable', steps: null, message: '' } });
+    await h.core.songReference.getMelody();
     expect(h.store.state.songRef.armed).toBe(false);
-    expect(h.store.state.status).toEqual({ text: DOWNLOAD_FAILED_NOTE, kind: 'warn' });
-    // Pressing the button now asks, and arms on a second failure.
+    h.store.patch({ prepare: { phase: 'ready', steps: null, message: '' } });
+    h.store.patch({ capture: { ...initialCapture(), phase: 'capturing' } });
     await h.core.songReference.getMelody();
-    expect(h.store.state.songRef.armed).toBe(true);
-  });
-
-  it('does not arm, nor touch the raw status, when the song downloads', async () => {
-    const { h } = linked();
-    hoisted.prepareLink.mockResolvedValue({
-      kind: 'audio',
-      bytes: new ArrayBuffer(8),
-      status: { song_id: 'abc', source: 'url', steps: {} },
-    });
-    vi.spyOn(h.core.stems, 'follow').mockImplementation(() => undefined);
-    await h.core.songReference.getMelody();
-    expect(h.store.state.prepare.phase).toBe('prepared');
     expect(h.store.state.songRef.armed).toBe(false);
   });
 
   it('clears the arm when the song is replaced', async () => {
     const { h } = linked();
     canRecord(h);
-    downloadFails();
     await h.core.songReference.getMelody();
     expect(h.store.state.songRef.armed).toBe(true);
     h.core.prepare.endPrepared();
-    expect(h.store.state.songRef).toMatchObject({ armed: false, details: '' });
+    expect(h.store.state.songRef).toMatchObject({ armed: false });
   });
 });
 
@@ -172,7 +154,6 @@ describe('the next Play or Record press', () => {
   it('starts the recording first, and the video after the share has been answered', async () => {
     const { h, embed } = linked();
     canRecord(h);
-    downloadFails();
     await h.core.songReference.getMelody();
     let answered!: () => void;
     const start = vi.spyOn(h.core.capture, 'start').mockReturnValue(
@@ -197,7 +178,6 @@ describe('the next Play or Record press', () => {
     canRecord(h);
     h.core.lane = fakeLane();
     await h.core.input.chooseInput('usb');
-    downloadFails();
     await h.core.songReference.getMelody();
     const start = vi.spyOn(h.core.capture, 'start').mockResolvedValue(undefined);
     await h.core.takes.toggleRecord();
@@ -209,7 +189,6 @@ describe('the next Play or Record press', () => {
   it('opens the mic before the share, so a refused mic leaves the video alone', async () => {
     const { h, embed } = linked();
     canRecord(h);
-    downloadFails();
     await h.core.songReference.getMelody();
     vi.spyOn(h.core.input, 'ensureInput').mockResolvedValue(false);
     const start = vi.spyOn(h.core.capture, 'start').mockResolvedValue(undefined);
@@ -231,43 +210,56 @@ describe('the next Play or Record press', () => {
 describe('the prompt, the automatic setting and Not now', () => {
   const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
-  it('starts Get the melody by itself in learning mode when the setting is on', async () => {
+  it('arms the recording by itself in learning mode when the setting is on', async () => {
     const { h } = linked({ mode: 'learning' });
-    downloadFails();
+    canRecord(h);
     h.core.songReference.setAutoReference(true);
     expect(loadSettings(h.settingsStore).autoReference).toBe(true);
-    await vi.waitFor(() => expect(hoisted.prepareLink).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(h.store.state.songRef.armed).toBe(true));
+    expect(hoisted.adoptHeldSong).not.toHaveBeenCalled();
   });
 
-  it('starts when learning mode is turned on with a song already loaded', async () => {
+  it('arms when learning mode is turned on with a song already loaded', async () => {
     const { h } = linked();
-    downloadFails();
+    canRecord(h);
     h.core.songReference.setAutoReference(true);
     await settle();
-    expect(hoisted.prepareLink).not.toHaveBeenCalled();
+    expect(h.store.state.songRef.armed).toBe(false);
     h.core.scoring.setMode('learning');
-    await vi.waitFor(() => expect(hoisted.prepareLink).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(h.store.state.songRef.armed).toBe(true));
   });
 
-  it('never starts by itself for a karaoke track, though the setting is on', async () => {
+  it('never arms by itself for a karaoke track, though the setting is on', async () => {
     const { h } = linked({ mode: 'learning' });
+    canRecord(h);
     h.store.patch({ song: songInfo('Video (Karaoke Version)', 'yt-abc123') });
     h.core.songReference.setAutoReference(true);
     await settle();
-    expect(hoisted.prepareLink).not.toHaveBeenCalled();
+    expect(h.store.state.songRef.armed).toBe(false);
   });
 
-  it('never starts by itself in karaoke mode', async () => {
+  it('never arms by itself in karaoke mode', async () => {
     const { h } = linked({ mode: 'karaoke' });
+    canRecord(h);
     h.core.songReference.setAutoReference(true);
     await settle();
-    expect(hoisted.prepareLink).not.toHaveBeenCalled();
+    expect(h.store.state.songRef.armed).toBe(false);
   });
 
-  it('does not start without the setting; the card asks instead', async () => {
+  it('never arms by itself in a browser that cannot record a tab', async () => {
     const { h } = linked({ mode: 'learning' });
+    canRecord(h, false);
+    h.core.songReference.setAutoReference(true);
     await settle();
-    expect(hoisted.prepareLink).not.toHaveBeenCalled();
+    expect(h.store.state.songRef.armed).toBe(false);
+    expect(h.store.state.status.kind).not.toBe('warn');
+  });
+
+  it('does not arm without the setting; the card asks instead', async () => {
+    const { h } = linked({ mode: 'learning' });
+    canRecord(h);
+    await settle();
+    expect(h.store.state.songRef.armed).toBe(false);
     expect(h.store.state.songRef.declined).toBe(false);
   });
 
@@ -282,14 +274,16 @@ describe('the prompt, the automatic setting and Not now', () => {
     expect(h.store.state.songRef.declined).toBe(true);
   });
 
-  it('does not start an auto run again for the same load, once it has failed', async () => {
+  it('arms once for a load, and does not arm again after the recording has been taken', async () => {
     const { h } = linked({ mode: 'learning' });
     canRecord(h);
-    downloadFails();
+    vi.spyOn(h.core.capture, 'start').mockResolvedValue(undefined);
     h.core.songReference.setAutoReference(true);
-    await vi.waitFor(() => expect(h.store.state.prepare.phase).toBe('failed'));
+    await vi.waitFor(() => expect(h.store.state.songRef.armed).toBe(true));
+    await h.core.songReference.takeArmed();
+    expect(h.store.state.songRef.armed).toBe(false);
     await settle();
-    expect(hoisted.prepareLink).toHaveBeenCalledTimes(1);
+    expect(h.store.state.songRef.armed).toBe(false);
   });
 });
 
@@ -365,6 +359,74 @@ describe('scoring earlier takes when the melody arrives', () => {
     await takeAt440(h);
     expect(await h.core.scoring.rescoreWithMelody()).toBe(0);
     expect(h.store.state.takes[0].report?.noMelody).toBe(true);
+  });
+});
+
+describe('scoring earlier takes when only the key arrives', () => {
+  /** A key of A major over the whole song. */
+  const KEY_A: KeyMap = {
+    tuning_cents: 0,
+    segments: [{ start_s: 0, end_s: 30, tonic: 9, mode: 'major', confidence: 0.9 }],
+  };
+
+  async function singing(saved: Record<string, unknown> = { mode: 'learning' }) {
+    const h = makeHarness(saved);
+    h.player.setSong(songInfo());
+    h.core.lane = fakeLane();
+    await h.core.input.chooseInput('usb');
+    return h;
+  }
+
+  /** A take of a steady A4 for half a second, with no melody and no key. */
+  async function longTakeAt440(h: Harness): Promise<void> {
+    await h.core.takes.toggleRecord();
+    for (let i = 0; i < 50; i++) {
+      const t = 1 + i * 0.01;
+      h.engine.t = t;
+      h.player.positionS = t;
+      h.tracker.emit({ t, f0: 440, clarity: 0.95, rms: 0.2 });
+    }
+    await h.core.takes.toggleRecord();
+  }
+
+  it('judges a take sung without a key against the song\'s key once it arrives', async () => {
+    const h = await singing();
+    await longTakeAt440(h);
+    const [take] = h.store.state.takes;
+    expect(take.report?.voice).toBeDefined();
+    expect(take.report?.voice?.reference).not.toBe('song_key');
+    h.core.scoring.setKey(KEY_A, { phase: 'ready', message: '' });
+    await vi.waitFor(() => expect(h.store.state.takes[0].report?.voice?.reference).toBe('song_key'));
+    const stored = await h.takeStore.get(take.id);
+    expect(stored?.report?.voice?.reference).toBe('song_key');
+    expect(h.store.state.status.text).toBe('Your earlier take was scored again with the key.');
+  });
+
+  it('leaves a take sung in karaoke mode without a report', async () => {
+    const h = await singing({ mode: 'karaoke' });
+    await longTakeAt440(h);
+    expect(h.store.state.takes[0].report).toBeUndefined();
+    h.core.scoring.setKey(KEY_A, { phase: 'ready', message: '' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(h.store.state.takes[0].report).toBeUndefined();
+    expect(await h.core.scoring.rescoreWithKey()).toBe(0);
+  });
+
+  it('leaves a take already judged on the song\'s key as it was', async () => {
+    const h = await singing();
+    h.core.scoring.setKey(KEY_A, { phase: 'ready', message: '' });
+    await longTakeAt440(h);
+    const before = h.store.state.takes[0].report;
+    expect(before?.voice?.reference).toBe('song_key');
+    expect(await h.core.scoring.rescoreWithKey()).toBe(0);
+    expect(h.store.state.takes[0].report).toEqual(before);
+  });
+
+  it('scores nothing while there is no key', async () => {
+    const h = await singing();
+    await longTakeAt440(h);
+    expect(await h.core.scoring.rescoreWithKey()).toBe(0);
+    expect(h.store.state.takes[0].report?.voice?.reference).not.toBe('song_key');
   });
 });
 

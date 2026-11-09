@@ -6,9 +6,9 @@
  * thumbnails to a one pixel picture and YouTube's own results page to a blank
  * one, and e2e/fake-youtube.ts stands in for the player. The key in these
  * tests is made up and is never printed.
- * Covered: with no song the search is what the main area shows, above a lane
- * whose mic and pitch readout still work, with the dropzone and link box in
- * place; with no key a search opens YouTube's own results in a new tab (its
+ * Covered: with no song the search is the top of the left bar, with the YouTube
+ * link box under it and the dropzone under that, beside a lane whose mic and
+ * pitch readout still work; with no key a search opens YouTube's own results in a new tab (its
  * address asserted) and asks the API nothing; a key is saved, shown as saved
  * and kept across a reload; a search with the key renders the grid with
  * thumbnails, decoded titles, lengths and Karaoke or Original badges, and
@@ -194,7 +194,7 @@ function overlap(a: { x: number; y: number; width: number; height: number }, b: 
   return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 }
 
-test('with no song the search is what the main area shows, and the lane still works', async () => {
+test('with no song the search tops the left bar, then the link box, then the dropzone, and the lane still works', async () => {
   await expect(page.getByTestId('search')).toBeVisible();
   await expect(page.getByTestId('search-toggle')).toBeHidden();
   await expect(page.getByTestId('dropzone')).toBeVisible();
@@ -206,6 +206,14 @@ test('with no song the search is what the main area shows, and the lane still wo
   const lane = await boxOf('#pitch-lane');
   expect(lane.height).toBeGreaterThanOrEqual(150);
   expect(overlap(await boxOf('#search'), lane)).toBe(false);
+  // The order down the left bar: search, then the YouTube link, then the drop zone.
+  const search = await boxOf('#search');
+  const link = await boxOf('#link-input');
+  const drop = await boxOf('#dropzone');
+  expect(search.y).toBeLessThan(link.y);
+  expect(link.y).toBeLessThan(drop.y);
+  // And it is in the left bar, not over the lane.
+  expect(search.x + search.width).toBeLessThanOrEqual(lane.x + 1);
   // The mic and its level line work before any song is picked.
   await page.getByTestId('mic-toggle').click();
   await expect(page.getByTestId('mic-state')).toHaveText('Hearing you');
@@ -286,12 +294,12 @@ test('a search with the key renders the grid with badges, lengths and thumbnails
     'Adele - Hello (Official Music Video)',
   ]);
   await expect(page.getByTestId('search-channel').first()).toHaveText('Sing King');
-  // The thumbnails really loaded; a karaoke card offers Find the original.
+  // The thumbnails really loaded; a karaoke card offers Find the original, which only searches.
   await expect
     .poll(() => page.locator('.search-thumb img').evaluateAll((imgs) => imgs.every((i) => (i as HTMLImageElement).naturalWidth > 0)))
     .toBe(true);
   await expect(page.getByTestId('search-find-original')).toHaveCount(3);
-  // The lane is still there beside the grid.
+  // The lane is still there beside the results.
   expect((await boxOf('#pitch-lane')).height).toBeGreaterThanOrEqual(150);
 });
 

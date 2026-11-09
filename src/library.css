@@ -131,3 +131,58 @@ button.star {
 #favorite-toggle[hidden] {
   display: none;
 }
+
+/* The "3 takes · last sung" line under a row; it opens the song's takes. */
+.library-item .takes-toggle {
+  flex: 1 0 100%;
+  min-width: 0;
+  padding: 2px 0;
+  background: none;
+  border: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-weight: 400;
+  text-align: left;
+  transform: none;
+}
+
+.library-item .takes-toggle::before {
+  content: '▸ ' / '';
+}
+
+.library-item .takes-toggle[aria-expanded='true']::before {
+  content: '▾ ' / '';
+}
+
+.library-takes {
+  display: flex;
+  flex: 1 0 100%;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.library-take {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 4px 6px;
+  border: var(--border-width) solid var(--color-accent-2);
+  border-radius: var(--radius);
+}
+
+.library-take-label {
+  flex: 1 1 140px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.library-take button {
+  min-width: 0;
+  padding: 3px 8px;
+  font-size: 0.8rem;
+}

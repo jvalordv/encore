@@ -1,16 +1,16 @@
 /**
  * Recording a YouTube song's sound from this tab, apart from the audio and the
- * page. When the downloader cannot fetch a video, the app can record the
- * video's own sound while it plays, send that to the service, and prepare it
- * like any linked song. This module is the pure half: the state machine
+ * page. The app records the linked video's own sound while it plays, sends
+ * that to the service, and prepares it like any linked song. This module is the pure half: the state machine
  * (`captureReducer`), the gates on Stop and on a usable end (`canStop`,
  * `usableAtEnd`), and the status line (`captureLine`), so each is tested
  * without a page. `src/audio/tab-capture.ts` records, and
  * `src/app/session/capture.ts` drives this machine from it.
  *
  * It is opt-in and in the same policy category as Prepare (ROADMAP, Policy
- * flag): it starts only after a failed download, on the singer's next Play or
- * Record press (the Song reference card, src/app/song-reference.ts).
+ * flag): it is armed by "Get the melody" (or the opted-in automatic setting)
+ * and starts on the singer's next Play or Record press (the Song reference
+ * card, src/app/song-reference.ts).
  */
 import { MIN_STOP_COVERAGE } from '../audio/capture-assembler';
 

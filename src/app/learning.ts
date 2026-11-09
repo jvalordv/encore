@@ -27,6 +27,15 @@ export const KARAOKE_TRACK_NOTICE =
 /** Offered beside the notice, in Strict, with a button that switches to Open. */
 export const OPEN_SWITCH_OFFER = "Switch to Open to be scored on the song's key instead.";
 
+/**
+ * Says how an original's melody reaches a karaoke track, beside "Find the
+ * original": finding it only loads it as a song of its own, and the Library's
+ * Use as original needs its melody to have been got first.
+ */
+export const ORIGINAL_HOW =
+  'To borrow its melody: find the original and press Get the melody on it, ' +
+  'then open this song again and press Use as original beside the original in the Library.';
+
 /** Said once, on a hint line, in learning mode. */
 export const FREE_PHRASE_HINT = 'Shift+click a phrase on the lane to mark it free.';
 

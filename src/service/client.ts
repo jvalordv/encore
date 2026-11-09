@@ -2,8 +2,9 @@
  * Typed client for the optional Python service (see "Song sources" in
  * docs/ARCHITECTURE.md and the routes in service/encore_service/routes/
  * songs.py). It wraps the calls the browser makes: `health` (is the service
- * running), `createSongFromUrl` (add a YouTube link), `uploadSong` (add a
- * file, with progress), `getSong` (one status), `listSongs` (every stored
+ * running), `uploadSong` (add a file, with progress), `uploadCapture` (add
+ * the recorded sound of a YouTube video; the service is never asked to
+ * download a link), `getSong` (one status), `listSongs` (every stored
  * song, for the Library), `fetchSongAudio` (the stored
  * audio), `fetchStem` (the vocal or the backing, with the gain they were
  * scaled by), `fetchReference` (the melody), `fetchKey` (the song's key),
@@ -31,7 +32,6 @@ import type {
   CaptureResponse,
   KeyMap,
   Reference,
-  SongLinkRequest,
   SongStatus,
   SongSummary,
   StemName,
@@ -200,7 +200,7 @@ export function failedStep(status: SongStatus): StepName | null {
  * for the steps through the melody and then for the backing notes, which come
  * after the melody; a service with no such step has nothing to wait for.
  */
-export function settledThrough(status: SongStatus, upTo: StepName | 'backing'): boolean {
+export function settledThrough(status: Pick<SongStatus, 'steps'>, upTo: StepName | 'backing'): boolean {
   const last: StepName = upTo === 'backing' ? 'reference' : upTo;
   for (const name of STEP_NAMES) {
     const { state } = status.steps[name];
@@ -367,21 +367,6 @@ export class ServiceClient {
     } catch {
       return false;
     }
-  }
-
-  /**
-   * Adds a YouTube link as a song and answers with its status. A repeat of a
-   * link the service has is a cache hit that queues whatever is unfinished.
-   */
-  async createSongFromUrl(url: string, signal?: AbortSignal): Promise<SongStatus> {
-    const body: SongLinkRequest = { url };
-    const init: RequestInit = {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    };
-    const limits = { timeoutMs: this.requestTimeoutMs, signal };
-    return this.statusOf(await this.call('/songs/url', init, limits, readJson));
   }
 
   /** The song's status now. */

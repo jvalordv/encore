@@ -20,7 +20,6 @@ const saved = {
   guideLevel: 0.2,
   clarityThreshold: 0.7,
   octaveInvariant: true,
-  autoPrepareLinks: true,
   serviceUrl: 'http://svc.test:9000',
   embedOffsetS: 0.1,
   youtubeApiKey: 'abc123',
@@ -39,7 +38,6 @@ describe('Reset all', () => {
     expect(now.noteGuide).toBe(false);
     expect(now.keyboard).toBe(true);
     expect(now.octaveInvariant).toBe(false);
-    expect(now.autoPrepareLinks).toBe(false);
     expect(now.serviceUrl).toBe('http://localhost:8765');
     expect(now.youtubeApiKey).toBe('');
     expect(now.latencyByDevicePair).toEqual({});

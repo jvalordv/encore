@@ -72,28 +72,28 @@
 
       <aside id="song-panel" aria-label="Song">
         <h2 class="panel-title">Song</h2>
-        <div id="dropzone" class="dropzone" data-testid="dropzone" role="button" tabindex="0">
-          Drop an mp3 here, click to choose one, or paste a YouTube link
-        </div>
-        <input id="song-input" data-testid="song-input" type="file" accept="audio/*" hidden />
+        <!-- Find a song comes first. The button brings the search back over a
+             loaded song; hidden while no song is loaded, because the search is
+             then shown anyway. The search itself is built by
+             src/app/panels/search.ts. -->
+        <button type="button" id="search-toggle" data-testid="search-toggle" aria-controls="search" aria-expanded="true" hidden>Search for a song</button>
+        <section id="search" class="search" data-testid="search" aria-label="Find a song"></section>
+        <!-- Then a YouTube link, then the drop zone for audio files. -->
         <div class="link-row">
-          <input id="link-input" data-testid="link-input" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="YouTube link" aria-label="YouTube link" />
+          <input id="link-input" data-testid="link-input" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="Add a YouTube link" aria-label="YouTube link" />
           <button type="button" id="link-load" data-testid="link-load" data-help="Load the YouTube link">Load</button>
         </div>
-        <!-- Brings the search back over a loaded song; hidden while no song is
-             loaded, because the search is then what the main area shows. -->
-        <button type="button" id="search-toggle" data-testid="search-toggle" aria-controls="search" aria-expanded="true" hidden>Search for a song</button>
+        <div id="dropzone" class="dropzone" data-testid="dropzone" role="button" tabindex="0">
+          Drop mp3 files here, or click to choose them
+        </div>
+        <input id="song-input" data-testid="song-input" type="file" accept="audio/*" multiple hidden />
+        <!-- One bar for every song dropped together, analysed up front by the
+             service one at a time. Built by src/app/panels/ingest.ts. -->
+        <div id="ingest" class="ingest" data-testid="ingest" hidden></div>
         <!-- The song in use, starred or not, and the favorites playlist's
              Previous and Next while it runs. Built by src/app/panels/library.ts. -->
         <button type="button" id="favorite-toggle" data-testid="favorite-toggle" aria-pressed="false" data-help="Keep this song in your favorites" hidden>Favorite</button>
         <div id="playlist-bar" class="playlist-bar" data-testid="playlist-bar" aria-label="Favorites playlist" hidden></div>
-        <!-- Off unless ticked: a link is otherwise sent to the service only when
-             Get the melody is pressed. Preparing downloads the video's
-             audio, which YouTube's terms restrict (service/README.md). -->
-        <label class="check" for="auto-prepare">
-          <input id="auto-prepare" data-testid="auto-prepare" type="checkbox" />
-          <span>Download YouTube audio as soon as a link loads, in any mode (this downloads the audio; see service/README.md)</span>
-        </label>
         <div class="song-info">
           <div id="song-title" class="song-title" data-testid="song-title">No song loaded</div>
           <div id="song-duration" class="song-meta" data-testid="song-duration"></div>
@@ -198,12 +198,6 @@
       <div id="profile-dialog" data-testid="profile-dialog-backdrop" hidden></div>
 
       <div id="stage">
-        <!-- Find a song: the first thing shown with no song loaded, and on
-             request with one. Built by src/app/panels/search.ts. It sits above
-             the lane, which stays so the mic and the pitch work before a song
-             is picked. -->
-        <section id="search" class="search" data-testid="search" aria-label="Find a song"></section>
-
         <!-- YouTube's embedded player. It is never covered, clipped, scaled or
              restyled, and at least 480 by 270 (the lane is a sibling, not an
              overlay); skins style only the frame around it. Hidden until a

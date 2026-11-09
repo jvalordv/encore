@@ -24,15 +24,23 @@ webcam or USB mic.
 
 ## Current state
 
+- **Last done (2026-11-09): W10, no YouTube download, search first,
+  several songs analysed up front, takes per song in the Library.** The download is gone from the app: Get
+  the melody arms the recording of the song's sound for the first take. The
+  left bar runs Search for a song, Add a YouTube link, the drop zone; the drop
+  zone takes many files, adds them to the Library and has the service analyse
+  them one at a time under one bar. A key that arrives alone re-scores earlier
+  learning takes. Each Library row says "N takes · last sung <date>" and
+  opens the song's takes with Replay, Open and Delete, for the active
+  singer or All singers. **Next:** W11 (quieter left panel, drag to resize);
+  the service's unused `POST /songs/url` route can then be deleted.
 - **Last done (2026-11-09): W9, one Song reference card.** Get the
   melody replaces Prepare for scoring and Capture for learning; learning
   mode asks once (or the new Settings switch does it for every song); a
   blocked download arms recording the song's sound during the first take;
-  the Library marks songs Melody, Key or Backing. **Next:** W10 (no
-  download, search first in the left bar, drop several mp3s with one
-  progress bar, takes per song in the Library), W11 (quieter left panel,
-  drag to resize); then the owner tries two singers and a blocked YouTube
-  link in Chrome (Get the melody, Record, share the tab), and W7.
+  the Library marks songs Melody, Key or Backing. Owner to try: two
+  singers, and a YouTube link in Chrome (Get the melody, Record, share the
+  tab); then W7.
 - **Last done (2026-11-08): W8, singer profiles, Progress in a drawer,
   plain transport labels.** Each singer has a profile (name, colour);
   progress, streak, stars, bests and range are per profile, takes record
@@ -92,21 +100,20 @@ webcam or USB mic.
   lines (`src/app/session.ts`, `src/app/ui.ts`, `src/audio/player.ts`,
   `src/app/session/takes.ts`, `service/encore_service/store.py`), a
   summaries store for takes, alignment confidence on real songs.
-- **Blockers:** YouTube answers yt-dlp with "Sign in to
-  confirm you're not a bot" (2026-10-28, seven tries on Big Buck Bunny), so
-  Prepare for links and W2's "Find the original" fail until a newer
-  yt-dlp gets through (`uv lock --upgrade-package yt-dlp`, then sync as
-  below). Passing browser cookies is the owner's call, not an agent's.
-  Uploads and search are not affected.
+- **Blockers:** none. (YouTube answers yt-dlp with "Sign in to confirm
+  you're not a bot", 2026-10-28; since W10a the app no longer downloads a link,
+  so this no longer blocks anything. Passing browser cookies is the owner's call,
+  not an agent's.) Uploads, recordings and search are not affected.
 - **Policy flag:** the terms for YouTube's embedded player forbid
   downloading or caching its content, separating its audio, and fetching
   its data by other means (developer policies III.E.1.a, III.I.7,
-  III.I.14). Prepare (yt-dlp, separation) does exactly that, and so does
-  W2's "Find the original", which prepares a recording. Both stay opt-in
-  and labelled; the README never claims compliance. Search uses the
+  III.I.14). The download (yt-dlp) did exactly that and was removed from the
+  app in W10a (owner, 2026-11-08). What is left is the opt-in recording of
+  the song's sound from the tab, which separates its audio; it stays opt-in
+  and labelled, and the README never claims compliance. Search uses the
   official Data API and is not affected.
   **Owner decision (2026-10-23): keep the prepare path, opt-in and off by
-  default.** Do not re-ask.
+  default; superseded 2026-11-08 by dropping the download.** Do not re-ask.
 - **Machine facts (checked 2026-10-24):** Windows 10, RTX 4070 Ti 12 GB,
   NVIDIA driver 617.42, `uv` 0.11.16, Python 3.11.15, `ffmpeg` 9.0.2
   (winget), Node 24 on PATH (yt-dlp's JavaScript runtime). `service/.venv`
@@ -1446,6 +1453,87 @@ Tracks inside a wave share no files and may run in parallel.
     is played on or Stop is pressed at 90 %.
   - Follow-up: a take recorded while the share prompt is open starts after
     the prompt, so its first second may be a little later than the press.
+- [x] **W10a: Drop the YouTube download, put search first, analyse dropped
+  songs up front** (owner, 2026-11-08, after "Sign in to confirm you're not a
+  bot" kept failing the download: "If this doesn't work at all, then I don't
+  see any reason to keep it as an option"; search first, then the YouTube
+  link, then the drop zone; "we can do the analysis up front ... one bar").
+  - The app no longer asks the service to download a YouTube link. Get the
+    melody arms the recording of the song's sound for the first take (no
+    "YouTube blocked the download" wording, no Details). The old song-panel
+    checkbox and the Settings auto-prepare switch are gone (a saved value is
+    dropped silently; an old settings export is read without counting it as
+    unrecognised); "Get the song reference automatically" now arms the
+    recording in learning mode, so the first Play or Record asks for the
+    share. A recording is taken over by reading `GET /songs/yt-<id>`, not by
+    adding the link (`createSongFromUrl` and `prepareLink` are deleted).
+  - "Find the original": the part that needed a download (Use as original on a
+    searched video) is removed, and so is the card's Find the original button,
+    whose only job was to feed it. The search for the original (report notice,
+    karaoke result cards) stays: it finds the original so it can be loaded as a
+    song of its own.
+  - Left bar order: Search for a song, Add a YouTube link, the drop zone and
+    its bar, then the rest as before. The search moved out of the main area
+    into the bar (one column of compact cards).
+  - Several songs at once: the drop zone and the file picker take many files.
+    Each goes to the Library; with the service running each is uploaded and
+    analysed one at a time, the first loading as the song at once. One bar
+    and one line ("Analysing 2 of 5: name (separating)") show the queue; a
+    failure is named under it with a plain reason and the others go on;
+    files dropped meanwhile join the end; non-audio files are skipped with a
+    line; no service means the songs are added and the bar says so once.
+    The queue's rules are pure (`src/app/ingest.ts`, `test/ingest.test.ts`).
+  - A key that arrives with no melody now scores earlier learning takes again
+    against it (`rescoreWithKey`), as a melody already did.
+  - Tests: `test/ingest.test.ts`, `test/ingest-session.test.ts`,
+    `e2e/ingest.spec.ts`; `prepare.spec.ts`, `song-reference.spec.ts`,
+    `capture.spec.ts` follow the new behaviour (the prepared-video tests start
+    from `session.adoptRecording`, since a headless browser cannot share a tab).
+  - Review fixes: Get the melody first reads `GET /songs/yt-<id>` and takes a
+    recording the service already holds over at once (no share prompt); a
+    dropped song counts as analysed once its melody has settled, so the
+    backing notes no longer hold the queue; a lone file dropped while only the
+    song in use is analysing loads at once; the bar says plainly that songs
+    dropped with no service cannot be played until dropped again, and sums up
+    many skipped or failed files in a line.
+  - Follow-up: delete the service's `POST /songs/url` route, the yt-dlp fetch
+    step and the downloader notes in `service/README.md` (nothing calls them;
+    the service code was left alone in this wave).
+  - Follow-up: the Library's Use as original (`Session.useAsOriginal`,
+    `AlignController.useSong`) is the only way left to borrow an original's
+    melody, and it needs that original to have been recorded with Get the
+    melody first. The report notice now says so (`ORIGINAL_HOW`); the karaoke
+    search cards still just say Find the original. A Library song analysed up
+    front (a dropped file) could be offered there too.
+  - Follow-up: a song analysed in the background has no length in the Library
+    until it is first opened (its duration is not decoded).
+  - Follow-up: the Library row of a background song is added when its turn
+    comes, not at the drop; with a long queue the later rows appear late.
+  - Follow-up: a first file that is replaced as the song while its analysis
+    runs is analysed aside from the start (a second upload that the service
+    answers from its cache).
+- [x] **W10b: Show each song's takes in the Library, with replay and
+  open** (owner, 2026-11-08: "have the takes shown in the library per song
+  and be able to open and replay takes though that"). A Library row says
+  "N takes · last sung <date>" (nothing for none), counted for the active
+  singer, or for everyone with the drawer's All singers switch (default
+  off; "No singer" takes count only under it). The line opens the song's
+  takes: date, time, length, the singer under All singers, and, in learning
+  mode only, the in-tune share and stars of a take with a report (karaoke
+  mode shows no figures). Per take: Replay (the takes panel's replay, so it
+  needs the song loaded; for another song it says so and points at Open),
+  Open (loads the song and, in learning mode, the take's report card) and
+  Delete (two presses, that take only). The Library holds take summaries
+  only (`state.library.takes`, replacing the per-song counts), refreshed
+  when a take is saved, deleted or re-scored and when the singer changes;
+  grouping, counts and dates are pure (`src/app/song-takes.ts`).
+  - Follow-up: Replay of another song's take could play just the voice
+    recording without loading the song; the replay today needs the song's
+    parts, so it asks for Open first.
+  - Follow-up: the expanded list and the All singers switch are not kept
+    across a reload.
+  - Follow-up: a duet take lists under both singers' counts but shows one
+    singer's name under All singers.
 - [ ] **W7: Owner test and one bug sweep.** The owner runs the full list:
   solo with a file, a link, a prepared link; learning mode; duet on one
   mic and on two; speakers and headphones. Then one reviewer reads
@@ -1561,6 +1649,7 @@ were.
 | WL4 Voice over the song + replay detail (measured, 2 lanes) | 0.9 | 1.18 M | 15 min |
 | W8 + W8b Profiles, drawer, hover help (measured, worktree) | 1 | 1.13 M | 10 min |
 | W9 Song reference card (measured, worktree) | 1 | 0.87 M | 15 min |
+| W10 Intake + Library takes (measured, 2 lanes) | 1 | 1.42 M | 20 min |
 | **Total** | **about 16 (15-19)** | **about 11.5 M** | **about 5 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The

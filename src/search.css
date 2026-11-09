@@ -1,44 +1,27 @@
 /*
- * The song search (src/app/panels/search.ts). It sits in the stage above the
- * pitch lane: while it shows, the stage is a column, the lane keeps a short,
- * fixed height so the mic and the pitch readout still work, and the search
- * takes the rest and scrolls inside itself. Colour, type and shape come only
- * from the skin tokens, so all three skins read as themselves. Loaded before
- * style.css, so every rule here that has to beat one there names #app.
+ * The song search (src/app/panels/search.ts). It is the top of the song panel,
+ * the narrow left bar: a box and a chip, then the results as a single column
+ * of compact cards, scrolling inside the search when there are many. Colour,
+ * type and shape come only from the skin tokens, so all three skins read as
+ * themselves. Loaded before style.css, so every rule here that has to beat one
+ * there names an id.
  */
 
 #search {
-  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
-  min-height: 0;
-  padding: 12px;
+  max-height: 70vh;
+  padding: 10px;
   overflow-y: auto;
   background: var(--color-surface);
   border: var(--border-width) solid var(--color-accent-2);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
 }
 
-#app[data-search='on'] #stage {
-  flex-direction: column;
-}
-
-#app[data-search='on'] #pitch-lane {
-  flex: 0 0 auto;
-  height: 160px;
-  min-height: 160px;
-}
-
-/* The stage asks for the search's least height, a gap and the short lane. */
-#app[data-search='on'] {
-  --stage-min: calc(220px + 12px + 160px);
-}
-
-#app[data-search='on'][data-embed='on'] {
-  --stage-min: calc(var(--embed-w) * 9 / 16 + 32px + 12px + 220px + 12px + 160px);
+#search[hidden] {
+  display: none;
 }
 
 .search-bar {
@@ -82,8 +65,8 @@
 
 .search-results {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -109,10 +92,15 @@
    look so the card reads as a card. */
 .search-pick,
 .search-pick:hover:not(:disabled) {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  grid-template-areas:
+    'thumb title'
+    'thumb channel';
+  align-content: start;
+  align-items: start;
+  column-gap: 8px;
+  row-gap: 2px;
   min-width: 0;
   padding: 0;
   background: none;
@@ -124,6 +112,7 @@
 }
 
 .search-thumb {
+  grid-area: thumb;
   position: relative;
   display: block;
   aspect-ratio: 16 / 9;
@@ -152,6 +141,7 @@
 }
 
 .search-title {
+  grid-area: title;
   display: -webkit-box;
   overflow: hidden;
   font-size: 0.9rem;
@@ -162,6 +152,7 @@
 }
 
 .search-channel {
+  grid-area: channel;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

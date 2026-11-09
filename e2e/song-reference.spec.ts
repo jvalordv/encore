@@ -1,14 +1,18 @@
 /**
  * End-to-end proof of the Song reference card and its Library badge, in real
  * Chromium against the production bundle, with YouTube and the Python service
- * both replaced. Covered: a download the service answers puts the melody on
- * the card ("Melody: from this video", with its key) and a Melody badge on the
- * song's Library row, whose hover text says what it means; a download that
- * fails says the song's sound will be recorded in the first take; in learning
- * mode a song with no melody opens the card with the prompt, "Not now" is
- * remembered for the song, and ticking "Do this for every song" turns on the
- * saved setting, after which a song loads and gets its melody with no prompt;
- * karaoke mode never prompts; a karaoke video offers Find the original.
+ * both replaced. A headless browser cannot pick a tab to share, so the first
+ * test opens the page with the test seam `?captureFake` (a tone in place of the
+ * tab's sound; capture.spec.ts has the whole recording). Covered: Get the
+ * melody arms the recording of the song's sound and says so in plain words,
+ * downloading nothing; the recording puts the melody on the card ("Melody:
+ * from this video", with its key) and a Melody badge on the song's Library row,
+ * whose hover text says what it means; in learning mode a song with no melody
+ * opens the card with the prompt, "Not now" is remembered for the song, and
+ * ticking "Do this for every song" turns on the saved setting, after which a
+ * song loads and arms the recording with no prompt; karaoke mode never
+ * prompts; a karaoke video says so and offers no download; a browser that
+ * cannot share a tab says so and asks for nothing.
  */
 import { expect, test } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
@@ -29,6 +33,9 @@ let context: BrowserContext;
 let page: Page;
 let service: FakeService;
 let title = TITLE;
+// A short video that ends by itself, for the test that records it for real.
+let videoS = VIDEO_S;
+let autoEnd = false;
 const pageErrors: string[] = [];
 const strayRequests: string[] = [];
 
@@ -45,10 +52,10 @@ test.beforeAll(async ({ browser }) => {
   await context.route('https://www.youtube.com/iframe_api', (route) => {
     const config = JSON.stringify({
       title,
-      durationS: VIDEO_S,
+      durationS: videoS,
       readyDelayMs: 30,
       blockedIds: [],
-      autoEnd: false,
+      autoEnd,
     });
     return route.fulfill({
       status: 200,
@@ -64,6 +71,12 @@ test.beforeAll(async ({ browser }) => {
     }),
   );
   service = await stubService(context, VIDEO);
+  // `?noShare` stands for a browser that cannot share a tab's sound.
+  await context.addInitScript(() => {
+    if (location.search.includes('noShare')) {
+      Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', { value: undefined, configurable: true });
+    }
+  });
   page = await context.newPage();
   page.on('pageerror', (error) => pageErrors.push(`uncaught: ${error.message}`));
   page.on('console', (message) => {
@@ -83,19 +96,14 @@ test.afterAll(async () => {
   await context.close();
 });
 
-/** Opens the app with the link loaded and the service answering; `saved` seeds the settings. */
-async function openWithLink(
-  saved: Record<string, unknown> = {},
-  videoTitle = TITLE,
-  finishedAtService = false,
-): Promise<void> {
+/**
+ * Opens the app with the link loaded and the service answering; `saved` seeds
+ * the settings and `seam` is the page's query (`captureFake`, `noShare`).
+ */
+async function openWithLink(saved: Record<string, unknown> = {}, videoTitle = TITLE, seam = ''): Promise<void> {
   title = videoTitle;
   service.reset(VIDEO);
-  if (finishedAtService) {
-    service.create = finished();
-    service.status = finished();
-  }
-  await page.goto('/');
+  await page.goto(seam ? `/?${seam}` : '/');
   await page.evaluate((settings) => {
     localStorage.clear();
     localStorage.setItem('encore.settings', JSON.stringify(settings));
@@ -103,7 +111,7 @@ async function openWithLink(
   await page.reload();
   await page.waitForFunction(() => window.encore !== undefined);
   await pasteInto(page, LINK);
-  // Past the service check; with the automatic setting on it is under way by then.
+  // Past the service check.
   await page.waitForFunction(
     () => !['none', 'checking'].includes(window.encore!.store.state.prepare.phase),
     undefined,
@@ -111,7 +119,7 @@ async function openWithLink(
   );
 }
 
-/** What the service holds for a song whose download, key and melody are all done. */
+/** What the service holds for a recorded song whose key and melody are done. */
 function finished() {
   return linkStatus(VIDEO, stepStatus('done', 1), {
     separation: stepStatus('done', 1),
@@ -120,21 +128,31 @@ function finished() {
   });
 }
 
-test('1. a download that works puts the melody on the card and a Melody badge in the Library', async () => {
-  await openWithLink();
-  await expect(page.getByTestId('reference-melody')).toHaveText('Melody: none');
-  service.create = finished();
-  service.status = finished();
-  await page.getByTestId('reference-get').click();
-  await page.waitForFunction(() => window.encore!.store.state.reference.phase === 'ready', undefined, {
-    timeout: 20_000,
-  });
+test('1. a recording puts the melody on the card and a Melody badge in the Library', async () => {
+  videoS = 4;
+  autoEnd = true;
+  try {
+    await openWithLink({}, TITLE, 'captureFake');
+    await expect(page.getByTestId('reference-melody')).toHaveText('Melody: none');
+    await page.getByTestId('reference-get').click();
+    await page.waitForFunction(() => window.encore!.store.state.songRef.armed === true);
+    // What the service holds once the recording is in: the song, key and melody done.
+    service.status = finished();
+    await page.getByTestId('play').click();
+    await page.waitForFunction(() => window.encore!.store.state.reference.phase === 'ready', undefined, {
+      timeout: 60_000,
+    });
+  } finally {
+    videoS = VIDEO_S;
+    autoEnd = false;
+  }
 
   await expect(page.getByTestId('reference-melody')).toHaveText('Melody: from this video');
   await expect(page.getByTestId('reference-key')).toHaveText('Key: estimated from the song');
   // Karaoke mode (the default) shows nothing about learning mode.
   await expect(page.getByTestId('reference-meaning')).toBeHidden();
   await expect(page.getByTestId('reference-get')).toBeHidden();
+  expect(service.count('POST', '/songs/url')).toBe(0);
 
   await page.getByTestId('library-toggle').click();
   const row = page.getByTestId('library-item').filter({ hasText: TITLE });
@@ -151,16 +169,17 @@ test('1. a download that works puts the melody on the card and a Melody badge in
   ).toHaveText('Melody');
 });
 
-test('2. a download that fails says the song will be recorded in the first take', async () => {
+test('2. Get the melody arms the recording of the song\'s sound, says so, and downloads nothing', async () => {
   await openWithLink();
-  service.create = { status: 422, detail: 'Download failed: HTTP Error 403: Forbidden.' };
   await page.getByTestId('reference-get').click();
-  await page.waitForFunction(() => window.encore!.store.state.prepare.phase === 'failed');
+  await page.waitForFunction(() => window.encore!.store.state.songRef.armed === true);
   await expect(page.getByTestId('reference-note')).toHaveText(
-    "YouTube blocked the download, so Encore will record the song's sound while you sing your first take.",
+    "Encore will record the song's sound while you sing your first take.",
   );
-  await expect(page.getByTestId('reference-get')).toHaveText('Get the melody');
-  expect((await readAppState(page)).songRef.armed).toBe(true);
+  await expect(page.getByTestId('reference-get')).toBeHidden();
+  expect((await readAppState(page)).prepare.phase).toBe('ready');
+  // Only the read-only question whether the service already holds this video.
+  expect(service.songRequests()).toEqual([{ method: 'GET', path: `/songs/yt-${VIDEO}` }]);
 });
 
 test('3. learning mode opens the card with a prompt; Not now is remembered for the song', async () => {
@@ -186,49 +205,48 @@ test('4. karaoke mode never prompts', async () => {
   expect(service.songRequests()).toEqual([]);
 });
 
-test('5. "Do this for every song" is kept by Get the melody, and then a song gets its melody with no prompt', async () => {
+test('5. "Do this for every song" is kept by Get the melody, and then a song arms the recording with no prompt', async () => {
   await openWithLink({ mode: 'learning' });
   await expect(page.getByTestId('reference-meaning')).toContainText('learning mode comments on your voice only');
-  service.create = finished();
-  service.status = finished();
   // Ticking the box alone starts nothing and saves nothing.
   await page.getByTestId('reference-every-song').check();
   await page.waitForTimeout(300);
   expect(
     await page.evaluate(() => JSON.parse(localStorage.getItem('encore.settings') ?? '{}').autoReference ?? false),
   ).toBe(false);
+  expect((await readAppState(page)).songRef.armed).toBe(false);
   expect(service.songRequests()).toEqual([]);
-  // Get the melody with the box ticked starts this song and keeps the setting.
+  // Get the melody with the box ticked arms this song and keeps the setting.
   await page.getByTestId('reference-prompt-get').click();
   expect(
     await page.evaluate(() => JSON.parse(localStorage.getItem('encore.settings') ?? '{}').autoReference),
   ).toBe(true);
-  await page.waitForFunction(() => window.encore!.store.state.reference.phase === 'ready', undefined, {
-    timeout: 20_000,
-  });
+  await page.waitForFunction(() => window.encore!.store.state.songRef.armed === true);
   await expect(page.getByTestId('reference-prompt')).toBeHidden();
 
-  // The setting is in the Settings panel too, and a fresh load goes straight to the download.
-  await openWithLink({ mode: 'learning', autoReference: true }, TITLE, true);
-  await page.waitForFunction(() => window.encore!.store.state.reference.phase === 'ready', undefined, {
-    timeout: 20_000,
-  });
+  // The setting is in the Settings panel too, and a fresh load arms the
+  // recording at once, so the first Play or Record asks for the share.
+  await openWithLink({ mode: 'learning', autoReference: true });
+  await page.waitForFunction(() => window.encore!.store.state.songRef.armed === true);
   await expect(page.getByTestId('reference-prompt')).toBeHidden();
-  await expect(page.getByTestId('reference-melody')).toHaveText('Melody: from this video');
+  await expect(page.getByTestId('reference-melody')).toHaveText('Melody: none');
+  await expect(page.getByTestId('reference-note')).toContainText('will record the song');
+  expect(service.songRequests()).toEqual([{ method: 'GET', path: `/songs/yt-${VIDEO}` }]);
 });
 
-test('6. a karaoke video says so, and offers Find the original', async () => {
+test('6. a karaoke video says so, and offers neither a download nor a way to borrow another melody', async () => {
   await openWithLink({}, KARAOKE_TITLE);
   await expect(page.getByTestId('reference-hint')).toContainText('looks like a karaoke track');
-  const find = page.getByTestId('reference-find-original');
-  await expect(find).toBeVisible();
-  // Not until the song is on the service, which needs it to match against the original.
-  await expect(find).toBeDisabled();
-  service.create = linkStatus(VIDEO, stepStatus('done', 1), { separation: stepStatus('done', 1) });
-  service.status = service.create;
-  await page.getByTestId('reference-get').click();
-  await page.waitForFunction(() => window.encore!.store.state.prepare.phase === 'prepared', undefined, {
-    timeout: 20_000,
-  });
-  await expect(find).toBeEnabled();
+  await expect(page.getByTestId('reference-find-original')).toHaveCount(0);
+  await expect(page.getByTestId('song-reference')).not.toContainText('Find the original');
+  await expect(page.getByTestId('reference-get')).toBeEnabled();
+});
+
+test('7. a browser that cannot share a tab says so, and asks for nothing', async () => {
+  await openWithLink({ mode: 'learning', autoReference: true }, TITLE, 'noShare');
+  await expect(page.getByTestId('reference-note')).toContainText('cannot record the song');
+  await expect(page.getByTestId('reference-get')).toBeDisabled();
+  await expect(page.getByTestId('reference-prompt')).toBeHidden();
+  expect((await readAppState(page)).songRef.armed).toBe(false);
+  expect(service.songRequests()).toEqual([]);
 });

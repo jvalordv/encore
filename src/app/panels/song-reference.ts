@@ -5,16 +5,15 @@
  * "Get the melody"; in learning mode, for a song with no melody, the card
  * opens with a prompt in its place ("Get the melody so learning mode can
  * score you?", Not now, and "Do this for every song", which is the Settings
- * switch, applied when Get the melody is pressed with it ticked). A karaoke video also offers Find the original. Everything drawn
- * comes from `describeSongReference` (src/app/song-reference.ts); the panel
- * only draws it and calls the Session's intents. The service's own error is
- * kept under a small Details disclosure, never in the main text.
+ * switch, applied when Get the melody is pressed with it ticked). Getting the
+ * melody arms the recording of the song's sound for the first take. Everything
+ * drawn comes from `describeSongReference` (src/app/song-reference.ts); the
+ * panel only draws it and calls the Session's intents.
  */
 import { originalQueryFor } from '../learning';
 import type { Session } from '../session';
 import {
   EVERY_SONG_LABEL,
-  FIND_ORIGINAL_LABEL,
   GET_MELODY_LABEL,
   NOT_NOW_LABEL,
   STOP_RECORDING_LABEL,
@@ -29,7 +28,7 @@ export interface SongReferencePanelDeps {
   store: StateStore;
   session: Pick<
     Session,
-    'getMelody' | 'declineReference' | 'setAutoReference' | 'stopCapture' | 'findOriginal' | 'captureSupported' | 'settings'
+    'getMelody' | 'declineReference' | 'setAutoReference' | 'stopCapture' | 'captureSupported' | 'settings'
   >;
 }
 
@@ -96,7 +95,7 @@ export const mountSongReferencePanel: MountPanel<SongReferencePanelDeps> = (host
   const every = make('input', 'reference-every-song');
   every.type = 'checkbox';
   // The tick only says what Get the melody should remember; nothing is
-  // downloaded until that button is pressed.
+  // recorded until that button is pressed.
   const promptGet = button('reference-prompt-get', GET_MELODY_LABEL, () => {
     title.focus();
     if (every.checked && !session.settings.autoReference) session.setAutoReference(true);
@@ -118,16 +117,8 @@ export const mountSongReferencePanel: MountPanel<SongReferencePanelDeps> = (host
   note.setAttribute('role', 'status');
   note.setAttribute('aria-live', 'polite');
   const hint = make('p', 'reference-hint', 'song-meta');
-  const details = make('details', 'reference-details', 'reference-details song-meta');
-  const summary = doc.createElement('summary');
-  summary.textContent = 'Details';
-  const detailsText = make('p', 'reference-details-text', 'song-meta');
-  details.append(summary, detailsText);
-  const find = button('reference-find-original', FIND_ORIGINAL_LABEL, () =>
-    session.findOriginal(originalQueryFor(store.state)),
-  );
 
-  host.append(title, facts, meaning, prompt, get, stop, steps, note, hint, details, find);
+  host.append(title, facts, meaning, prompt, get, stop, steps, note, hint);
 
   const setText = (el: HTMLElement, text: string): void => {
     if (el.textContent !== text) el.textContent = text;
@@ -192,11 +183,6 @@ export const mountSongReferencePanel: MountPanel<SongReferencePanelDeps> = (host
     note.hidden = view.note === '';
     setText(hint, view.hint);
     hint.hidden = view.hint === '';
-    setText(detailsText, view.details);
-    details.hidden = view.details === '';
-    find.hidden = !view.findOriginal.shown;
-    find.disabled = view.findOriginal.disabled;
-    find.dataset.help = view.findOriginal.title;
   }
 
   cleanups.push(

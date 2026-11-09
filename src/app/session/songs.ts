@@ -19,6 +19,7 @@ import type { EmbedHost } from '../../audio/youtube-transport';
 import { parseYouTubeUrl } from '../../audio/youtube-url';
 import { ServiceClient } from '../../service/client';
 import type { SongStatus } from '../../service/types';
+import { AUDIO_EXTENSION } from '../ingest';
 import { youtubeSongId } from '../library';
 import { describeServiceError } from '../prepare';
 import { describeLoadFailure, formatClock } from '../state';
@@ -35,8 +36,6 @@ const TRANSPORT_EVENTS: readonly TransportEvent[] = [
   'loop',
   'state',
 ];
-/** A file name's audio extension, dropped to make the Library title. */
-const AUDIO_EXTENSION = /\.(mp3|wav|flac|ogg|oga|m4a|aac|opus|webm)$/i;
 /** Said while an advertisement is in the video player. */
 const AD_STATUS = 'An ad is playing in the video. Nothing is drawn or recorded until it ends.';
 /** The same, shorter, across the pitch lane. */

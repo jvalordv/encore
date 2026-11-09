@@ -29,6 +29,17 @@ describe('exportSettingsText', () => {
     expect(file.settings.youtubeApiKey).toBe(current.youtubeApiKey);
   });
 
+  it('reads an older export that carries the dropped download setting, without counting it as unknown', () => {
+    const text = JSON.stringify({
+      app: SETTINGS_FILE_APP,
+      settings: { noteGuide: false, autoPrepareLinks: true, madeUp: 1 },
+    });
+    const parsed = parseSettingsText(text, current, SKINS);
+    expect(parsed?.ignored).toBe(1);
+    expect(parsed?.settings).not.toHaveProperty('autoPrepareLinks');
+    expect(parsed?.settings.noteGuide).toBe(false);
+  });
+
   it('carries the hover help switch out and back in', () => {
     const quiet = sanitizeSettings({ hoverHelp: false });
     const file = JSON.parse(exportSettingsText(quiet, extras, false));

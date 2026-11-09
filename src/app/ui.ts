@@ -10,10 +10,11 @@
  * link box, a paste anywhere on the page, or a link dropped on it; the pane
  * the player is built into is handed to the Session here. The song panel's
  * Song reference card is its own panel (panels/song-reference.ts); its button
- * and prompt, the automatic-prepare checkbox and a window regaining focus (the
- * service may have been started meanwhile) are the only things that lead to
- * the service from a link; a dropped file's karaoke
- * track has its own panel (panels/karaoke.ts), mounted here, as are the mode
+ * and prompt and a window regaining focus (the service may have been started
+ * meanwhile) are the only things that lead to the service from a link. Audio
+ * files dropped or chosen, one or several, go to the Session together; the
+ * bar under the drop zone is its own panel (panels/ingest.ts). A dropped
+ * file's karaoke track has its own panel (panels/karaoke.ts), mounted here, as are the mode
  * toggle (panels/mode.ts), the takes list (panels/takes.ts) and learning
  * mode's notice and report card (panels/report.ts). Importing the file
  * touches no DOM; mountUI does.
@@ -27,6 +28,7 @@ import { createLrclibClient } from '../lyrics/lrclib';
 import { lazyLyricsStore } from '../lyrics/store';
 import { downloadBlob } from './download';
 import { mountHoverHelp } from './hover-help';
+import { mountIngestPanel } from './panels/ingest';
 import { mountKaraokePanel } from './panels/karaoke';
 import { mountKeyboardPanel } from './panels/keyboard';
 import { mountKeyShiftPanel } from './panels/key-shift';
@@ -80,7 +82,6 @@ const METER_CLIP = 0.98;
 const TUNER_HIT_CENTS = 25;
 /** The note readout lingers this long through a breath or a consonant. */
 const PITCH_HOLD_MS = 300;
-const AUDIO_NAME = /\.(mp3|wav|flac|ogg|oga|m4a|aac|opus|webm)$/i;
 
 function must<T extends HTMLElement>(root: ParentNode, id: string): T {
   const found = root.querySelector<T>(`#${id}`);
@@ -102,10 +103,6 @@ function usesKeys(target: EventTarget | null): boolean {
   if (target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') return true;
   // The seek slider is excluded: its own arrows would move by 10 ms.
   return target.tagName === 'INPUT' && target.id !== 'seek-input';
-}
-
-function isAudioFile(file: File): boolean {
-  return file.type.startsWith('audio/') || AUDIO_NAME.test(file.name);
 }
 
 /** Input types that take typed text; a slider or a checkbox takes no paste. */
@@ -148,7 +145,6 @@ export function mountUI(session: Session, root: Document = document): UI {
   const embedPlayer = get('embed-player');
   const embedOffset = get('embed-offset');
   const embedOffsetInput = get<HTMLInputElement>('embed-offset-input');
-  const autoPrepare = get<HTMLInputElement>('auto-prepare');
   const inputSelect = get<HTMLSelectElement>('input-select');
   const inputHandsFree = get('input-hands-free');
   const outputSelect = get<HTMLSelectElement>('output-select');
@@ -370,15 +366,17 @@ export function mountUI(session: Session, root: Document = document): UI {
 
   // ---- Controls -----------------------------------------------------------
 
-  const loadFile = (file: File | undefined): void => {
-    if (!file) return;
-    if (!isAudioFile(file)) store.setStatus(`${file.name} does not look like an audio file.`, 'warn');
-    else void session.loadSong(file);
+  // Several files at once are one batch; the Session turns away what is not audio.
+  const loadFiles = (files: ArrayLike<File> | null | undefined): void => {
+    const list = files ? Array.from(files) : [];
+    if (list.length > 0) session.addSongs(list);
   };
   const loadLink = (text: string): void => void session.loadLink(text);
 
   // The song's karaoke track and its mix are a panel of their own.
   cleanups.push(mountSongReferencePanel(get('song-reference'), { store, session }));
+  // The bar under the drop zone: every song dropped together, analysed up front.
+  cleanups.push(mountIngestPanel(get('ingest'), { store }));
   cleanups.push(mountKaraokePanel(get('karaoke'), { store, session }));
   // The mode toggle, the takes list and learning mode's notice and report card.
   cleanups.push(mountModePanel(get('mode'), { store, session }));
@@ -454,20 +452,17 @@ export function mountUI(session: Session, root: Document = document): UI {
   session.attachEmbedHost(domEmbedHost(embedPlayer));
   cleanups.push(() => session.attachEmbedHost(null));
 
-  autoPrepare.checked = session.settings.autoPrepareLinks;
-  // The Settings drawer (or an import) can change these two, which the state
-  // does not hold, so a save of the settings redraws them.
+  // The Settings drawer (or an import) can change the clarity, which the state
+  // does not hold, so a save of the settings redraws it.
   cleanups.push(
     store.subscribe((_state, changed) => {
       if (!changed.has('settingsRev')) return;
-      autoPrepare.checked = session.settings.autoPrepareLinks;
       if (root.activeElement !== clarityInput) clarityInput.value = String(session.settings.clarityThreshold);
       setText(clarityValue, Number(session.settings.clarityThreshold).toFixed(2));
     }),
   );
-  listen(autoPrepare, 'change', () => session.setAutoPrepareLinks(autoPrepare.checked));
   // The service may have been started while the person was elsewhere; while
-  // Prepare is off for want of it, coming back asks again.
+  // Get the melody is off for want of it, coming back asks again.
   const onFocus = (): void => session.checkService();
   root.defaultView?.addEventListener('focus', onFocus);
   cleanups.push(() => root.defaultView?.removeEventListener('focus', onFocus));
@@ -497,7 +492,7 @@ export function mountUI(session: Session, root: Document = document): UI {
     songInput.click();
   });
   listen(songInput, 'change', () => {
-    loadFile(songInput.files?.[0]);
+    loadFiles(songInput.files);
     // Cleared so picking the same file again still counts as a change.
     songInput.value = '';
   });
@@ -513,9 +508,9 @@ export function mountUI(session: Session, root: Document = document): UI {
   listenDoc('drop', (ev) => {
     ev.preventDefault();
     dropzone.classList.remove('is-over');
-    const file = ev.dataTransfer?.files[0];
-    if (file) {
-      loadFile(file);
+    const files = ev.dataTransfer?.files;
+    if (files && files.length > 0) {
+      loadFiles(files);
       return;
     }
     // A link dragged in from another tab arrives as text, not as a file.

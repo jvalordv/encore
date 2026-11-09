@@ -1,24 +1,19 @@
 /**
- * Preparing a linked song: the service probe, the preparation attempt (one
- * run at the service for the video in use), and the switch from the video to
- * the app's own audio once the prepared file is loaded. Owns the attempt, the
- * embed follower that keeps the muted video in step afterwards, and the
- * waiters a prepared song leaves while a take is being recorded. The panel's
- * state machine itself is in src/app/prepare.ts; this is what drives it. What a
- * failed download leads to is the song reference controller's to decide.
+ * Taking over a linked song's recording: the service probe, the adoption
+ * attempt (one run at the service for the video in use, after the recording of
+ * its sound has been uploaded), and the switch from the video to the app's own
+ * audio once that file is loaded. Owns the attempt, the embed follower that
+ * keeps the muted video in step afterwards, and the waiters a prepared song
+ * leaves while a take is being recorded. The panel's state machine itself is
+ * in src/app/prepare.ts; this is what drives it. Nothing here asks the service
+ * to download a YouTube link.
  */
 import { EmbedFollower } from '../../audio/embed-follower';
 import type { FollowerHooks } from '../../audio/embed-follower';
 import { isRunning } from '../../audio/transport';
 import type { YouTubeTransport } from '../../audio/youtube-transport';
 import { ServiceClient } from '../../service/client';
-import {
-  canonicalWatchUrl,
-  initialPrepare,
-  PREPARED_NOTE,
-  prepareLink,
-  WAITING_NOTE,
-} from '../prepare';
+import { adoptHeldSong, heldSongId, initialPrepare, PREPARED_NOTE, WAITING_NOTE } from '../prepare';
 import type { PrepareState } from '../prepare';
 import type { SessionCore } from './core';
 import { messageOf } from './helpers';
@@ -33,9 +28,6 @@ const CONTEXT_START_WAIT_MS = 2000;
 /** Said when the app's own audio has taken the song over from the video. */
 const PREPARED_STATUS =
   'Prepared: the app now plays the song and keeps time. The video follows, muted.';
-/** Said when Prepare finds the service gone since the link loaded. */
-const SERVICE_GONE_STATUS =
-  'The service is not running, so the song was not prepared. See service/README.md.';
 /** Said when YouTube's own Play is pressed while a calibration is running. */
 const CALIBRATING_VIDEO_STATUS = 'Wait for calibration to finish before playing the video.';
 
@@ -51,8 +43,8 @@ interface PrepareAttempt {
   controller: AbortController;
   /**
    * 'check' is the question whether the service runs, asked as a link loads;
-   * 'prepare' is a preparation, whose own first step may ask it again. What a
-   * stopped run leaves the panel saying depends on which it was.
+   * 'prepare' is the adoption of an uploaded recording. What a stopped run
+   * leaves the panel saying depends on which it was.
    */
   kind: 'check' | 'prepare';
 }
@@ -69,36 +61,51 @@ export class PrepareController {
   constructor(private readonly core: SessionCore) {}
 
   /**
-   * Prepares the linked song for scoring: has the service fetch the video's
-   * audio, loads that into the audio Player and makes it the song, with the
-   * video as a muted picture that follows. This is where a link leaves for the
-   * service, so it runs only when the person presses Get the melody (see the
-   * song reference controller), or from the automatic setting once a link has
-   * loaded. It does nothing unless the song panel is offering it, and a newer
-   * load ends it wherever it has got to.
+   * Takes over the linked song's recording, which the service now holds: loads
+   * its audio into the audio Player and makes it the song, with the video as a
+   * muted picture that follows. Called by the capture controller once the
+   * upload has ended. It does nothing unless the song panel is offering it,
+   * and a newer load ends it wherever it has got to.
    */
-  async prepare(): Promise<void> {
-    await this.startPrepare(false);
+  async adopt(): Promise<void> {
+    const embed = this.core.songs.embed;
+    const parts = this.core.parts;
+    const { phase } = this.core.store.state.prepare;
+    if (!embed || !parts || (phase !== 'ready' && phase !== 'failed')) return;
+    await this.run(embed, parts);
+  }
+
+  /**
+   * Takes over the linked song from the service when it already holds the
+   * recording (one made in an earlier session): a read-only question for the
+   * status of the song filed under the video's id, which sends and downloads
+   * nothing. Returns true when the service held it and the adoption ran; false
+   * when it did not, or could not be asked, and the caller should record the
+   * song's sound instead.
+   */
+  async adoptIfHeld(): Promise<boolean> {
+    const embed = this.core.songs.embed;
+    if (!embed) return false;
+    const token = this.core.songs.loadToken;
+    try {
+      const status = await this.serviceClient().getSong(heldSongId(embed.videoId));
+      if (this.core.songs.embed !== embed || this.core.songs.loadToken !== token) return false;
+      if (status.steps.fetch.state !== 'done') return false;
+    } catch {
+      // Not held (404), or the service did not answer: record the sound.
+      return false;
+    }
+    await this.adopt();
+    return true;
   }
 
   /**
    * Asks the service again whether it runs, if it was found not to: the person
-   * may have started it since, and Prepare stays off until it answers.
+   * may have started it since, and the melody stays off until it answers.
    */
   checkService(): void {
     const embed = this.core.songs.embed;
     if (embed && this.core.store.state.prepare.phase === 'unavailable') void this.probeService(embed);
-  }
-
-  /**
-   * Turns the automatic sending of a link to the service on or off. It is read
-   * when a link's service check ends, so turning it on sends no link whose
-   * check has already passed; one that found the service not running is sent
-   * once the service answers (checkService), if the setting is on by then.
-   */
-  setAutoPrepareLinks(on: boolean): void {
-    this.core.current.autoPrepareLinks = on === true;
-    this.core.persist();
   }
 
   /** A client for the service at the address in the settings, read each time. */
@@ -137,12 +144,11 @@ export class PrepareController {
   }
 
   /**
-   * Stops a run that is under way because a newer load has begun. A preparation
-   * puts the panel back to offering Prepare: if that load fails the video stays
-   * as the song, unprepared, and the person presses Prepare again. A check that
-   * had not been answered is asked afresh instead, since Prepare is not to be
-   * offered on a guess, and a link waiting on that answer to be sent by itself
-   * still is. If the newer load wins, the panel is reset for what it loaded.
+   * Stops a run that is under way because a newer load has begun. An adoption
+   * puts the panel back to offering the melody: if that load fails the video
+   * stays as the song, unprepared. A check that had not been answered is asked
+   * afresh instead, since the melody is not to be offered on a guess. If the
+   * newer load wins, the panel is reset for what it loaded.
    */
   cancelAttempt(): void {
     const attempt = this.attempt;
@@ -189,10 +195,7 @@ export class PrepareController {
     };
   }
 
-  /**
-   * Asks the service whether it runs and shows Prepare accordingly. With the
-   * automatic setting on, a service that answers is sent the link at once.
-   */
+  /** Asks the service whether it runs and shows the melody on offer accordingly. */
   async probeService(embed: YouTubeTransport): Promise<void> {
     const attempt = this.beginAttempt(embed, 'check');
     this.setPrepare({ phase: 'checking', steps: null, message: '' });
@@ -200,36 +203,16 @@ export class PrepareController {
     if (!this.isCurrent(attempt)) return;
     this.attempt = null;
     this.setPrepare({ phase: up ? 'ready' : 'unavailable', steps: null, message: '' });
-    if (up && this.core.current.autoPrepareLinks) void this.startPrepare(true);
   }
 
-  /**
-   * The preparation itself; see `prepare`. `healthKnown` is true when the
-   * service has just answered a check, so it is not asked again.
-   */
-  private async startPrepare(healthKnown: boolean): Promise<void> {
-    const embed = this.core.songs.embed;
-    const parts = this.core.parts;
-    const { phase } = this.core.store.state.prepare;
-    if (!embed || !parts || (phase !== 'ready' && phase !== 'failed')) return;
+  /** The adoption itself; see `adopt`. */
+  private async run(embed: YouTubeTransport, parts: SessionParts): Promise<void> {
     const attempt = this.beginAttempt(embed, 'prepare');
     const { signal } = attempt.controller;
     const client = this.serviceClient();
     try {
-      if (!healthKnown) {
-        this.setPrepare({ phase: 'checking', steps: null, message: '' });
-        // It may have stopped since the link loaded.
-        const up = await client.health(signal);
-        if (!this.isCurrent(attempt)) return;
-        if (!up) {
-          this.attempt = null;
-          this.setPrepare({ phase: 'unavailable', steps: null, message: '' });
-          this.core.store.setStatus(SERVICE_GONE_STATUS, 'warn');
-          return;
-        }
-      }
       this.setPrepare({ phase: 'preparing', steps: null, message: '' });
-      const outcome = await prepareLink(client, canonicalWatchUrl(embed.videoId), {
+      const outcome = await adoptHeldSong(client, heldSongId(embed.videoId), {
         signal,
         onSteps: (steps) => {
           if (this.isCurrent(attempt)) this.setPrepare({ phase: 'preparing', steps, message: '' });
@@ -284,13 +267,11 @@ export class PrepareController {
     }
   }
 
-  /** Ends the run with a reason the panel shows and Add again can retry. */
+  /** Ends the run with a reason the card shows; the next recording retries. */
   private failPrepare(attempt: PrepareAttempt, message: string): void {
     if (this.attempt === attempt) this.attempt = null;
     this.setPrepare({ phase: 'failed', steps: null, message });
-    // The card says it in plain words and arms the recording of the song's
-    // sound; the service's own text stays out of the status line.
-    this.core.songReference.downloadFailed(message);
+    this.core.store.setStatus(message, 'warn');
   }
 
   /** True while a take is being recorded, or is about to be. */

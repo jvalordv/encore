@@ -235,7 +235,7 @@ test('1. nothing from YouTube is fetched until a link is used, and the player pa
   expect(apiAttempts).toEqual([]);
   await expect(page.getByTestId('embed-region')).toBeHidden();
   await expect(page.getByTestId('dropzone')).toHaveText(
-    'Drop an mp3 here, click to choose one, or paste a YouTube link',
+    'Drop mp3 files here, or click to choose them',
   );
   expect(await page.locator('iframe').count()).toBe(0);
   expect(await page.locator('script[src*="youtube"]').count()).toBe(0);

@@ -98,6 +98,28 @@ export class LibraryController {
   }
 
   /**
+   * Adds a song that was dropped with others and not loaded, and marks what the
+   * service made for it (the row's Melody, Key and Backing badge). A song
+   * already in the Library keeps its title, favorite and play time; a flag set
+   * stays set.
+   */
+  noteDropped(song: LoadedSong, made: { stems: boolean; melody: boolean; key: boolean }): Promise<void> {
+    return this.mutate(async (store) => {
+      const existing = this.entries.find((e) => e.id === song.id);
+      // Never played, so it is not newest-played.
+      const base = existing ?? { ...entryAfterLoad(null, song, Date.now()), lastPlayedAt: null };
+      await this.save(store, [
+        {
+          ...base,
+          stems: base.stems || made.stems,
+          melody: base.melody || made.melody,
+          key: base.key || made.key,
+        },
+      ]);
+    });
+  }
+
+  /**
    * Marks the song in use once its stems, melody or key arrive, which is what
    * the row's Melody and Key badge says. A flag set stays set.
    */
@@ -117,17 +139,14 @@ export class LibraryController {
     });
   }
 
-  /** Counts the saved takes of each song for the list. */
+  /** Reads the summaries of every saved take for the rows (never the recordings). */
   private async refreshCounts(): Promise<void> {
     try {
       const all = await (await this.core.takesReady).list();
       const { activeId, legacyId } = this.core.store.state.profiles;
-      // Counts are the song's takes by anyone; stars and days are the active singer's.
-      const counts: Record<string, number> = {};
-      for (const take of all) {
-        if (take.kind === 'mic-check') continue;
-        counts[take.songHash] = (counts[take.songHash] ?? 0) + 1;
-      }
+      // The rows count and list these per song and per singer (song-takes.ts);
+      // stars and days below are the active singer's.
+      const songTakes = all.filter((take) => take.kind !== 'mic-check');
       const takes = takesOfProfile(all, activeId, legacyId);
       const stars: Record<string, number> = {};
       const measures: LibraryState['songStarMeasure'] = {};
@@ -135,7 +154,7 @@ export class LibraryController {
         stars[hash] = s.stars;
         measures[hash] = s.measure;
       }
-      this.set({ takeCounts: counts, songStars: stars, songStarMeasure: measures, daysSung: daysSung(takes) });
+      this.set({ takes: songTakes, songStars: stars, songStarMeasure: measures, daysSung: daysSung(takes) });
     } catch {
       // The count is a nicety; a take store that will not answer leaves it.
     }
@@ -213,6 +232,55 @@ export class LibraryController {
         ? this.core.songs.loadLink(`https://www.youtube.com/watch?v=${entry.videoId}`)
         : this.core.songs.loadStored(entry.id, entry.fileName ?? entry.title),
     );
+  }
+
+  /**
+   * Opens a take from the Library: loads its song (unless it is the song in
+   * use), then, in learning mode, shows the take's report card. In karaoke
+   * mode the song alone is loaded. True once the song is the one in use.
+   */
+  async openTake(songId: string, takeId: string): Promise<boolean> {
+    const loaded =
+      this.core.store.state.song?.hash === songId ? (this.setOpen(false), true) : await this.loadEntry(songId);
+    if (!loaded) return false;
+    const { mode, takes } = this.core.store.state;
+    if (mode === 'learning' && takes.some((t) => t.id === takeId && t.report)) {
+      this.core.scoring.showReport(takeId);
+    }
+    return true;
+  }
+
+  /**
+   * Replays a take from the Library. The replay lays the voice over its song
+   * (and over the video's own sound for a YouTube song), so it needs that song
+   * loaded; for another song this says so and leaves what is loaded alone.
+   */
+  async replayTake(takeId: string): Promise<void> {
+    const take = this.state.takes.find((t) => t.id === takeId);
+    if (!take) return;
+    if (take.songHash !== this.core.store.state.song?.hash) {
+      this.set({ notice: `Replay plays the take over its song. Press Open to load ${take.songName} first.` });
+      return;
+    }
+    this.set({ notice: '' });
+    await this.core.takes.playTake(takeId);
+  }
+
+  /** Deletes one take (any song's) and refreshes the counts. */
+  async deleteTake(takeId: string): Promise<void> {
+    const take = this.state.takes.find((t) => t.id === takeId);
+    if (!take) return;
+    if (take.songHash === this.core.store.state.song?.hash) {
+      await this.core.takes.deleteTake(takeId);
+    } else {
+      try {
+        await (await this.core.takesReady).remove(takeId);
+        this.core.store.setStatus('Take deleted.');
+      } catch (error) {
+        this.core.store.setStatus(`Could not delete the take: ${messageOf(error)}`, 'error');
+      }
+    }
+    await this.refreshCounts();
   }
 
   /** Loads an upload that only the service holds. */

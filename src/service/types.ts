@@ -103,11 +103,6 @@ export interface CaptureResponse extends SongStatus {
   message: string;
 }
 
-/** Body of `POST /songs/url`: the link, as the person pasted it. */
-export interface SongLinkRequest {
-  url: string;
-}
-
 /** Frame-by-frame pitch track: `f0_hz[i]` is at `t0_s + i * hop_s`. */
 export interface Contour {
   hop_s: number;

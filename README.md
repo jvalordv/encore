@@ -50,18 +50,17 @@ song panel's **Song reference** card says what Encore has for the song
 (melody: none, from this video, from the original; key: none, from the song,
 from your singing) and has one button, **Get the melody**. In learning mode a
 song with no melody opens the card with a question; "Do this for every song"
-turns on the Settings switch that skips the question. The button downloads the
-audio through the local service. When YouTube blocks the download (it often
-answers yt-dlp with a bot check), the card says so and Encore records the
-song's sound from this tab while you sing your first take instead: press
-Record (or Play), choose this tab in the share dialog with "Share tab audio"
-on, and let the song play through. The sound is recorded as PCM (no lossy
+turns on the Settings switch that skips the question (it arms the same
+recording for every song). Encore does not download the video: it records the
+song's sound from this tab while you sing your first take. Press Get the
+melody, then Record (or Play), choose this tab in the share dialog with "Share
+tab audio" on, and let the song play through. The sound is recorded as PCM (no lossy
 step), placed by the video's clock so ads, buffering and pauses add nothing,
 and sent to the local service, which prepares it like any linked song. Takes
 you sang before the melody arrived are scored again against it. It needs
-Chrome or Edge and the service. It is opt-in and in the same policy category
-as the download: it uses the video's audio beyond YouTube's player, and the
-README makes no claim that it complies. The Library marks each song with a
+Chrome or Edge and the service. It is opt-in and it still uses the video's
+audio beyond YouTube's player, and the README makes no claim that it
+complies. The Library marks each song with a
 **Melody**, **Key** or **Backing** badge. The end-to-end run opens the page with
 `?captureFake`, which swaps the tab share for a tone, since a headless browser
 cannot pick a tab.

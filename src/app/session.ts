@@ -11,8 +11,9 @@
  * src/app/session/, one per concern, sharing a SessionCore that holds the
  * store, the parts and the settings: songs and transports (songs.ts),
  * playback and loop (playback.ts), the service and prepared audio
- * (prepare.ts), the Song reference card's choice between download and
- * recording (song-reference.ts), the karaoke track from the service (stems.ts) and the mix of
+ * (prepare.ts), the Song reference card's recording of the song's sound
+ * (song-reference.ts), the songs dropped together and analysed up front
+ * (ingest.ts), the karaoke track from the service (stems.ts) and the mix of
  * its stems (mix.ts), the song search (search.ts), the Library and favorites
  * playlist (library.ts), the mic (input.ts), devices
  * and output (devices.ts), latency and calibration (latency.ts), takes
@@ -186,6 +187,7 @@ export class Session {
     this.core.devices.stop();
     this.core.takes.stopSolo();
     this.core.stems.reset();
+    this.core.ingest.dispose();
     this.core.search.dispose();
     this.core.songs.dispose();
     this.core.input.dispose();
@@ -209,21 +211,30 @@ export class Session {
     return this.core.songs.loadSong(file);
   }
 
+  /**
+   * Takes the audio files of a drop or a file choice: the first loads as the
+   * song, each goes to the Library, and the service analyses them one at a
+   * time. Files given while that runs join the end of the queue.
+   */
+  addSongs(files: readonly File[]): void {
+    this.core.ingest.addFiles(files);
+  }
+
   /** Loads a pasted YouTube link into the embedded player as the song. */
   loadLink(text: string): Promise<void> {
     return this.core.songs.loadLink(text);
   }
 
-  /** Has the service fetch the linked song's audio and switches to it. */
-  prepare(): Promise<void> {
+  /** Takes over the recording of the linked song that the service holds, and switches to it. */
+  adoptRecording(): Promise<void> {
     // The capture holds the song until it has been handed to the service.
     if (this.core.capture.busy) return Promise.resolve();
-    return this.core.prepare.prepare();
+    return this.core.prepare.adopt();
   }
 
   /**
-   * The Song reference card's one button: downloads the song, and if that
-   * fails records its sound during the first take instead.
+   * The Song reference card's one button: arms the recording of the song's
+   * sound for the first take.
    */
   getMelody(): Promise<void> {
     return this.core.songReference.getMelody();
@@ -258,11 +269,6 @@ export class Session {
   checkService(): void {
     this.core.prepare.checkService();
     this.core.stems.checkService();
-  }
-
-  /** Turns the automatic sending of a link to the service on or off. */
-  setAutoPrepareLinks(on: boolean): void {
-    this.core.prepare.setAutoPrepareLinks(on);
   }
 
   /** Chooses the original, the karaoke track, or the track with a vocal guide. */
@@ -369,15 +375,6 @@ export class Session {
   /** Searches for the original behind a karaoke video, as Originals. */
   findOriginal(video: Pick<SearchResult, 'title' | 'channel'>): void {
     this.core.search.findOriginal(video);
-  }
-
-  /**
-   * Takes a video as the original of the karaoke song in use: the service
-   * prepares it and aligns the karaoke song to its melody, so Strict scoring
-   * applies. The song in use stays the karaoke song.
-   */
-  useVideoAsOriginal(videoId: string): Promise<void> {
-    return this.core.align.useVideo(videoId);
   }
 
   /** Takes a prepared Library song as the original of the karaoke song in use. */
@@ -532,6 +529,21 @@ export class Session {
   /** Loads a Library entry as the song; true once it is the song. */
   loadLibraryEntry(id: string): Promise<boolean> {
     return this.core.library.loadEntry(id);
+  }
+
+  /** Loads a take's song and, in learning mode, shows the take's report. */
+  openLibraryTake(songId: string, takeId: string): Promise<boolean> {
+    return this.core.library.openTake(songId, takeId);
+  }
+
+  /** Replays a take from the Library (needs its song loaded). */
+  replayLibraryTake(takeId: string): Promise<void> {
+    return this.core.library.replayTake(takeId);
+  }
+
+  /** Deletes one take from the Library's list. */
+  deleteLibraryTake(takeId: string): Promise<void> {
+    return this.core.library.deleteTake(takeId);
   }
 
   /** Loads an upload that only the service holds. */

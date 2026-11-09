@@ -1,44 +1,46 @@
 /**
- * End-to-end proof of preparing a linked song for scoring, in real Chromium
+ * End-to-end proof of taking over a linked song's recording, in real Chromium
  * against the production bundle, with both YouTube and the Python service
  * replaced: Playwright serves a fake IFrame API (e2e/fake-youtube.ts) and a
  * stand-in for the service (e2e/fake-service.ts), and refuses every other
  * request to YouTube's hosts, so the run reaches neither. The stand-in serves
- * the song fixture as the "downloaded" audio.
+ * the song fixture as the audio of a recording the service already holds; a
+ * headless browser cannot share a tab, so the tests start from that point
+ * (`session.adoptRecording`, which is what the end of a recording calls;
+ * capture.spec.ts records for real, with a stand-in tone).
  * Covered: loading a link sends the service nothing but a health check, and
- * nothing at all for the link without a press of Get the melody; a service
- * that is not running disables the button with the reason and a pointer to the
- * README while the video plays, a return to the window finds the service once
- * it is started, and a press that finds it gone says so; Prepare shows the
+ * nothing at all for the link, however long the page waits; pressing Get the
+ * melody arms the recording of the song's sound and sends nothing either; a
+ * service that is not running disables the button with the reason and a
+ * pointer to the README while the video plays, and a return to the window
+ * finds the service once it is started; taking over the recording shows the
  * fetch queued, running and done, then makes the engine the active transport
- * with the video muted and following, at the position the video had; the app's
- * Play, seek and Pause drive the video; a take after the switch is filed under
- * the video's key on the engine clock with no embed offset; the video's own
- * Play, Pause and scrubbing, with or without a spell of buffering, reach the
- * engine, and not during a calibration; a video that drifts, or stalls and
- * falls behind, is moved to the engine and never the other way; a failed fetch,
- * a refused link and audio the cache lost say why and offer Add again; a take
- * being recorded holds the switch back; a new link or a file stops a
- * preparation under way; the automatic setting is off by default, saved, sends
- * a link as it loads and, with the service down at first, once it is back; a
- * loop set with A and B after the switch repeats on the engine and the video,
- * the video wrapping a moment before the sound never moves the sound, Stop
- * pauses the video at the start and clearing the loop clears it on the video
- * too; a pause pressed in the video just after the app's Play is put right by
- * the next check, with the sound playing on; a service check that a newer load
- * interrupts, and that then fails, is asked again, so Prepare is not offered on
- * a guess and a link waiting to be sent by itself still is; an audio context
- * that is slow to run (suspended, then a second or more to start) never lets
- * the video run ahead of the song unseen: the hand-over waits for the context,
- * so the position runs on across it without a step of half a second, a Play
- * pressed in the app starts the picture only once the sound's clock moves, and
- * a video played with its own button is joined by the sound, not pulled back.
+ * with the video muted and following, at the position the video had; the
+ * app's Play, seek and Pause drive the video; a take after the switch is filed
+ * under the video's key on the engine clock with no embed offset; the video's
+ * own Play, Pause and scrubbing, with or without a spell of buffering, reach
+ * the engine, and not during a calibration; a video that drifts, or stalls and
+ * falls behind, is moved to the engine and never the other way; a failed step,
+ * a song the service forgot and audio it lost say why; a take being recorded
+ * holds the switch back; a new link or a file stops a run under way; a loop
+ * set with A and B after the switch repeats on the engine and the video, the
+ * video wrapping a moment before the sound never moves the sound, Stop pauses
+ * the video at the start and clearing the loop clears it on the video too; a
+ * pause pressed in the video just after the app's Play is put right by the
+ * next check, with the sound playing on; a service check that a newer load
+ * interrupts, and that then fails, is asked again, so the melody is not
+ * offered on a guess; an audio context that is slow to run (suspended, then a
+ * second or more to start) never lets the video run ahead of the song unseen:
+ * the hand-over waits for the context, so the position runs on across it
+ * without a step of half a second, a Play pressed in the app starts the
+ * picture only once the sound's clock moves, and a video played with its own
+ * button is joined by the sound, not pulled back.
  * The tests share one page and run in order, each building on the state the
  * last left behind, except where one reloads the page to start clean.
  */
 import { expect, test } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
-import { BLOCKED_NOTE, DOWNLOAD_ERROR_NOTE } from '../src/app/song-reference';
+import { ARMED_NOTE } from '../src/app/song-reference';
 import type { AppState } from '../src/app/state';
 import { linkStatus, stepStatus, stubService } from './fake-service';
 import type { FakeService } from './fake-service';
@@ -60,14 +62,12 @@ const VIDEO = 'dQw4w9WgXcQ';
 const OTHER_VIDEO = 'aB3_x-Y9zQ0';
 const SONG_ID = `yt-${VIDEO}`;
 const LINK = `https://www.youtube.com/watch?v=${VIDEO}&list=PLignored`;
-/** What the service is given: the one form of the link it always takes. */
-const CANONICAL = `https://www.youtube.com/watch?v=${VIDEO}`;
 const TITLE = 'Fake Video Title';
 /** The fake video is 3:33 long; the audio the stand-in serves is 4 s. */
 const VIDEO_S = 213;
-const FETCH_ERROR = 'Download failed: ERROR: HTTP Error 403: Forbidden. Update yt-dlp (uv lock --upgrade-package yt-dlp).';
-const TOO_LONG = 'This video is 20 min long; the limit is 15 min (ENCORE_MAX_SONG_S).';
-const AUDIO_MISSING = 'The service has no audio for this song, even after adding it again.';
+const STEP_ERROR = 'Receiving the recording failed: the disk is full.';
+const AUDIO_MISSING = 'The service has no audio for this song.';
+const SONG_FORGOTTEN = 'The service no longer has this song.';
 
 let context: BrowserContext;
 let page: Page;
@@ -188,7 +188,7 @@ async function waitForPhase(phase: AppState['prepare']['phase'], timeout = 15_00
   });
 }
 
-/** Pastes the link and waits until Prepare is on offer. */
+/** Pastes the link and waits until Get the melody is on offer. */
 async function loadLink(link = LINK, id = VIDEO): Promise<void> {
   await pasteInto(page, link);
   await songIsVideo(id);
@@ -335,14 +335,24 @@ async function movesOfVideo(): Promise<Array<{ target: number; engine: number }>
   );
 }
 
+/**
+ * Has the app take over the recording the service holds, as the end of a
+ * recording does. It does not wait: the run may be held (a take in progress).
+ */
+async function adopt(): Promise<void> {
+  await page.evaluate(() => {
+    void window.encore!.session.adoptRecording();
+  });
+}
+
 const prepareButton = () => page.getByTestId('reference-get');
 const prepareSteps = () => page.getByTestId('reference-steps');
 const prepareNote = () => page.getByTestId('reference-note');
 const statusText = () => page.getByTestId('status-text');
 
-test('1. loading a link asks the service only whether it runs; nothing is sent for it without Prepare', async () => {
+test('1. loading a link asks the service only whether it runs; Get the melody arms a recording and sends nothing', async () => {
   await expect(page.getByTestId('song-reference')).toBeHidden();
-  await expect(page.getByTestId('auto-prepare')).not.toBeChecked();
+  await expect(page.getByTestId('auto-prepare')).toHaveCount(0);
   // Nothing at page load: the first question comes with a link.
   expect(service.requests).toEqual([]);
 
@@ -358,8 +368,9 @@ test('1. loading a link asks the service only whether it runs; nothing is sent f
   await expect(prepareButton()).toHaveText('Get the melody');
   await expect(prepareButton()).toBeEnabled();
   // The note says what pressing it does.
-  await expect(prepareNote()).toContainText('Downloads this video');
+  await expect(prepareNote()).toContainText("Records this video's sound");
   await expect(prepareNote()).toContainText('service/README.md');
+  await expect(prepareNote()).not.toContainText('ownload');
   await expect(prepareSteps()).toBeHidden();
   // Still the video's own clock, and the note says what preparing would add.
   const state = await appState();
@@ -367,10 +378,20 @@ test('1. loading a link asks the service only whether it runs; nothing is sent f
   expect(state.song).toEqual({ name: TITLE, durationS: VIDEO_S, hash: SONG_ID });
   await expect(page.getByTestId('embed-note')).toContainText('Get the melody');
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('encore.settings') ?? '{}'));
-  expect(saved.autoPrepareLinks ?? false).toBe(false);
+  expect(saved.autoPrepareLinks).toBeUndefined();
+
+  // Pressing the button arms the recording of the song's sound for the first
+  // take. Nothing is downloaded, and nothing leaves for the service.
+  await prepareButton().click();
+  await expect(prepareNote()).toHaveText(ARMED_NOTE);
+  await expect(statusText()).toHaveText(ARMED_NOTE);
+  expect((await appState()).songRef.armed).toBe(true);
+  await expect(prepareButton()).toBeHidden();
+  // Only the read-only question whether the service already holds this video.
+  expect(service.songRequests()).toEqual([{ method: 'GET', path: `/songs/yt-${VIDEO}` }]);
 });
 
-test('2. with the service not running Prepare is off, says why and points at the README, and the video still plays', async () => {
+test('2. with the service not running Get the melody is off, says why and points at the README, and the video still plays', async () => {
   await freshPage();
   service.up = false;
   await pasteInto(page, LINK);
@@ -400,19 +421,10 @@ test('2. with the service not running Prepare is off, says why and points at the
   await expect(prepareButton()).toBeEnabled();
   expect(service.songRequests()).toEqual([]);
 
-  // Stopped again after the check: pressing Prepare asks once more, finds it
-  // gone, says so, and sends the link nowhere.
-  service.up = false;
-  await prepareButton().click();
-  await waitForPhase('unavailable');
-  await expect(prepareButton()).toBeDisabled();
-  await expect(statusText()).toContainText('service/README.md');
-  expect((await appState()).status.kind).toBe('warn');
-  expect(service.songRequests()).toEqual([]);
-  await expectNetworkErrors(1);
+  expect((await appState()).songRef.armed).toBe(false);
 });
 
-test('3. Prepare shows the fetch queued, running and done, then the engine takes over and the video is muted', async () => {
+test('3. taking over the recording shows the fetch queued, running and done, then the engine takes over and the video is muted', async () => {
   // A video that has never played, cued 1.5 s in, so the switch has a position
   // to carry.
   await freshPage();
@@ -420,10 +432,10 @@ test('3. Prepare shows the fetch queued, running and done, then the engine takes
   await seekTo(1.5);
   expect((await fakeHandle(0)).calls).toEqual(['cue:1.5']);
 
-  await prepareButton().click();
+  await adopt();
   await expect(prepareButton()).toBeDisabled();
   await expect(prepareSteps()).toHaveText('Fetching audio: waiting');
-  expect(service.songRequests()[0]).toEqual({ method: 'POST', path: '/songs/url', body: { url: CANONICAL } });
+  expect(service.songRequests()[0]).toEqual({ method: 'GET', path: `/songs/${SONG_ID}` });
 
   service.status = linkStatus(VIDEO, stepStatus('running', 0.45));
   await expect(prepareSteps()).toHaveText('Fetching audio 45%');
@@ -455,8 +467,8 @@ test('3. Prepare shows the fetch queued, running and done, then the engine takes
   await expect(page.getByTestId('embed-note')).toBeHidden();
   await expect(page.getByTestId('embed-offset')).toBeHidden();
   await expect(page.getByTestId('song-title')).toHaveText(TITLE);
-  // Exactly the calls a prepare is: the link, the status, the audio.
-  expect(service.count('POST', '/songs/url')).toBe(1);
+  // Exactly the calls it is: the status and the audio. The link is never sent.
+  expect(service.count('POST', '/songs/url')).toBe(0);
   // Polled through running to done, then the audio fetched once.
   expect(service.count('GET', `/songs/${SONG_ID}`)).toBeGreaterThanOrEqual(2);
   expect(service.count('GET', `/songs/${SONG_ID}/audio`)).toBe(1);
@@ -638,29 +650,20 @@ test('9. a video that stalls falls behind and is caught up, and the sound is nev
   await page.waitForFunction(() => window.encore!.store.state.player === 'paused');
 });
 
-test('10. a failed fetch says the download was blocked, keeps the step\'s error under Details, and Get the melody asks again', async () => {
+test('10. a failed step shows the service\'s reason, the video carries on, and taking over again retries', async () => {
   await freshPage();
   await loadLink();
-  service.status = linkStatus(VIDEO, stepStatus('failed', 0.3, FETCH_ERROR));
-  await prepareButton().click();
+  service.status = linkStatus(VIDEO, stepStatus('failed', 0.3, STEP_ERROR));
+  await adopt();
   await waitForPhase('failed');
 
-  // The main text is plain; the service's own words sit under Details.
-  await expect(prepareNote()).toHaveText(BLOCKED_NOTE);
-  await expect(page.getByTestId('reference-details-text')).toHaveText(FETCH_ERROR);
+  // The step's own words are the note, and the status line says them too.
+  await expect(prepareNote()).toHaveText(STEP_ERROR);
   await expect(prepareButton()).toHaveText('Get the melody');
   await expect(prepareButton()).toBeEnabled();
-  await expect(statusText()).toHaveText(BLOCKED_NOTE);
+  await expect(statusText()).toHaveText(STEP_ERROR);
   expect((await appState()).status.kind).toBe('warn');
-  expect(service.count('POST', '/songs/url')).toBe(1);
-  // The recording of the song's sound is armed for the next Play or Record
-  // (capture.spec.ts follows it). A headless browser cannot answer the share
-  // prompt, so it is put down here and the video's own Play is checked.
-  expect((await appState()).songRef.armed).toBe(true);
-  await page.evaluate(() => {
-    const { store } = window.encore!;
-    store.patch({ songRef: { ...store.state.songRef, armed: false } });
-  });
+  expect(service.count('POST', '/songs/url')).toBe(0);
   // The video carries on as it was.
   const state = await appState();
   expect(state.clock).toBe('embed');
@@ -670,53 +673,40 @@ test('10. a failed fetch says the download was blocked, keeps the step\'s error 
   await page.getByTestId('play').click();
   await page.waitForFunction(() => window.encore!.store.state.player === 'paused');
 
-  // The fault is cured; adding again sends the link once more and prepares it.
+  // The fault is cured; taking over again reads the song once more.
   service.status = linkStatus(VIDEO, stepStatus('done', 1));
-  await prepareButton().click();
+  await adopt();
   await waitForPhase('prepared');
-  expect(service.count('POST', '/songs/url')).toBe(2);
   expect((await appState()).clock).toBe('engine');
 });
 
-test('11. a refused link shows the service\'s reason and can be added again', async () => {
+test('11. a song the service has forgotten says so, and the video carries on', async () => {
   await freshPage();
   await loadLink();
-  service.create = { status: 422, detail: TOO_LONG };
-  await prepareButton().click();
+  service.status = { status: 404, detail: 'No such song.' };
+  await adopt();
   await waitForPhase('failed');
-  await expect(prepareNote()).toHaveText(DOWNLOAD_ERROR_NOTE);
-  await expect(page.getByTestId('reference-details-text')).toHaveText(TOO_LONG);
+  await expect(prepareNote()).toHaveText(SONG_FORGOTTEN);
   await expect(prepareButton()).toHaveText('Get the melody');
-  // Refused when added: there was nothing to ask about.
-  expect(service.songRequests().map((r) => r.method)).toEqual(['POST']);
+  // Only the status was asked for: there was nothing to fetch.
+  expect(service.songRequests().map((r) => r.method)).toEqual(['GET']);
   expect((await appState()).clock).toBe('embed');
   await expectNetworkErrors(1);
 });
 
-test('12. audio the cache lost is asked for again once, and reported if it is still gone', async () => {
+test('12. audio the service has lost is reported at once, and not asked for again', async () => {
   await freshPage();
   await loadLink();
-  service.create = linkStatus(VIDEO, stepStatus('done', 1));
-  service.audio = [409, 'ok'];
-  await prepareButton().click();
-  await waitForPhase('prepared');
-  expect(service.count('POST', '/songs/url')).toBe(2);
-  expect(service.count('GET', `/songs/${SONG_ID}/audio`)).toBe(2);
-  await expectNetworkErrors(1);
-
-  await freshPage();
-  await loadLink();
-  service.create = linkStatus(VIDEO, stepStatus('done', 1));
-  service.audio = [409, 409];
-  await prepareButton().click();
+  service.status = linkStatus(VIDEO, stepStatus('done', 1));
+  service.audio = [409];
+  await adopt();
   await waitForPhase('failed');
-  await expect(prepareNote()).toHaveText(DOWNLOAD_ERROR_NOTE);
-  await expect(page.getByTestId('reference-details-text')).toHaveText(AUDIO_MISSING);
+  await expect(prepareNote()).toHaveText(AUDIO_MISSING);
   await expect(prepareButton()).toHaveText('Get the melody');
-  expect(service.count('POST', '/songs/url')).toBe(2);
-  expect(service.count('GET', `/songs/${SONG_ID}/audio`)).toBe(2);
+  expect(service.count('GET', `/songs/${SONG_ID}/audio`)).toBe(1);
+  expect(service.count('POST', '/songs/url')).toBe(0);
   expect((await appState()).clock).toBe('embed');
-  await expectNetworkErrors(2);
+  await expectNetworkErrors(1);
 });
 
 test('13. a take being recorded on the video holds the switch back until it ends', async () => {
@@ -725,11 +715,11 @@ test('13. a take being recorded on the video holds the switch back until it ends
   await freshPage();
   await loadLink();
   await openFakeMic();
-  service.create = linkStatus(VIDEO, stepStatus('done', 1));
+  service.status = linkStatus(VIDEO, stepStatus('done', 1));
 
   await page.getByTestId('record').click();
   await page.waitForFunction(() => window.encore!.store.state.recording === true, undefined, { timeout: 10_000 });
-  await prepareButton().click();
+  await adopt();
   await waitForPhase('waiting');
   await expect(prepareNote()).toContainText('Prepared; switching after this take');
   // Held: still the video's clock and still recording, well after the audio
@@ -761,16 +751,15 @@ test('13. a take being recorded on the video holds the switch back until it ends
   await expect(page.locator('[data-testid="take-item"][data-clock="embed"]')).toHaveCount(1);
 });
 
-test('14. a new link or a dropped file stops a preparation under way: no more polling, nothing switches', async () => {
+test('14. a new link or a dropped file stops a run under way: no more polling, nothing switches', async () => {
   await freshPage();
   await loadLink();
   service.status = linkStatus(VIDEO, stepStatus('running', 0.3));
-  await prepareButton().click();
+  await adopt();
   await expect(prepareSteps()).toHaveText('Fetching audio 30%');
 
   // A newer link wins. The old song stops being asked about, and the new one
-  // is offered Prepare afresh, with nothing sent for it.
-  service.create = linkStatus(OTHER_VIDEO, stepStatus('queued'));
+  // is offered Get the melody afresh, with nothing sent for it.
   service.status = linkStatus(OTHER_VIDEO, stepStatus('queued'));
   await pasteInto(page, `https://youtu.be/${OTHER_VIDEO}`);
   await songIsVideo(OTHER_VIDEO);
@@ -787,7 +776,7 @@ test('14. a new link or a dropped file stops a preparation under way: no more po
 
   // A dropped file wins as well: the panel goes, and so does the video.
   service.status = linkStatus(OTHER_VIDEO, stepStatus('running', 0.2));
-  await prepareButton().click();
+  await adopt();
   await expect(prepareSteps()).toHaveText('Fetching audio 20%');
   await page.getByTestId('song-input').setInputFiles(SONG_FILE);
   await page.waitForFunction(
@@ -804,52 +793,6 @@ test('14. a new link or a dropped file stops a preparation under way: no more po
   expect(await page.locator('iframe').count()).toBe(0);
 });
 
-test('15. the automatic setting is off by default, is saved, and sends a link as it loads', async () => {
-  await freshPage();
-  const box = page.getByTestId('auto-prepare');
-  await expect(box).not.toBeChecked();
-  await expect(page.locator('label[for="auto-prepare"]')).toHaveText(
-    'Download YouTube audio as soon as a link loads, in any mode (this downloads the audio; see service/README.md)',
-  );
-  await box.check();
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('encore.settings') ?? '{}').autoPrepareLinks)).toBe(true);
-
-  service.status = linkStatus(VIDEO, stepStatus('done', 1));
-  await pasteInto(page, LINK);
-  // No press of Prepare: the link goes to the service by itself, once.
-  await waitForPhase('prepared');
-  expect(service.count('POST', '/songs/url')).toBe(1);
-  expect((await appState()).clock).toBe('engine');
-  expect((await fakeHandle(0)).muted).toBe(true);
-
-  // A link that loads while the service is down is sent once it is back and
-  // the window is returned to, since the person asked for that.
-  await freshPage();
-  await expect(box).toBeChecked();
-  service.up = false;
-  service.status = linkStatus(VIDEO, stepStatus('done', 1));
-  await pasteInto(page, LINK);
-  await songIsVideo(VIDEO);
-  await waitForPhase('unavailable');
-  expect(service.songRequests()).toEqual([]);
-  service.up = true;
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await waitForPhase('prepared');
-  expect(service.count('POST', '/songs/url')).toBe(1);
-  await expectNetworkErrors(1);
-
-  // Saved across a reload, and turned off again the same way.
-  await page.reload();
-  await page.waitForFunction(() => window.encore !== undefined);
-  await expect(box).toBeChecked();
-  await box.uncheck();
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('encore.settings') ?? '{}').autoPrepareLinks)).toBe(false);
-  service.reset(VIDEO);
-  await loadLink();
-  await page.waitForTimeout(1200);
-  expect(service.songRequests()).toEqual([]);
-});
-
 /** The first fake player as the page holds it, for the steps that drive it. */
 interface PageFake {
   state: number;
@@ -861,8 +804,8 @@ interface PageFake {
 test('16. a loop set after the switch repeats on the engine and the video, and a video that wraps first never moves the sound', async () => {
   await freshPage();
   await loadLink();
-  service.create = linkStatus(VIDEO, stepStatus('done', 1));
-  await prepareButton().click();
+  service.status = linkStatus(VIDEO, stepStatus('done', 1));
+  await adopt();
   await waitForPhase('prepared');
 
   // A and B on the engine's clock: 1 s to 3 s of its 4 s. The video has no
@@ -995,9 +938,9 @@ test('17. a pause pressed in the video just after the app\'s Play is put right b
 /** A file that is called audio and is not, so that loading it fails. */
 const NOT_AUDIO = { name: 'bad.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('this is not audio') };
 
-test('18. a service check not yet answered when a newer load fails is asked again: Prepare waits for the answer and an automatic send is not lost', async () => {
+test('18. a service check not yet answered when a newer load fails is asked again: Get the melody waits for the answer', async () => {
   await freshPage();
-  let answer = service.holdHealth();
+  const answer = service.holdHealth();
   await pasteInto(page, LINK);
   await songIsVideo(VIDEO);
   await waitForPhase('checking');
@@ -1007,7 +950,7 @@ test('18. a service check not yet answered when a newer load fails is asked agai
   await page.getByTestId('song-input').setInputFiles(NOT_AUDIO);
   await expect(statusText()).toContainText('bad.mp3');
   expect((await appState()).clock).toBe('embed');
-  // Nothing has said that the service runs, so Prepare is still off, and the
+  // Nothing has said that the service runs, so the button is still off, and the
   // question was put again rather than taken for a yes.
   await expect.poll(() => service.count('GET', '/health')).toBe(2);
   expect((await appState()).prepare.phase).toBe('checking');
@@ -1016,26 +959,8 @@ test('18. a service check not yet answered when a newer load fails is asked agai
   await waitForPhase('ready');
   await expect(prepareButton()).toBeEnabled();
   expect(service.songRequests()).toEqual([]);
-
-  // With the automatic setting on, the link that was waiting for that answer
-  // is sent when it comes, though a newer load came and failed meanwhile.
-  await page.getByTestId('auto-prepare').check();
-  await freshPage();
-  answer = service.holdHealth();
-  service.create = linkStatus(VIDEO, stepStatus('done', 1));
-  await pasteInto(page, LINK);
-  await songIsVideo(VIDEO);
-  await waitForPhase('checking');
-  await page.getByTestId('song-input').setInputFiles(NOT_AUDIO);
-  await expect(statusText()).toContainText('bad.mp3');
-  expect(service.songRequests()).toEqual([]);
-  answer();
-  await waitForPhase('prepared');
-  expect(service.count('POST', '/songs/url')).toBe(1);
-  expect((await appState()).clock).toBe('engine');
-
-  // The default again, for whatever runs next.
-  await page.getByTestId('auto-prepare').uncheck();
+  // The file that would not play is named under the drop zone, and is no song.
+  await expect(page.getByTestId('ingest-problems')).toContainText('bad.mp3: It could not be read as audio.');
 });
 
 /** Waits until the engine's own clock has reached `positionS` in the song. */
@@ -1049,15 +974,15 @@ async function waitForEngineAt(positionS: number): Promise<void> {
 test('19. a slow audio context is waited for before the song is handed over, so the position runs on across the switch without a step', async () => {
   await freshPage();
   await loadLink();
-  service.create = linkStatus(VIDEO, stepStatus('done', 1));
-  // The video is playing, as it is when Prepare is pressed.
+  service.status = linkStatus(VIDEO, stepStatus('done', 1));
+  // The video is playing, as it is when the recording has been taken over.
   await page.getByTestId('play').click();
   await page.waitForFunction(() => window.encore!.store.state.player === 'playing');
   // The context has been let go, and takes 0.9 s to run again.
   await suspendContext(900);
   const callsBefore = (await fakeHandle(0)).calls.length;
   await startSampling();
-  await prepareButton().click();
+  await adopt();
   await waitForPhase('prepared');
   const handedOverAt = (await appState()).positionS;
   // Handed over with the context running, so the engine's clock moves from the
@@ -1089,8 +1014,8 @@ test('19. a slow audio context is waited for before the song is handed over, so 
 test('20. Play beside a slow audio context holds the video until the sound runs, then keeps it beside the sound', async () => {
   await freshPage();
   await loadLink();
-  service.create = linkStatus(VIDEO, stepStatus('done', 1));
-  await prepareButton().click();
+  service.status = linkStatus(VIDEO, stepStatus('done', 1));
+  await adopt();
   await waitForPhase('prepared');
   await seekTo(0.2);
   // Past the echo of the seek the app just sent the video.
@@ -1145,8 +1070,8 @@ test('20. Play beside a slow audio context holds the video until the sound runs,
 test('21. a video played with its own button beside a slow audio context is joined by the sound, not pulled back to it', async () => {
   await freshPage();
   await loadLink();
-  service.create = linkStatus(VIDEO, stepStatus('done', 1));
-  await prepareButton().click();
+  service.status = linkStatus(VIDEO, stepStatus('done', 1));
+  await adopt();
   await waitForPhase('prepared');
   await seekTo(0.2);
   // Past the echo of the seek the app just sent the video.

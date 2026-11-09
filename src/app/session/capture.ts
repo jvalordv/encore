@@ -3,11 +3,11 @@
  * (src/app/capture.ts) from the tab recorder (src/audio/tab-capture.ts): asks
  * for the share, records the video as it plays once, and on its end (or the
  * singer's Stop, with most of it heard) uploads the WAV to the service and
- * then runs the ordinary prepared-link flow, which finds the song the service
- * now holds and brings in its melody and key. Opt-in: nothing here runs until
- * `start` is called, which the song reference controller does on the Play or
- * Record press that follows a failed download. The mic is untouched; the
- * capture is the tab's own output.
+ * then takes the song the service now holds over (session/prepare.ts), which
+ * brings in its melody and key. Opt-in: nothing here runs until `start` is
+ * called, which the song reference controller does on the Play or Record press
+ * that follows Get the melody. The mic is untouched; the capture is the tab's
+ * own output.
  */
 import { PcmCapture } from '../../audio/capture';
 import { tabShareSupported, TabCapture, displayTabSource } from '../../audio/tab-capture';
@@ -201,12 +201,13 @@ export class CaptureController {
         return;
       }
       this.send({ type: 'uploaded' });
-      // The song is the service's now; this is the flow a pasted link takes.
+      // The song is the service's now: its audio comes back and takes over.
       this.end(run);
-      await this.core.prepare.prepare();
+      await this.core.prepare.adopt();
       const { prepare } = store.state;
       if (prepare.phase === 'prepared') {
-        // A capture kept beside a download did not become the song's audio.
+        // A capture the service kept beside audio it already had did not become
+        // the song's audio.
         this.send({ type: 'prepared', note: stored.alongside ? stored.message : '' });
       }
       else if (prepare.phase === 'failed') this.send({ type: 'fail', message: prepare.message });

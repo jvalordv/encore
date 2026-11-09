@@ -1,12 +1,12 @@
 /**
- * Tests for the preparing of a linked song, apart from the Session. The wording
- * of its steps is checked as tables (one step as a line, the progress lines;
- * the card that shows them is tested in song-reference.test.ts). `prepareLink` is then run against a stub client: a cold link
- * polled through queued, running and done; a cache hit that needs no polling; a
- * failed step with its own error; the service's refusals, a service that stops
- * answering and a song it forgot; the audio that has gone, which is asked for
- * again once and then reported; and a stop through the signal at each stage,
- * which is never a failure.
+ * Tests for taking over a linked song's recording, apart from the Session. The
+ * wording of its steps is checked as tables (one step as a line, the progress
+ * lines; the card that shows them is tested in song-reference.test.ts).
+ * `adoptHeldSong` is then run against a stub client: a song polled through
+ * queued, running and done; one that needs no polling; a failed step with its
+ * own error; a service that stops answering and a song it forgot; audio that
+ * has gone, which is reported at once; and a stop through the signal at each
+ * stage, which is never a failure.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -14,12 +14,12 @@ import {
   AUDIO_MISSING,
   SERVICE_STOPPED,
   SONG_FORGOTTEN,
-  canonicalWatchUrl,
   describeFailure,
   describeServiceError,
   describeStep,
-  prepareLink,
+  heldSongId,
   stepLines,
+  adoptHeldSong,
 } from '../src/app/prepare';
 import type { PrepareClient, PrepareHooks, PrepareOutcome } from '../src/app/prepare';
 import { ServiceError } from '../src/service/client';
@@ -27,7 +27,6 @@ import type { PollOptions, PollOutcome } from '../src/service/client';
 import type { SongStatus, SongSteps, StepName, StepState, StepStatus } from '../src/service/types';
 
 const ID = 'yt-dQw4w9WgXcQ';
-const LINK = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 
 function step(state: StepState = 'queued', progress = 0, extra: Partial<StepStatus> = {}): StepStatus {
   return { state, progress, error: null, detail: null, ...extra };
@@ -41,9 +40,9 @@ function song(fetchStep: StepStatus, others: Partial<SongSteps> = {}): SongStatu
   return { song_id: ID, title: 'Some Video', duration_s: 213, source: 'youtube', steps: steps(fetchStep, others) };
 }
 
-describe('canonicalWatchUrl', () => {
-  it('is the one form the service always takes', () => {
-    expect(canonicalWatchUrl('dQw4w9WgXcQ')).toBe(LINK);
+describe('heldSongId', () => {
+  it('is the id the service files a recorded video under', () => {
+    expect(heldSongId('dQw4w9WgXcQ')).toBe(ID);
   });
 });
 
@@ -109,10 +108,10 @@ describe('describeFailure and describeServiceError', () => {
     const withError = song(step('failed', 0, { error: 'Download failed: x' }));
     expect(describeFailure(withError, 'fetch')).toBe('Download failed: x');
     expect(describeFailure(song(step('failed')), 'fetch')).toBe(
-      'Fetching audio failed. Add the song again to retry.',
+      'Fetching audio failed.',
     );
     const later = song(step('done', 1), { lyrics: step('failed', 0, { error: '  ' }) });
-    expect(describeFailure(later, 'lyrics')).toBe('Finding the lyrics failed. Add the song again to retry.');
+    expect(describeFailure(later, 'lyrics')).toBe('Finding the lyrics failed.');
   });
 
   it('tells what each failed call means for the person', () => {
@@ -137,7 +136,7 @@ describe('describeFailure and describeServiceError', () => {
 
 /** What a stub client is told to do, call by call. */
 interface Script {
-  create: Array<SongStatus | Error>;
+  get: Array<SongStatus | Error>;
   poll?: Array<{ updates?: SongStatus[]; outcome: PollOutcome } | Error>;
   audio?: Array<ArrayBuffer | Error>;
 }
@@ -148,9 +147,9 @@ class StubClient implements PrepareClient {
   readonly pollSignals: Array<AbortSignal | undefined> = [];
   constructor(private readonly script: Script) {}
 
-  async createSongFromUrl(url: string): Promise<SongStatus> {
-    this.calls.push(`create:${url}`);
-    return this.take(this.script.create, 'create');
+  async getSong(id: string): Promise<SongStatus> {
+    this.calls.push(`get:${id}`);
+    return this.take(this.script.get, 'get');
   }
   async pollSong(id: string, options: PollOptions = {}): Promise<PollOutcome> {
     this.calls.push(`poll:${id}`);
@@ -177,7 +176,7 @@ function abortError(): Error {
   return new DOMException('The call was aborted.', 'AbortError');
 }
 
-/** Runs prepareLink and records what it reported on the way. */
+/** Runs adoptHeldSong and records what it reported on the way. */
 async function run(client: PrepareClient, controller = new AbortController()) {
   const seen: Array<{ kind: 'steps' | 'loading'; steps: SongSteps }> = [];
   const hooks: PrepareHooks = {
@@ -185,34 +184,34 @@ async function run(client: PrepareClient, controller = new AbortController()) {
     onSteps: (s) => seen.push({ kind: 'steps', steps: s }),
     onLoading: (s) => seen.push({ kind: 'loading', steps: s }),
   };
-  const outcome: PrepareOutcome = await prepareLink(client, LINK, hooks);
+  const outcome: PrepareOutcome = await adoptHeldSong(client, ID, hooks);
   return { outcome, seen };
 }
 
-describe('prepareLink', () => {
-  it('adds a new link, follows the fetch through queued, running and done, and brings back the audio', async () => {
+describe('adoptHeldSong', () => {
+  it('reads the song, follows the fetch through queued, running and done, and brings back the audio', async () => {
     const queued = song(step('queued'));
     const half = song(step('running', 0.45));
     const done = song(step('done', 1));
     const client = new StubClient({
-      create: [queued],
+      get: [queued],
       poll: [{ updates: [song(step('running', 0.2)), half, done], outcome: { kind: 'fetched', status: done } }],
       audio: [BYTES],
     });
     const { outcome, seen } = await run(client);
     expect(outcome).toEqual({ kind: 'audio', bytes: BYTES, status: done });
-    expect(client.calls).toEqual([`create:${LINK}`, `poll:${ID}`, `audio:${ID}`]);
+    expect(client.calls).toEqual([`get:${ID}`, `poll:${ID}`, `audio:${ID}`]);
     expect(seen.map((s) => s.kind)).toEqual(['steps', 'steps', 'steps', 'steps', 'loading']);
     expect(seen.map((s) => s.steps.fetch.state)).toEqual(['queued', 'running', 'running', 'done', 'done']);
     expect(seen[2].steps.fetch.progress).toBe(0.45);
   });
 
-  it('does not poll a link the service already has, and goes straight for the audio', async () => {
+  it('does not poll a song whose fetch is done, and goes straight for the audio', async () => {
     const done = song(step('done', 1));
-    const client = new StubClient({ create: [done], audio: [BYTES] });
+    const client = new StubClient({ get: [done], audio: [BYTES] });
     const { outcome, seen } = await run(client);
     expect(outcome).toMatchObject({ kind: 'audio' });
-    expect(client.calls).toEqual([`create:${LINK}`, `audio:${ID}`]);
+    expect(client.calls).toEqual([`get:${ID}`, `audio:${ID}`]);
     expect(seen.map((s) => s.kind)).toEqual(['steps', 'loading']);
   });
 
@@ -220,7 +219,7 @@ describe('prepareLink', () => {
     const controller = new AbortController();
     const done = song(step('done', 1));
     const client = new StubClient({
-      create: [song(step('queued'))],
+      get: [song(step('queued'))],
       poll: [{ outcome: { kind: 'fetched', status: done } }],
       audio: [BYTES],
     });
@@ -231,136 +230,111 @@ describe('prepareLink', () => {
   it('ends with the step\'s own error when the fetch fails, and asks for no audio', async () => {
     const failed = song(step('failed', 0.3, { error: 'Download failed: HTTP Error 403. Update yt-dlp.' }));
     const client = new StubClient({
-      create: [song(step('queued'))],
+      get: [song(step('queued'))],
       poll: [{ outcome: { kind: 'failed', status: failed, step: 'fetch' } }],
     });
     const { outcome } = await run(client);
     expect(outcome).toEqual({ kind: 'failed', message: 'Download failed: HTTP Error 403. Update yt-dlp.' });
-    expect(client.calls).toEqual([`create:${LINK}`, `poll:${ID}`]);
+    expect(client.calls).toEqual([`get:${ID}`, `poll:${ID}`]);
   });
 
-  it('ends at once when the status that comes back from adding the link has failed already', async () => {
-    const failed = song(step('failed', 0, { error: 'Interrupted by a restart. Add the song again to retry.' }));
-    const client = new StubClient({ create: [failed] });
+  it('ends at once when the status that comes back has failed already', async () => {
+    const failed = song(step('failed', 0, { error: 'Interrupted by a restart.' }));
+    const client = new StubClient({ get: [failed] });
     const { outcome } = await run(client);
     expect(outcome).toEqual({
       kind: 'failed',
-      message: 'Interrupted by a restart. Add the song again to retry.',
+      message: 'Interrupted by a restart.',
     });
-    expect(client.calls).toEqual([`create:${LINK}`]);
+    expect(client.calls).toEqual([`get:${ID}`]);
   });
 
   it('names the step when it failed without saying why', async () => {
-    const client = new StubClient({ create: [song(step('failed'))] });
+    const client = new StubClient({ get: [song(step('failed'))] });
     expect((await run(client)).outcome).toEqual({
       kind: 'failed',
-      message: 'Fetching audio failed. Add the song again to retry.',
+      message: 'Fetching audio failed.',
     });
   });
 
-  it('reports the service\'s refusal of the link in its own words', async () => {
-    const detail = 'Live streams and premieres cannot be practised; pick a finished video.';
-    const client = new StubClient({ create: [new ServiceError('rejected', detail, 422)] });
+  it('reports the service\'s refusal in its own words', async () => {
+    const detail = 'The service refused the request (HTTP 422).';
+    const client = new StubClient({ get: [new ServiceError('rejected', detail, 422)] });
     expect((await run(client)).outcome).toEqual({ kind: 'failed', message: detail });
-    const yt = 'YouTube lookup failed: Video unavailable. Update yt-dlp: uv lock --upgrade-package yt-dlp';
-    const lookup = new StubClient({ create: [new ServiceError('rejected', yt, 502)] });
-    expect((await run(lookup)).outcome).toEqual({ kind: 'failed', message: yt });
   });
 
   it('says the service stopped when it stops answering at any stage', async () => {
     const down = (): ServiceError => new ServiceError('unreachable', 'The service did not answer.');
-    const atCreate = new StubClient({ create: [down()] });
+    const atCreate = new StubClient({ get: [down()] });
     expect((await run(atCreate)).outcome).toEqual({ kind: 'failed', message: SERVICE_STOPPED });
-    const atPoll = new StubClient({ create: [song(step('queued'))], poll: [down()] });
+    const atPoll = new StubClient({ get: [song(step('queued'))], poll: [down()] });
     expect((await run(atPoll)).outcome).toEqual({ kind: 'failed', message: SERVICE_STOPPED });
-    const atAudio = new StubClient({ create: [song(step('done', 1))], audio: [down()] });
+    const atAudio = new StubClient({ get: [song(step('done', 1))], audio: [down()] });
     expect((await run(atAudio)).outcome).toEqual({ kind: 'failed', message: SERVICE_STOPPED });
   });
 
   it('says so when the service has forgotten the song', async () => {
     const client = new StubClient({
-      create: [song(step('queued'))],
+      get: [song(step('queued'))],
       poll: [new ServiceError('not-found', 'x', 404)],
     });
     expect((await run(client)).outcome).toEqual({ kind: 'failed', message: SONG_FORGOTTEN });
   });
 
-  it('adds the link again once when the service says the audio is gone, then fetches it', async () => {
-    const lost = new ServiceError('not-fetched', 'x', 409);
+  it('reports the audio as missing, at once, when the service says it is gone', async () => {
     const done = song(step('done', 1));
     const client = new StubClient({
-      create: [done, song(step('queued'))],
-      poll: [{ outcome: { kind: 'fetched', status: done } }],
-      audio: [lost, BYTES],
-    });
-    const { outcome } = await run(client);
-    expect(outcome).toEqual({ kind: 'audio', bytes: BYTES, status: done });
-    expect(client.calls).toEqual([
-      `create:${LINK}`,
-      `audio:${ID}`,
-      `create:${LINK}`,
-      `poll:${ID}`,
-      `audio:${ID}`,
-    ]);
-  });
-
-  it('reports the audio as missing, after one more try and no more, when it is still gone', async () => {
-    const lost = (): ServiceError => new ServiceError('not-fetched', 'x', 409);
-    const done = song(step('done', 1));
-    const client = new StubClient({
-      create: [done, done],
-      audio: [lost(), lost(), BYTES],
+      get: [done],
+      audio: [new ServiceError('not-fetched', 'x', 409), BYTES],
     });
     const { outcome } = await run(client);
     expect(outcome).toEqual({ kind: 'failed', message: AUDIO_MISSING });
-    expect(client.calls.filter((call) => call.startsWith('create:'))).toHaveLength(2);
-    expect(client.calls.filter((call) => call.startsWith('audio:'))).toHaveLength(2);
+    expect(client.calls).toEqual([`get:${ID}`, `audio:${ID}`]);
   });
 
-  it('does not add the link again for any other failure of the audio', async () => {
+  it('reports any other failure of the audio in the service\'s words', async () => {
     const client = new StubClient({
-      create: [song(step('done', 1))],
+      get: [song(step('done', 1))],
       audio: [new ServiceError('unexpected', 'The service answered with an error (HTTP 500).', 500)],
     });
     expect((await run(client)).outcome).toEqual({
       kind: 'failed',
       message: 'The service answered with an error (HTTP 500).',
     });
-    expect(client.calls.filter((call) => call.startsWith('create:'))).toHaveLength(1);
   });
 
   it('is aborted, not failed, when the signal stops it before it starts', async () => {
     const controller = new AbortController();
     controller.abort();
-    const client = new StubClient({ create: [abortError()] });
+    const client = new StubClient({ get: [abortError()] });
     expect((await run(client, controller)).outcome).toEqual({ kind: 'aborted' });
   });
 
   it('is aborted when the poll was stopped, and asks for no audio', async () => {
     const client = new StubClient({
-      create: [song(step('queued'))],
+      get: [song(step('queued'))],
       poll: [{ outcome: { kind: 'aborted' } }],
     });
     const { outcome } = await run(client);
     expect(outcome).toEqual({ kind: 'aborted' });
-    expect(client.calls).toEqual([`create:${LINK}`, `poll:${ID}`]);
+    expect(client.calls).toEqual([`get:${ID}`, `poll:${ID}`]);
   });
 
   it('is aborted when the signal stops the audio download', async () => {
-    const client = new StubClient({ create: [song(step('done', 1))], audio: [abortError()] });
+    const client = new StubClient({ get: [song(step('done', 1))], audio: [abortError()] });
     expect((await run(client)).outcome).toEqual({ kind: 'aborted' });
   });
 
   it('is aborted, whatever the stub throws, once the signal has been aborted', async () => {
     const controller = new AbortController();
-    const client = new StubClient({ create: [new Error('something else')] });
+    const client = new StubClient({ get: [new Error('something else')] });
     controller.abort();
     expect((await run(client, controller)).outcome).toEqual({ kind: 'aborted' });
   });
 
   it('does not report the audio as loading when the fetch failed', async () => {
     const client = new StubClient({
-      create: [song(step('queued'))],
+      get: [song(step('queued'))],
       poll: [{ outcome: { kind: 'failed', status: song(step('failed', 0, { error: 'x' })), step: 'fetch' as StepName } }],
     });
     const { seen } = await run(client);

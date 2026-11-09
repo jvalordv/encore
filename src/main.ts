@@ -13,6 +13,7 @@
  * it.
  */
 import './hover-help.css';
+import './ingest.css';
 import './library.css';
 import './lyrics.css';
 import './profiles.css';

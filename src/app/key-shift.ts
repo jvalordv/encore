@@ -39,7 +39,7 @@ export function shiftLabel(shift: number): string {
 export function whyNoShift(canShift: boolean): string {
   return canShift
     ? ''
-    : "YouTube's own player cannot change key; prepare the song to play it here, or load a file.";
+    : "YouTube's own player cannot change key; get the melody to record the song and play it here, or load a file.";
 }
 
 /** The suggestion worth offering: one that differs from what is in force. */

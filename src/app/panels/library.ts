@@ -11,20 +11,43 @@
  * in the song panel: a star for the song in use and, while the playlist runs,
  * Previous, Next and Stop. Everything drawn is a function of `state.library`
  * and the song; the controls call Session intents and hold no logic.
+ *
+ * A song with takes says "3 takes · last sung yesterday" in a button that
+ * opens the song's takes: date, time and length of each, who sang it under the
+ * drawer's "All singers" switch (otherwise the active singer's takes are the
+ * ones counted), and, in learning mode only, the in-tune share and stars of a
+ * take that has a report. Each take has Replay (over its song, which must be
+ * the one loaded), Open (loads the song and, in learning mode, the take's
+ * report card) and Delete (two presses). Karaoke mode shows no figures.
  */
 import { downloadBlob } from '../download';
 import { STAR_MEASURE_SHORT } from '../../analysis/stars';
 import { activeSkin, starGlyphs, starsText } from '../fun';
 import { FAVORITES_FILE_NAME } from '../library-share';
 import { entriesFor, lengthLabel, playlistPosition, rowOf } from '../library-state';
+import { ownerName } from '../profiles';
 import type { Session } from '../session';
+import { dayLabel, scoreOfTake, takesBySong, takesLine } from '../song-takes';
+import type { TakeScope } from '../song-takes';
+import { formatClock } from '../state';
 import type { AppState, StateStore } from '../state';
+import type { TakeSummary } from '../takes';
 import type { MountPanel } from './panel';
 
 /** A first Remove press waits this long for a confirming second press. */
 const REMOVE_ARM_MS = 3000;
 /** The keys of the state the panel is drawn from. */
-const WATCHED: ReadonlyArray<keyof AppState> = ['library', 'song', 'karaoke', 'reference', 'mode'];
+const WATCHED: ReadonlyArray<keyof AppState> = [
+  'library',
+  'song',
+  'karaoke',
+  'reference',
+  'mode',
+  'profiles',
+  'playingTakeId',
+  'recording',
+  'calibrating',
+];
 
 /** What the panel needs: the state, the intents and the buttons it works with. */
 export interface LibraryPanelDeps {
@@ -35,6 +58,10 @@ export interface LibraryPanelDeps {
     | 'setLibraryView'
     | 'loadLibraryEntry'
     | 'loadServiceSong'
+    | 'openLibraryTake'
+    | 'replayLibraryTake'
+    | 'deleteLibraryTake'
+    | 'stopTake'
     | 'useAsOriginal'
     | 'toggleFavorite'
     | 'moveFavorite'
@@ -65,8 +92,16 @@ function offersOriginal(state: AppState, id: string): boolean {
 export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, session, toggle, star, bar }) => {
   const doc = host.ownerDocument;
   const cleanups: Array<() => void> = [];
-  const timers = new Set<ReturnType<typeof setTimeout>>();
+  /** One confirm timer per kind, so re-arming never leaves a stale one running. */
+  const armTimers: Record<'entry' | 'take', ReturnType<typeof setTimeout> | null> = { entry: null, take: null };
   let armedId: string | null = null;
+  let armedTakeId: string | null = null;
+  /** Where focus goes when the control it sits on (`from`) is removed by a render. */
+  let pendingFocus: { from: string; to: string[] } | null = null;
+  /** Songs whose takes are listed open. */
+  const expanded = new Set<string>();
+  /** The "All singers" switch: count everyone's takes, not the active singer's. */
+  let allSingers = false;
 
   function make<K extends keyof HTMLElementTagNameMap>(tag: K, testid: string, className = ''): HTMLElementTagNameMap[K] {
     const el = doc.createElement(tag);
@@ -80,6 +115,28 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
     b.textContent = text;
     b.addEventListener('click', onClick);
     return b;
+  }
+  /** Arms `id` for a second press; the arm lapses after REMOVE_ARM_MS. */
+  function arm(kind: 'entry' | 'take', id: string): void {
+    const stale = armTimers[kind];
+    if (stale !== null) clearTimeout(stale);
+    if (kind === 'entry') armedId = id;
+    else armedTakeId = id;
+    armTimers[kind] = setTimeout(() => {
+      armTimers[kind] = null;
+      if (kind === 'entry') armedId = null;
+      else armedTakeId = null;
+      render(store.state);
+    }, REMOVE_ARM_MS);
+    render(store.state);
+  }
+  /** Drops the arm and its timer once the confirming press has been made. */
+  function disarm(kind: 'entry' | 'take'): void {
+    const timer = armTimers[kind];
+    if (timer !== null) clearTimeout(timer);
+    armTimers[kind] = null;
+    if (kind === 'entry') armedId = null;
+    else armedTakeId = null;
   }
   const listen = (target: HTMLElement, type: 'click' | 'change', handler: () => void): void => {
     target.addEventListener(type, handler);
@@ -100,6 +157,13 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
   const favTab = button('Favorites', 'library-tab-favorites', () => session.setLibraryView('favorites'), '');
   tabs.append(allTab, favTab);
 
+  const singersLabel = doc.createElement('label');
+  singersLabel.className = 'check';
+  const singers = make('input', 'library-all-singers');
+  singers.type = 'checkbox';
+  singersLabel.dataset.help = "Count and list every singer's takes, not only the active singer's";
+  singersLabel.append(singers, doc.createTextNode(' All singers'));
+
   const tools = make('div', 'library-tools', 'library-tools');
   const playTop = button('Play from top', 'library-play-top', () => void session.playFavorites());
   const autoLabel = doc.createElement('label');
@@ -118,6 +182,10 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
   const importButton = button('Import', 'library-import', () => importFile.click());
   tools.append(playTop, autoLabel, exportButton, importButton, importFile);
   listen(auto, 'change', () => session.setAutoAdvance(auto.checked));
+  listen(singers, 'change', () => {
+    allSingers = singers.checked;
+    render(store.state);
+  });
   listen(importFile, 'change', () => {
     const file = importFile.files?.[0];
     importFile.value = '';
@@ -138,7 +206,7 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
   serviceTitle.className = 'group-title';
   serviceTitle.textContent = 'On the service';
   const serviceList = make('ul', 'library-service-list', 'library-list');
-  host.append(head, tabs, tools, notice, empty, list, serviceTitle, serviceList);
+  host.append(head, tabs, singersLabel, tools, notice, empty, list, serviceTitle, serviceList);
 
   listen(toggle, 'click', () => session.setLibraryOpen(host.hidden));
   listen(star, 'click', () => {
@@ -153,12 +221,77 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
   barTitle.textContent = 'Favorites';
   bar.append(barTitle, position, previous, next, stop);
 
-  function row(entryId: string, state: AppState, favoritesView: boolean, index: number, count: number): HTMLLIElement {
+  function takeRow(take: TakeSummary, siblings: TakeSummary[], state: AppState, scope: TakeScope): HTMLLIElement {
+    const item = make('li', 'library-take', 'library-take');
+    item.dataset.takeId = take.id;
+    const day = dayLabel(take.createdAt, Date.now());
+    const time = new Date(take.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const parts = [`${day.charAt(0).toUpperCase()}${day.slice(1)} ${time}`, formatClock(take.durationS)];
+    const owner = allSingers ? ownerName(take, state.profiles) : undefined;
+    if (owner) parts.push(owner);
+    const label = make('span', 'library-take-label', 'library-take-label');
+    const text = parts.join(' · ');
+    label.textContent = text;
+    item.append(label);
+    // Karaoke mode shows no figures of any kind, even for a take that has them.
+    const score = state.mode === 'learning' ? scoreOfTake(take, scope) : null;
+    if (score) {
+      const figures = make('span', 'library-take-score', 'song-meta');
+      figures.textContent = `${score.percent}% ${STAR_MEASURE_SHORT[score.measure]} ${starGlyphs(score.stars)}`;
+      item.append(figures);
+    }
+    const busy = state.recording || state.calibrating;
+    const playing = state.playingTakeId === take.id;
+    const replay = button(playing ? 'Stop' : 'Replay', 'library-take-replay', () => {
+      if (playing) session.stopTake();
+      else void session.replayLibraryTake(take.id);
+    });
+    replay.setAttribute('aria-label', `${playing ? 'Stop' : 'Replay'} ${text}`);
+    replay.disabled = busy;
+    replay.dataset.focus = `${take.id}:replay`;
+    replay.dataset.help = 'Play this take over its song';
+    const open = button('Open', 'library-take-open', () => void session.openLibraryTake(take.songHash, take.id));
+    open.dataset.focus = `${take.id}:open`;
+    open.setAttribute('aria-label', `Open ${text}`);
+    open.dataset.help = 'Load this song and select this take';
+    const del = button(armedTakeId === take.id ? 'Sure?' : 'Delete', 'library-take-delete', () => {
+      // A take cannot be recovered, so the first press only asks.
+      if (armedTakeId !== take.id) {
+        arm('take', take.id);
+        return;
+      }
+      disarm('take');
+      // The row is about to vanish with this button; line up where focus lands.
+      const at = siblings.findIndex((t) => t.id === take.id);
+      const near = [siblings[at + 1], siblings[at - 1]].filter((t): t is TakeSummary => t !== undefined);
+      pendingFocus = {
+        from: `${take.id}:delete`,
+        to: [...near.map((t) => `${t.id}:delete`), `${take.songHash}:takes`, `${take.songHash}:load`],
+      };
+      void session.deleteLibraryTake(take.id);
+    });
+    del.setAttribute('aria-label', `${armedTakeId === take.id ? 'Confirm delete' : 'Delete'} ${text}`);
+    del.disabled = busy;
+    del.dataset.focus = `${take.id}:delete`;
+    del.dataset.help = 'Remove this take only; it cannot be recovered';
+    item.append(replay, open, del);
+    return item;
+  }
+
+  function row(
+    entryId: string,
+    state: AppState,
+    favoritesView: boolean,
+    index: number,
+    count: number,
+    taken: Record<string, TakeSummary[]>,
+    scope: TakeScope,
+  ): HTMLLIElement {
     const { library } = state;
     const entry = library.entries.find((e) => e.id === entryId);
     const item = make('li', 'library-item', 'library-item');
     if (!entry) return item;
-    const view = rowOf(entry, library.takeCounts[entry.id] ?? 0, Date.now());
+    const view = rowOf(entry, Date.now());
     item.dataset.id = entry.id;
     item.dataset.source = entry.source;
     item.dataset.current = String(state.song?.hash === entry.id);
@@ -168,6 +301,7 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
     starButton.dataset.focus = `${entry.id}:star`;
     const load = make('button', 'library-load', 'library-load');
     load.type = 'button';
+    load.dataset.focus = `${entry.id}:load`;
     load.dataset.help = `Load: ${entry.title}`;
     const name = make('span', 'library-title', 'library-title');
     name.textContent = view.title;
@@ -213,25 +347,41 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
     const armed = armedId === entry.id;
     const remove = button(armed ? 'Sure?' : 'Remove', 'library-remove', () => {
       if (armedId !== entry.id) {
-        armedId = entry.id;
-        const timer = setTimeout(() => {
-          timers.delete(timer);
-          if (armedId === entry.id) {
-            armedId = null;
-            render(store.state);
-          }
-        }, REMOVE_ARM_MS);
-        timers.add(timer);
-        render(store.state);
+        arm('entry', entry.id);
         return;
       }
-      armedId = null;
+      disarm('entry');
       void session.removeLibraryEntry(entry.id);
     });
     remove.dataset.focus = `${entry.id}:remove`;
     remove.dataset.help = 'Takes of this song are kept';
     actions.append(remove);
     item.append(starButton, load, actions);
+    const songTakes = taken[entry.id] ?? [];
+    if (songTakes.length > 0) {
+      const listed = expanded.has(entry.id);
+      const toggleTakes = button(
+        takesLine(songTakes, Date.now()),
+        'library-takes-toggle',
+        () => {
+          if (!expanded.delete(entry.id)) expanded.add(entry.id);
+          render(store.state);
+        },
+        'takes-toggle',
+      );
+      const takesId = `library-takes-${entry.id}`;
+      toggleTakes.setAttribute('aria-expanded', String(listed));
+      toggleTakes.setAttribute('aria-controls', takesId);
+      toggleTakes.dataset.focus = `${entry.id}:takes`;
+      toggleTakes.dataset.help = listed ? "Hide this song's takes" : "Show this song's takes";
+      item.append(toggleTakes);
+      if (listed) {
+        const takeList = make('ul', 'library-takes', 'library-takes');
+        takeList.id = takesId;
+        takeList.append(...songTakes.map((take) => takeRow(take, songTakes, state, scope)));
+        item.append(takeList);
+      }
+    }
     return item;
   }
 
@@ -266,10 +416,24 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
     setText(notice, library.notice);
     notice.hidden = library.notice === '';
 
+    singers.checked = allSingers;
+    const scope: TakeScope = { allSingers, activeId: state.profiles.activeId, legacyId: state.profiles.legacyId };
+    const taken = takesBySong(library.takes, scope);
     const shown = entriesFor(library);
     const focused = doc.activeElement instanceof HTMLElement ? doc.activeElement.dataset.focus : undefined;
-    list.replaceChildren(...shown.map((entry, i) => row(entry.id, state, favoritesView, i, shown.length)));
-    if (focused) host.querySelector<HTMLElement>(`[data-focus="${focused}"]`)?.focus();
+    const hadFocus = host.contains(doc.activeElement);
+    list.replaceChildren(...shown.map((entry, i) => row(entry.id, state, favoritesView, i, shown.length, taken, scope)));
+    const restored = focused ? host.querySelector<HTMLElement>(`[data-focus="${focused}"]`) : null;
+    if (restored) restored.focus();
+    else if (hadFocus && pendingFocus !== null && pendingFocus.from === focused) {
+      // The focused element is gone (a take was deleted): hand focus to its
+      // nearest neighbour so a keyboard user stays inside the drawer.
+      const target = pendingFocus.to
+        .map((key) => host.querySelector<HTMLElement>(`[data-focus="${key}"]`))
+        .find((el) => el !== null);
+      (target ?? close).focus();
+      pendingFocus = null;
+    }
     empty.hidden = shown.length > 0;
     setText(
       empty,
@@ -301,7 +465,10 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
 
   return () => {
     for (const cleanup of cleanups.splice(0)) cleanup();
-    for (const timer of timers) clearTimeout(timer);
+    for (const kind of ['entry', 'take'] as const) {
+      const timer = armTimers[kind];
+      if (timer !== null) clearTimeout(timer);
+    }
     host.replaceChildren();
     bar.replaceChildren();
   };

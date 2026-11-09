@@ -20,6 +20,7 @@ import type { TakeStore } from '../takes';
 import { AlignController } from './align';
 import { DeviceController } from './devices';
 import { FrameBus } from './frame-bus';
+import { IngestController } from './ingest';
 import { InputController } from './input';
 import { BackingController } from './backing';
 import { KeyController } from './keys';
@@ -98,6 +99,7 @@ export class SessionCore {
   readonly backing: BackingController;
   readonly search: SearchController;
   readonly library: LibraryController;
+  readonly ingest: IngestController;
   readonly settings: SettingsController;
   readonly duet: DuetController;
   readonly profiles: ProfilesController;
@@ -133,6 +135,7 @@ export class SessionCore {
     this.keys = new KeyController(this);
     this.search = new SearchController(this, init.search);
     this.library = new LibraryController(this, init.library ?? Promise.resolve(memoryLibraryStore()));
+    this.ingest = new IngestController(this);
     this.settings = new SettingsController(this);
     this.duet = new DuetController(this, init.secondParts);
     this.profiles = new ProfilesController(this);

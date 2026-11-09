@@ -125,22 +125,6 @@ describe('AlignController', () => {
     });
   });
 
-  it('prepares a picked video first, without making it the song in use', async () => {
-    const answers = service(done);
-    const created = vi
-      .spyOn(ServiceClient.prototype, 'createSongFromUrl')
-      .mockResolvedValue(status('yt-abcdefghijk', step('queued')));
-    const h = await karaokeSong();
-    const prepared = status('yt-abcdefghijk', step('done'));
-    vi.mocked(ServiceClient.prototype.pollSong).mockResolvedValue({ kind: 'settled', status: prepared } as PollOutcome);
-
-    await h.core.align.useVideo('abcdefghijk');
-
-    expect(created).toHaveBeenCalledWith('https://www.youtube.com/watch?v=abcdefghijk', expect.anything());
-    expect(answers.align).toHaveBeenCalledWith('karaoke1', 'yt-abcdefghijk', expect.anything());
-    expect(h.store.state.song?.name).toBe('karaoke.mp3');
-  });
-
   it('is cleared when another song takes over', async () => {
     service(done);
     const h = await karaokeSong();

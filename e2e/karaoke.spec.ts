@@ -377,7 +377,7 @@ test('7. with the service not running one plain line says what is missing, and t
   expect(service.count('POST', '/songs')).toBe(1);
 });
 
-test('8. a linked song gets the mix once it has been prepared and separated', async () => {
+test('8. a linked song gets the mix once its recording has been taken over and separated', async () => {
   await freshPage();
   await pasteInto(page, LINK);
   await page.waitForFunction(
@@ -388,12 +388,14 @@ test('8. a linked song gets the mix once it has been prepared and separated', as
   await expect(panel()).toBeHidden();
 
   const fetched = stepStatus('done', 1);
-  service.create = linkStatus(VIDEO, fetched, {
+  service.status = linkStatus(VIDEO, fetched, {
     separation: stepStatus('running', 0.3),
     reference: stepStatus('queued'),
   });
-  service.status = service.create;
-  await page.getByTestId('reference-get').click();
+  // A headless browser cannot record a tab; the end of a recording calls this.
+  await page.evaluate(() => {
+    void window.encore!.session.adoptRecording();
+  });
   await page.waitForFunction(() => window.encore!.store.state.prepare.phase === 'prepared');
   // The prepare switch is as it was; the separation is reported beneath it.
   expect((await appState()).clock).toBe('engine');

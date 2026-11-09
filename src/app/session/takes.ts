@@ -121,8 +121,8 @@ export class TakeController {
       await done;
       return;
     }
-    // After a failed download the song's sound is recorded alongside this
-    // take: the share prompt is asked for on this press, and the take begins
+    // Once "Get the melody" (or the automatic setting) has armed it, the
+    // song's sound is recorded alongside this take: the share prompt is asked for on this press, and the take begins
     // once it has been answered.
     if (this.core.songReference.hasArmed) {
       if (this.core.songs.active?.loop) {

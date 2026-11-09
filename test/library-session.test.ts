@@ -84,7 +84,7 @@ describe('noting loads', () => {
     expect(h.store.state.library.entries[0]?.melody).toBe(false);
   });
 
-  it('counts the saved takes of each song', async () => {
+  it('lists the saved takes as summaries', async () => {
     const h = makeHarness();
     await load(h, 'one.mp3');
     await h.takeStore.save({
@@ -98,7 +98,7 @@ describe('noting loads', () => {
       wav: new Blob([]),
     });
     h.core.library.setOpen(true);
-    await vi.waitFor(() => expect(h.store.state.library.takeCounts).toEqual({ 'hash-one.mp3': 1 }));
+    await vi.waitFor(() => expect(h.store.state.library.takes.map((t) => t.songHash)).toEqual(['hash-one.mp3']));
   });
 });
 
@@ -139,6 +139,69 @@ describe('favorites and removal', () => {
     expect(await h.libraryStore.list()).toEqual([]);
     expect(await h.takeStore.list('hash-a.mp3')).toHaveLength(1);
     expect(h.store.state.library.notice).toContain('takes are kept');
+  });
+});
+
+describe('takes in the Library', () => {
+  const save = (h: Harness, songHash: string, createdAt: number): Promise<string> =>
+    h.takeStore.save({
+      songHash,
+      songName: songHash,
+      createdAt,
+      durationS: 1,
+      latencyS: 0,
+      sampleRate: 48000,
+      frames: [],
+      wav: new Blob([]),
+    });
+
+  it('deletes one take of another song and updates the list', async () => {
+    const h = makeHarness();
+    await load(h, 'a.mp3');
+    await load(h, 'b.mp3');
+    const keep = await save(h, 'hash-a.mp3', 1);
+    const drop = await save(h, 'hash-a.mp3', 2);
+    h.core.library.setOpen(true);
+    await vi.waitFor(() => expect(h.store.state.library.takes).toHaveLength(2));
+    await h.core.library.deleteTake(drop);
+    expect(h.store.state.library.takes.map((t) => t.id)).toEqual([keep]);
+    expect(await h.takeStore.list('hash-a.mp3')).toHaveLength(1);
+  });
+
+  it('deletes a take of the song in use and updates the list', async () => {
+    const h = makeHarness();
+    await load(h, 'a.mp3');
+    const id = await save(h, 'hash-a.mp3', 1);
+    h.core.library.setOpen(true);
+    await vi.waitFor(() => expect(h.store.state.library.takes).toHaveLength(1));
+    await h.core.library.deleteTake(id);
+    expect(h.store.state.library.takes).toEqual([]);
+  });
+
+  it('will not replay another songs take, and says how to get there', async () => {
+    const h = makeHarness();
+    await load(h, 'a.mp3');
+    await load(h, 'b.mp3');
+    const id = await save(h, 'hash-a.mp3', 1);
+    h.core.library.setOpen(true);
+    await vi.waitFor(() => expect(h.store.state.library.takes).toHaveLength(1));
+    await h.core.library.replayTake(id);
+    expect(h.store.state.playingTakeId).toBeNull();
+    expect(h.store.state.library.notice).toContain('Open');
+  });
+
+  it('opens a take: loads its song; a take with no report has no card', async () => {
+    const h = makeHarness();
+    await load(h, 'a.mp3');
+    await load(h, 'b.mp3');
+    const id = await save(h, 'hash-a.mp3', 1);
+    serviceHolds([]);
+    h.core.library.setOpen(true);
+    await vi.waitFor(() => expect(h.store.state.library.takes).toHaveLength(1));
+    expect(await h.core.library.openTake('hash-a.mp3', id)).toBe(true);
+    expect(h.store.state.song?.hash).toBe('hash-a.mp3');
+    // The take has no report, so there is no card to show.
+    expect(h.store.state.reportTakeId).toBeNull();
   });
 });
 

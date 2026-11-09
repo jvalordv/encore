@@ -27,9 +27,10 @@ export class PlaybackController {
     // The song would drown the chirps; the Play button is already disabled,
     // and this keeps the Space key from starting it anyway.
     if (store.state.calibrating) return;
-    // After a failed download the song's sound is recorded as it plays: the
-    // share prompt is asked for on this press, and the song starts once it
-    // has been answered, not under the dialog.
+    // Once "Get the melody" (or the automatic setting) has armed it, the
+    // song's sound is recorded as it plays: the share prompt is asked for on
+    // this press, and the song starts once it has been answered, not under
+    // the dialog.
     const armed = this.core.songReference.takeArmed();
     if (armed) {
       void armed.then(() => {

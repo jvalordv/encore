@@ -31,7 +31,7 @@ import { CARD_FAILED, drawCard, renderCardPng } from '../card-image';
 import { cardFileName, localDateString } from '../card-layout';
 import { downloadBlob } from '../download';
 import { activeSkin, personalBestText, starGlyphs, starsLineFor } from '../fun';
-import { karaokeTrackNotice, openReports, openSwitchOffer, originalQueryFor } from '../learning';
+import { karaokeTrackNotice, openReports, openSwitchOffer, ORIGINAL_HOW, originalQueryFor } from '../learning';
 import { takesOfCardSinger } from '../profiles';
 import { describeReport, jumpTarget } from '../report';
 import type { MomentView, ReportView } from '../report';
@@ -329,6 +329,7 @@ export const mountReportPanel: MountPanel<ReportPanelDeps> = (host, { store, ses
     }
     const offer = openSwitchOffer(state);
     if (offer !== null) box.append(el('p', 'learning-notice-offer', '', offer));
+    box.append(el('p', 'learning-notice-how', '', ORIGINAL_HOW));
     const actions = el('div', 'learning-actions', 'learning-actions');
     actions.append(button('Find the original', 'find-original', () => session.findOriginal(originalQueryFor(state))));
     if (offer !== null) actions.append(button('Switch to Open', 'switch-to-open', () => session.setScoring('open')));

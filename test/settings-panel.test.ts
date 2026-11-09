@@ -48,7 +48,6 @@ function sessionOver(core: SessionCore): SettingsPanelDeps['session'] {
     setOctaveInvariant: (on) => core.settings.setOctaveInvariant(on),
     setClarity: (v) => core.input.setClarity(v),
     setAutoAdvance: (on) => core.library.setAutoAdvance(on),
-    setAutoPrepareLinks: (on) => core.prepare.setAutoPrepareLinks(on),
     setAutoReference: (on) => core.songReference.setAutoReference(on),
     setSearchKey: (t) => core.search.setKey(t),
     setServiceUrl: (t) => core.settings.setServiceUrl(t),
@@ -144,16 +143,16 @@ describe('settings panel and inline controls', () => {
   });
 
   it('shows what the stores hold on opening, and redraws on a save', () => {
-    const { h, host, open } = setup({ keyboard: false, clarityThreshold: 0.7, autoPrepareLinks: true });
+    const { h, host, open } = setup({ keyboard: false, clarityThreshold: 0.7, autoReference: true });
     open();
+    expect(byTestId(host, 'settings-auto-reference').checked).toBe(true);
     expect(byTestId(host, 'settings-keyboard').checked).toBe(false);
     expect(byTestId(host, 'settings-clarity').value).toBe('0.7');
-    expect(byTestId(host, 'settings-auto-prepare').checked).toBe(true);
     // The inline slider's intent, not the drawer, changes the clarity.
     h.core.input.setClarity(0.55);
     expect(byTestId(host, 'settings-clarity').value).toBe('0.55');
-    h.core.prepare.setAutoPrepareLinks(false);
-    expect(byTestId(host, 'settings-auto-prepare').checked).toBe(false);
+    h.core.songReference.setAutoReference(false);
+    expect(byTestId(host, 'settings-auto-reference').checked).toBe(false);
   });
 
   it('has a switch for getting the song reference automatically, off by default', () => {

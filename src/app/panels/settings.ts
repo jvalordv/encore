@@ -60,7 +60,6 @@ export interface SettingsPanelDeps {
     | 'setOctaveInvariant'
     | 'setClarity'
     | 'setAutoAdvance'
-    | 'setAutoPrepareLinks'
     | 'setAutoReference'
     | 'setSearchKey'
     | 'setServiceUrl'
@@ -328,14 +327,7 @@ export const mountSettingsPanel: MountPanel<SettingsPanelDeps> = (host, deps) =>
   );
   kit.check(
     library,
-    'Send YouTube links to the service by themselves (auto-prepare)',
-    'settings-auto-prepare',
-    () => session.settings.autoPrepareLinks,
-    (v) => session.setAutoPrepareLinks(v),
-  );
-  kit.check(
-    library,
-    'Get the melody for every song in learning mode (if the download is blocked, it may ask to share the tab audio)',
+    'Get the melody for every YouTube song in learning mode (the first Play or Record asks to share the tab audio)',
     'settings-auto-reference',
     () => session.settings.autoReference,
     (v) => session.setAutoReference(v),
