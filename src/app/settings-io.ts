@@ -35,6 +35,7 @@ export const SETTING_LABELS: Readonly<Record<keyof Settings, string>> = Object.f
   monitor: 'Monitor mode',
   serviceUrl: 'Service address',
   autoPrepareLinks: 'Auto-prepare links',
+  autoReference: 'Get the song reference automatically',
   clarityThreshold: 'Clarity threshold',
   octaveInvariant: 'Octave invariance',
   latencyByDevicePair: 'Latency',

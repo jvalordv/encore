@@ -35,6 +35,8 @@ import { initialMix } from './mix';
 import { initialProfiles } from './profiles';
 import type { ProfilesData } from './profiles';
 import type { MixState } from './mix';
+import { initialSongRef } from './song-reference';
+import type { SongRefState } from './song-reference';
 import { initialCapture } from './capture';
 import type { CaptureState } from './capture';
 import { initialAlign } from './align';
@@ -114,8 +116,10 @@ export interface AppState {
    * song panel says about it. Phase 'none' while no video is the song.
    */
   prepare: PrepareState;
-  /** Capture for learning: the tab recording of the linked video. */
+  /** The recording of the linked video's sound from this tab. */
   capture: CaptureState;
+  /** The Song reference card's own memory: armed recording, details, Not now. */
+  songRef: SongRefState;
   /**
    * Where the song stands on the way to its karaoke track (upload, the
    * service's steps, the stems), whatever the song's source.
@@ -228,6 +232,7 @@ export function initialState(): AppState {
     embedOffsetS: 0,
     prepare: initialPrepare(),
     capture: initialCapture(),
+    songRef: initialSongRef(),
     karaoke: initialKaraoke(),
     mix: initialMix(DEFAULT_GUIDE_LEVEL),
     reference: initialReference(),

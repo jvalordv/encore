@@ -102,6 +102,7 @@ describe('entryAfterLoad', () => {
       lastPlayedAt: 7,
       stems: false,
       melody: false,
+      key: false,
       favorite: false,
       order: 0,
     });
@@ -138,9 +139,15 @@ describe('sanitiseEntry', () => {
       lastPlayedAt: null,
       stems: false,
       melody: false,
+      key: false,
       favorite: false,
       order: 0,
     });
+  });
+
+  it('keeps the key flag only when it is exactly true', () => {
+    expect(sanitiseEntry({ id: 'yt-dQw4w9WgXcQ', key: true })?.key).toBe(true);
+    expect(sanitiseEntry({ id: 'yt-dQw4w9WgXcQ', key: 'yes' })?.key).toBe(false);
   });
 
   it('treats an unmarked non-link id as an upload and titles it from the name', () => {

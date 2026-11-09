@@ -517,7 +517,8 @@ input[type='range'] {
   cursor: pointer;
 }
 
-/* Prepare for scoring: the button, the service's progress by step, a note. */
+/* The Song reference card: what Encore has for the song, the one button, the
+   service's progress by step, a note, and the prompt. */
 .prepare {
   display: flex;
   flex-direction: column;
@@ -535,6 +536,35 @@ input[type='range'] {
   gap: 2px;
   padding: 0;
   list-style: none;
+}
+
+.reference-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reference-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.reference-prompt-text {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.reference-prompt .check {
+  flex-basis: 100%;
+}
+
+.reference-details summary {
+  cursor: pointer;
 }
 
 /* The karaoke track: progress lines, notes about the service and the melody,

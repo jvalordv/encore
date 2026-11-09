@@ -103,7 +103,7 @@ describe('index.html for preparing a linked song', () => {
     expect(box).toContain('type="checkbox"');
     expect(box).not.toMatch(/\bchecked\b/);
     expect(html).toContain(
-      'Prepare YouTube songs automatically (downloads the audio; see service/README.md)',
+      'Download YouTube audio as soon as a link loads, in any mode (this downloads the audio; see service/README.md)',
     );
   });
 
@@ -113,26 +113,27 @@ describe('index.html for preparing a linked song', () => {
     expect(label).toContain('downloads the audio');
   });
 
-  it('holds the prepare group in the song panel, hidden until a video is the song', () => {
-    expect(tagOf('prepare')).toMatch(/\bhidden\b/);
+  it('holds the Song reference card in the song panel, hidden until a video is the song', () => {
+    expect(tagOf('song-reference')).toMatch(/\bhidden\b/);
     const panel = html.indexOf('id="song-panel"');
-    const group = html.indexOf('id="prepare"');
+    const group = html.indexOf('id="song-reference"');
     const devices = html.indexOf('aria-label="Devices"');
     expect(panel).toBeGreaterThan(-1);
     expect(group).toBeGreaterThan(panel);
     expect(group).toBeLessThan(devices);
   });
 
-  it('has the button, the progress list and the note the panel is drawn into', () => {
-    expect(tagOf('prepare-button')).toContain('type="button"');
-    expect(tagOf('prepare-steps')).toMatch(/\bhidden\b/);
-    expect(tagOf('prepare-note')).toContain('aria-live="polite"');
+  it('no longer carries the separate Prepare and Capture controls', () => {
+    expect(html).not.toContain('Prepare for scoring');
+    expect(html).not.toContain('Capture for learning');
+    expect(html).not.toContain('id="prepare-button"');
+    expect(html).not.toContain('id="capture"');
   });
 
-  it('tells the singer in the embed note that the song can be prepared', () => {
+  it('tells the singer in the embed note that the melody can be got', () => {
     const note = /id="embed-note"[^>]*>([^<]*)</.exec(html)?.[1] ?? '';
-    expect(note).toMatch(/Prepare the song/);
-    expect(note).toMatch(/not built yet/);
+    expect(note).toMatch(/Get the melody/);
+    expect(note).not.toMatch(/not built yet/);
   });
 });
 

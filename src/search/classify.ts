@@ -23,6 +23,7 @@ export const KARAOKE_PHRASES: readonly string[] = [
   'off vocals?',
   'minus one',
   '(?:no|without) (?:lead )?vocals?',
+  'no guide melody',
   'play along',
   'in the style of',
 ];

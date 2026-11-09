@@ -11,7 +11,8 @@
  * src/app/session/, one per concern, sharing a SessionCore that holds the
  * store, the parts and the settings: songs and transports (songs.ts),
  * playback and loop (playback.ts), the service and prepared audio
- * (prepare.ts), the karaoke track from the service (stems.ts) and the mix of
+ * (prepare.ts), the Song reference card's choice between download and
+ * recording (song-reference.ts), the karaoke track from the service (stems.ts) and the mix of
  * its stems (mix.ts), the song search (search.ts), the Library and favorites
  * playlist (library.ts), the mic (input.ts), devices
  * and output (devices.ts), latency and calibration (latency.ts), takes
@@ -218,6 +219,24 @@ export class Session {
     // The capture holds the song until it has been handed to the service.
     if (this.core.capture.busy) return Promise.resolve();
     return this.core.prepare.prepare();
+  }
+
+  /**
+   * The Song reference card's one button: downloads the song, and if that
+   * fails records its sound during the first take instead.
+   */
+  getMelody(): Promise<void> {
+    return this.core.songReference.getMelody();
+  }
+
+  /** "Not now" on the prompt: it stays away for this song this session. */
+  declineReference(): void {
+    this.core.songReference.notNow();
+  }
+
+  /** Turns 'Get the song reference automatically' on or off. */
+  setAutoReference(on: boolean): void {
+    this.core.songReference.setAutoReference(on);
   }
 
   /** True when this browser can share a tab with its sound. */

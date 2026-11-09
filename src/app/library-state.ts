@@ -109,10 +109,27 @@ export function playedLabel(lastPlayedAt: number | null, now: number): string {
   return days === 1 ? 'yesterday' : `${days} days ago`;
 }
 
-/** The prepared badge: 'Prepared' with the melody when there is one; '' if not. */
-export function preparedLabel(entry: Pick<LibraryEntry, 'stems' | 'melody'>): string {
-  if (!entry.stems) return '';
-  return entry.melody ? 'Prepared, with melody' : 'Prepared';
+/** A song's reference badge: its words and the hover and screen-reader text. */
+export interface ReferenceBadge {
+  label: string;
+  title: string;
+}
+
+/**
+ * What a Library row says about the song's reference: 'Melody' when a melody
+ * was read for it (from the video or an aligned original), 'Key' when a key
+ * was read but no melody, 'Backing' when only the karaoke backing track exists,
+ * and no badge otherwise. The words are the same in either mode.
+ */
+export function referenceBadge(entry: Pick<LibraryEntry, 'stems' | 'melody' | 'key'>): ReferenceBadge | null {
+  if (entry.melody) {
+    return { label: 'Melody', title: 'Encore has a melody for this song.' };
+  }
+  if (entry.key) return { label: 'Key', title: 'Encore has a key for this song but no melody.' };
+  if (entry.stems) {
+    return { label: 'Backing', title: 'Encore has a karaoke backing track for this song but no melody.' };
+  }
+  return null;
 }
 
 /** "3 takes" and its singular. */
@@ -125,8 +142,8 @@ export interface RowView {
   title: string;
   /** Source, length, last played, takes: the grey line under the title. */
   meta: string[];
-  /** The prepared badge's words; '' for a song that is not prepared. */
-  prepared: string;
+  /** The reference badge; null for a song with no reference. */
+  badge: ReferenceBadge | null;
 }
 
 /** The words of one Library row. */
@@ -134,7 +151,7 @@ export function rowOf(entry: LibraryEntry, takeCount: number, now: number): RowV
   const length = lengthLabel(entry.durationS);
   const meta = [sourceLabel(entry), ...(length !== '' ? [length] : []), playedLabel(entry.lastPlayedAt, now)];
   if (takeCount > 0) meta.push(takesLabel(takeCount));
-  return { title: entry.title, meta, prepared: preparedLabel(entry) };
+  return { title: entry.title, meta, badge: referenceBadge(entry) };
 }
 
 /** "2 of 5" for the favorite playing, or '' when it is not in the list. */

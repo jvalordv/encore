@@ -1,18 +1,18 @@
 /**
- * "Capture for learning", apart from the audio and the page. When the
- * downloader cannot fetch a YouTube video, the app can record the video's own
- * sound from this tab while it plays once, send that to the service, and
- * prepare it like any linked song. This module is the pure half: the state
- * machine (`captureReducer`), the gates on Stop and on a usable end
- * (`canStop`, `usableAtEnd`), and the wording (`describeCapture`), so each is
- * tested without a page. `src/audio/tab-capture.ts` records, and
+ * Recording a YouTube song's sound from this tab, apart from the audio and the
+ * page. When the downloader cannot fetch a video, the app can record the
+ * video's own sound while it plays, send that to the service, and prepare it
+ * like any linked song. This module is the pure half: the state machine
+ * (`captureReducer`), the gates on Stop and on a usable end (`canStop`,
+ * `usableAtEnd`), and the status line (`captureLine`), so each is tested
+ * without a page. `src/audio/tab-capture.ts` records, and
  * `src/app/session/capture.ts` drives this machine from it.
  *
  * It is opt-in and in the same policy category as Prepare (ROADMAP, Policy
- * flag): nothing starts until the singer presses the button.
+ * flag): it starts only after a failed download, on the singer's next Play or
+ * Record press (the Song reference card, src/app/song-reference.ts).
  */
 import { MIN_STOP_COVERAGE } from '../audio/capture-assembler';
-import type { PreparePhase } from './prepare';
 
 /** Where a capture stands. 'ready' is a finished one, prepared by the service. */
 export type CapturePhase = 'idle' | 'requesting' | 'capturing' | 'uploading' | 'preparing' | 'ready' | 'failed';
@@ -115,42 +115,6 @@ export function captureReducer(state: CaptureState, event: CaptureEvent): Captur
   }
 }
 
-/** The label of the button that starts a capture. */
-export const CAPTURE_LABEL = 'Capture for learning';
-/** The label of the button that ends one early. */
-export const STOP_LABEL = 'Stop capture';
-/** The one line on what it does, shown while the capture is on offer. */
-export const CAPTURE_NOTE =
-  "Records this video's sound from this tab while it plays once, and sends it " +
-  'to the local service to find the melody and key. Like Prepare, it uses the ' +
-  "video's audio beyond YouTube's player, so it is off until you press it.";
-/** Why the button is off when the browser cannot share a tab's sound. */
-export const UNSUPPORTED_TITLE = 'This browser cannot share a tab with its sound. Use Chrome or Edge.';
-/** Why the button is off while Prepare or the service check holds the song. */
-export const BUSY_TITLE = 'Wait for the service check or the preparation to finish.';
-
-/** What the panel shows for a CaptureState. */
-export interface CaptureView {
-  visible: boolean;
-  label: string;
-  disabled: boolean;
-  title: string;
-  /** The Stop button is shown only while capturing. */
-  showStop: boolean;
-  stopDisabled: boolean;
-  /** The status line; empty when there is none. */
-  line: string;
-  note: string;
-}
-
-/** What the page knows besides the capture itself. */
-export interface CaptureContext {
-  /** The linked song's preparation phase. */
-  prepare: PreparePhase;
-  /** True when the browser can share a tab's sound (or the test seam is on). */
-  supported: boolean;
-}
-
 function percent(fraction: number): number {
   return Math.round(Math.min(1, Math.max(0, Number.isFinite(fraction) ? fraction : 0)) * 100);
 }
@@ -181,34 +145,4 @@ export function captureLine(state: CaptureState): string {
     case 'failed':
       return state.message;
   }
-}
-
-/** The button, Stop button and lines for a capture and what surrounds it. */
-export function describeCapture(state: CaptureState, context: CaptureContext): CaptureView {
-  const active = isCapturing(state) || state.phase === 'preparing';
-  const offered = context.prepare === 'ready' || context.prepare === 'failed';
-  const waiting = context.prepare === 'checking' || context.prepare === 'unavailable';
-  const visible = active || offered || waiting;
-  let title = CAPTURE_NOTE;
-  let disabled = false;
-  if (active) {
-    disabled = true;
-    title = '';
-  } else if (!context.supported) {
-    disabled = true;
-    title = UNSUPPORTED_TITLE;
-  } else if (!offered) {
-    disabled = true;
-    title = BUSY_TITLE;
-  }
-  return {
-    visible,
-    label: CAPTURE_LABEL,
-    disabled,
-    title,
-    showStop: state.phase === 'capturing',
-    stopDisabled: !canStop(state),
-    line: captureLine(state),
-    note: active || state.phase === 'failed' ? '' : CAPTURE_NOTE,
-  };
 }

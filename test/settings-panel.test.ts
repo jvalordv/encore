@@ -49,6 +49,7 @@ function sessionOver(core: SessionCore): SettingsPanelDeps['session'] {
     setClarity: (v) => core.input.setClarity(v),
     setAutoAdvance: (on) => core.library.setAutoAdvance(on),
     setAutoPrepareLinks: (on) => core.prepare.setAutoPrepareLinks(on),
+    setAutoReference: (on) => core.songReference.setAutoReference(on),
     setSearchKey: (t) => core.search.setKey(t),
     setServiceUrl: (t) => core.settings.setServiceUrl(t),
     testService: async () => true,
@@ -153,6 +154,16 @@ describe('settings panel and inline controls', () => {
     expect(byTestId(host, 'settings-clarity').value).toBe('0.55');
     h.core.prepare.setAutoPrepareLinks(false);
     expect(byTestId(host, 'settings-auto-prepare').checked).toBe(false);
+  });
+
+  it('has a switch for getting the song reference automatically, off by default', () => {
+    const { h, host, open } = setup();
+    open();
+    expect(byTestId(host, 'settings-auto-reference').checked).toBe(false);
+    change(byTestId(host, 'settings-auto-reference'), 'checked', true);
+    expect(h.core.current.autoReference).toBe(true);
+    h.core.songReference.setAutoReference(false);
+    expect(byTestId(host, 'settings-auto-reference').checked).toBe(false);
   });
 
   it('writes the settings the state does not hold', () => {

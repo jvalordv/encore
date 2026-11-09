@@ -393,7 +393,7 @@ test('8. a linked song gets the mix once it has been prepared and separated', as
     reference: stepStatus('queued'),
   });
   service.status = service.create;
-  await page.getByTestId('prepare-button').click();
+  await page.getByTestId('reference-get').click();
   await page.waitForFunction(() => window.encore!.store.state.prepare.phase === 'prepared');
   // The prepare switch is as it was; the separation is reported beneath it.
   expect((await appState()).clock).toBe('engine');

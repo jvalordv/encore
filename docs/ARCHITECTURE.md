@@ -125,13 +125,19 @@ so learning mode when it is up. Scoring and tips run in the browser.
   - *Echo.* Whether Chrome's echo cancellation references the embed's audio
     in speaker mode is unverified; it needs the owner's real speakers
     before the mode is advertised for YouTube songs.
-  - *Capture for learning* (WL3a: `src/audio/tab-capture.ts`,
+  - *Recording the song's sound* (WL3a: `src/audio/tab-capture.ts`,
     `src/audio/capture-assembler.ts`, `src/app/capture.ts`,
-    `src/app/session/capture.ts`; service `routes/capture.py`). The route
-    into the same prepare path when yt-dlp is blocked. Opt-in: the button
-    asks for a tab share (`getDisplayMedia`, audio on), drops the video
-    track at once, seeks the embed to 0 and plays it. The tab's audio runs
-    through the capture worklet as PCM; each block is placed at its video
+    `src/app/session/capture.ts`; service `routes/capture.py`; reached
+    through the Song reference card, W9). The route into the same prepare
+    path when yt-dlp is blocked. Opt-in: it starts only after a failed
+    download, on the singer's next Play or Record press (a user gesture),
+    which asks for a tab share (`getDisplayMedia`, audio on), drops the
+    video track at once, seeks the embed to 0 and plays it once the share
+    is answered, so the recording runs alongside the first take and no
+    separate play-through is needed. It keeps recording while the video
+    plays and ends with the video, or on Stop at 90% or more (also when a
+    take ends with that much heard). The tab's audio runs through the
+    capture worklet as PCM; each block is placed at its video
     time (the embed clock's position minus the block's age) only while the
     state is `playing`, so an ad, buffering or a pause adds nothing, and a
     seek writes at the new position. The assembler reports coverage and the
@@ -147,9 +153,10 @@ so learning mode when it is up. Scoring and tips run in the browser.
   - *Prepared mode, as built* (P2-T1d: `src/service/client.ts`,
     `src/app/prepare.ts`, `src/audio/embed-follower.ts`). Opt-in: loading
     a link sends only `GET /health` (no link data); the link goes to
-    `POST /songs/url` only on the Prepare press or with
-    `autoPrepareLinks` on (default off). Health is re-checked on focus, so
-    starting the service enables Prepare without a reload. Polling backs off
+    `POST /songs/url` only on a Get the melody press (the Song reference
+    card), with `autoPrepareLinks` on (default off), or with
+    `autoReference` on in learning mode (default off). Health is re-checked on focus, so
+    starting the service enables the button without a reload. Polling backs off
     from 500 ms to a 2 s cap and settles when fetch is done or any step has
     failed. The switch waits for a take in progress or starting, and for
     the AudioContext clock to actually move (it can lag `resume()` by up to
@@ -681,6 +688,27 @@ always skips.
     than the API (III.I.14), and its general terms restrict downloading.
     Preparing is therefore opt-in, labelled as such in the UI and in
     `service/README.md`, and the embedded path never depends on it.
+    Opting in is one early, clear choice (W9, owner 2026-11-08), the
+    **Song reference** card in the song panel (`src/app/song-reference.ts`,
+    `src/app/panels/song-reference.ts`, `src/app/session/song-reference.ts`).
+    It states what Encore has for the song (melody: none, from this video,
+    from the original; key: none, from the song, from the singing) and
+    what that means for learning mode, with one button, "Get the melody".
+    The button downloads first (the prepare flow); any failure, YouTube's
+    bot check included, says in plain words that the song's sound will be
+    recorded during the first take and arms the recording for the next Play
+    or Record press, with the service's own text under Details and never
+    advice about cookies. In learning mode a YouTube song with no melody
+    opens the card with a prompt ("Get the melody so learning mode can
+    score you?", Not now, Do this for every song). That checkbox is the
+    Settings switch "Get the song reference automatically" (off by default,
+    saved and exported with the settings); with it on, loading a song in
+    learning mode starts the button without the prompt. "Not now" is kept
+    per song for the session. Karaoke mode never prompts and never starts
+    by itself; the button is there if the singer wants the karaoke track.
+    When the melody arrives (download, recording, or an aligned original),
+    earlier learning takes whose report had no melody are scored again from
+    their stored frames. The Library marks each song Melody, Key or Backing.
     Shipping both in one distributed app is a decision for the owner; for
     personal use on their own machine they are the owner's to make.
 - **Two modes (owner, 2026-10-27; note guide added 2026-11-05).** Karaoke

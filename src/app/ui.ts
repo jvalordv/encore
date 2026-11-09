@@ -9,10 +9,10 @@
  * intents as the buttons. A YouTube link reaches the Session three ways: the
  * link box, a paste anywhere on the page, or a link dropped on it; the pane
  * the player is built into is handed to the Session here. The song panel's
- * Prepare for scoring group is drawn from `state.prepare` through
- * describePrepare, and its button, the automatic-prepare checkbox and a window
- * regaining focus (the service may have been started meanwhile) are the only
- * things here that lead to the service from a link; a dropped file's karaoke
+ * Song reference card is its own panel (panels/song-reference.ts); its button
+ * and prompt, the automatic-prepare checkbox and a window regaining focus (the
+ * service may have been started meanwhile) are the only things that lead to
+ * the service from a link; a dropped file's karaoke
  * track has its own panel (panels/karaoke.ts), mounted here, as are the mode
  * toggle (panels/mode.ts), the takes list (panels/takes.ts) and learning
  * mode's notice and report card (panels/report.ts). Importing the file
@@ -27,7 +27,6 @@ import { createLrclibClient } from '../lyrics/lrclib';
 import { lazyLyricsStore } from '../lyrics/store';
 import { downloadBlob } from './download';
 import { mountHoverHelp } from './hover-help';
-import { mountCapturePanel } from './panels/capture';
 import { mountKaraokePanel } from './panels/karaoke';
 import { mountKeyboardPanel } from './panels/keyboard';
 import { mountKeyShiftPanel } from './panels/key-shift';
@@ -44,9 +43,9 @@ import { mountReportPanel } from './panels/report';
 import { mountSingersPanel } from './panels/singers';
 import { mountSearchPanel } from './panels/search';
 import { mountSettingsPanel } from './panels/settings';
+import { mountSongReferencePanel } from './panels/song-reference';
 import { mountStreakPanel } from './panels/streak';
 import { mountTakesPanel } from './panels/takes';
-import { describePrepare } from './prepare';
 import type { Session } from './session';
 import { domSkinPort } from './skin-port';
 import {
@@ -150,10 +149,6 @@ export function mountUI(session: Session, root: Document = document): UI {
   const embedOffset = get('embed-offset');
   const embedOffsetInput = get<HTMLInputElement>('embed-offset-input');
   const autoPrepare = get<HTMLInputElement>('auto-prepare');
-  const prepareGroup = get('prepare');
-  const prepareButton = get<HTMLButtonElement>('prepare-button');
-  const prepareSteps = get('prepare-steps');
-  const prepareNote = get('prepare-note');
   const inputSelect = get<HTMLSelectElement>('input-select');
   const inputHandsFree = get('input-hands-free');
   const outputSelect = get<HTMLSelectElement>('output-select');
@@ -205,7 +200,6 @@ export function mountUI(session: Session, root: Document = document): UI {
   // ---- Rendering ----------------------------------------------------------
 
   let inputSignature = '';
-  let stepsSignature = '';
   let seeking = false;
   let lastVoicedAt = -Infinity;
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
@@ -279,30 +273,6 @@ export function mountUI(session: Session, root: Document = document): UI {
     const wait = PITCH_HOLD_MS - (performance.now() - lastVoicedAt);
     if (wait <= 0) hidePitch();
     else hideTimer = setTimeout(hidePitch, wait);
-  }
-
-  function renderPrepare(prepare: AppState['prepare']): void {
-    const view = describePrepare(prepare);
-    prepareGroup.hidden = !view.visible;
-    prepareGroup.dataset.phase = prepare.phase;
-    setText(prepareButton, view.label);
-    prepareButton.disabled = view.disabled;
-    prepareButton.dataset.help = view.title;
-    // Rebuilt only when a line changed, so a poll that repeats itself leaves
-    // the list alone.
-    const signature = view.lines.join('\n');
-    if (signature !== stepsSignature) {
-      stepsSignature = signature;
-      prepareSteps.replaceChildren(
-        ...view.lines.map((line) => {
-          const item = document.createElement('li');
-          item.textContent = line;
-          return item;
-        }),
-      );
-    }
-    prepareSteps.hidden = view.lines.length === 0;
-    setText(prepareNote, view.note);
   }
 
   function render(state: AppState, changed: ReadonlySet<keyof AppState>): void {
@@ -387,8 +357,6 @@ export function mountUI(session: Session, root: Document = document): UI {
     if (has('embedOffsetS') && document.activeElement !== embedOffsetInput) {
       embedOffsetInput.value = String(Math.round(state.embedOffsetS * 1000));
     }
-    if (has('prepare')) renderPrepare(state.prepare);
-
     if (has('lastFrame', 'mode')) renderPitch(state);
 
     if (has('status')) {
@@ -410,7 +378,7 @@ export function mountUI(session: Session, root: Document = document): UI {
   const loadLink = (text: string): void => void session.loadLink(text);
 
   // The song's karaoke track and its mix are a panel of their own.
-  cleanups.push(mountCapturePanel(get('capture'), { store, session }));
+  cleanups.push(mountSongReferencePanel(get('song-reference'), { store, session }));
   cleanups.push(mountKaraokePanel(get('karaoke'), { store, session }));
   // The mode toggle, the takes list and learning mode's notice and report card.
   cleanups.push(mountModePanel(get('mode'), { store, session }));
@@ -498,7 +466,6 @@ export function mountUI(session: Session, root: Document = document): UI {
     }),
   );
   listen(autoPrepare, 'change', () => session.setAutoPrepareLinks(autoPrepare.checked));
-  listen(prepareButton, 'click', () => void session.prepare());
   // The service may have been started while the person was elsewhere; while
   // Prepare is off for want of it, coming back asks again.
   const onFocus = (): void => session.checkService();

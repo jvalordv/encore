@@ -49,9 +49,15 @@ export interface Settings {
   /**
    * Send a YouTube link to the service as soon as it loads, which downloads
    * its audio. Off unless the singer turns it on: otherwise a link is only
-   * sent when Prepare for scoring is pressed.
+   * sent when Get the melody is pressed.
    */
   autoPrepareLinks: boolean;
+  /**
+   * Learning mode gets a YouTube song's reference (its melody and key) as the
+   * song loads, without asking. Off unless the singer turns it on: otherwise
+   * the song panel asks once per song (src/app/song-reference.ts).
+   */
+  autoReference: boolean;
   /** Clarity at or above which a pitch frame counts as voiced, 0..1. */
   clarityThreshold: number;
   /** Judge pitch modulo an octave (for singers covering another register). */
@@ -120,6 +126,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   monitor: 'headphones',
   serviceUrl: 'http://localhost:8765',
   autoPrepareLinks: false,
+  autoReference: false,
   clarityThreshold: DEFAULT_CLARITY,
   octaveInvariant: false,
   latencyByDevicePair: Object.freeze({}) as Record<string, number>,
@@ -245,6 +252,8 @@ export function sanitizeSettings(value: unknown): Settings {
       typeof raw.autoPrepareLinks === 'boolean'
         ? raw.autoPrepareLinks
         : DEFAULT_SETTINGS.autoPrepareLinks,
+    autoReference:
+      typeof raw.autoReference === 'boolean' ? raw.autoReference : DEFAULT_SETTINGS.autoReference,
     clarityThreshold: clarity(raw.clarityThreshold),
     octaveInvariant:
       typeof raw.octaveInvariant === 'boolean'

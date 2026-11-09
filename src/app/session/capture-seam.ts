@@ -1,5 +1,5 @@
 /**
- * Test seam for "Capture for learning": `?captureFake` in the page address
+ * Test seam for recording the song's sound: `?captureFake` in the page address
  * swaps the tab share, which a headless browser cannot answer, for a stream of
  * the engine's own making, a steady tone. `?captureFake=noaudio` gives a share
  * with no sound, for the path that tells the singer to turn tab audio on.

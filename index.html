@@ -88,27 +88,23 @@
         <button type="button" id="favorite-toggle" data-testid="favorite-toggle" aria-pressed="false" data-help="Keep this song in your favorites" hidden>Favorite</button>
         <div id="playlist-bar" class="playlist-bar" data-testid="playlist-bar" aria-label="Favorites playlist" hidden></div>
         <!-- Off unless ticked: a link is otherwise sent to the service only when
-             Prepare for scoring is pressed. Preparing downloads the video's
+             Get the melody is pressed. Preparing downloads the video's
              audio, which YouTube's terms restrict (service/README.md). -->
         <label class="check" for="auto-prepare">
           <input id="auto-prepare" data-testid="auto-prepare" type="checkbox" />
-          <span>Prepare YouTube songs automatically (downloads the audio; see service/README.md)</span>
+          <span>Download YouTube audio as soon as a link loads, in any mode (this downloads the audio; see service/README.md)</span>
         </label>
         <div class="song-info">
           <div id="song-title" class="song-title" data-testid="song-title">No song loaded</div>
           <div id="song-duration" class="song-meta" data-testid="song-duration"></div>
-          <p id="embed-note" class="song-meta" data-testid="embed-note" hidden>Playing in YouTube's player. Live pitch and takes work here, with approximate timing. Prepare the song to have the app play it on its own clock, with a karaoke track and the melody; scoring is not built yet.</p>
+          <p id="embed-note" class="song-meta" data-testid="embed-note" hidden>Playing in YouTube's player. Live pitch and takes work here, with approximate timing. Get the melody to have the app play it on its own clock, with a karaoke track and the melody.</p>
         </div>
-        <!-- Shown while a YouTube video is the song. The button, the service's
-             progress and a note are all drawn from state.prepare. -->
-        <div id="prepare" class="prepare" data-testid="prepare" role="group" aria-label="Prepare for scoring" hidden>
-          <button type="button" id="prepare-button" data-testid="prepare-button">Prepare for scoring</button>
-          <ul id="prepare-steps" class="prepare-steps song-meta" data-testid="prepare-steps" hidden></ul>
-          <p id="prepare-note" class="song-meta" data-testid="prepare-note" role="status" aria-live="polite"></p>
-        </div>
-        <!-- Capture for learning: records the video's sound from this tab. Built
-             by src/app/panels/capture.ts; shown for an unprepared video. -->
-        <div id="capture" class="prepare capture" data-testid="capture" role="group" aria-label="Capture for learning" hidden></div>
+        <!-- The Song reference card, shown while a YouTube video is the song:
+             what Encore has for it (melody, key), what that means for learning
+             mode, and the one button that gets more. Built by
+             src/app/panels/song-reference.ts from state.prepare, state.capture,
+             state.reference and state.songRef. -->
+        <div id="song-reference" class="prepare song-reference" data-testid="song-reference" role="group" aria-label="Song reference" hidden></div>
 
         <!-- The song's karaoke track: upload and service progress, the melody
              and the mix. Built by src/app/panels/karaoke.ts; hidden until a

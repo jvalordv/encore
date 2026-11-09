@@ -1,8 +1,7 @@
 /**
  * Tests for the preparing of a linked song, apart from the Session. The wording
- * of the song panel is checked as tables (one step as a line, the progress
- * lines, and the button, lines and note of every phase, including why the
- * button is off). `prepareLink` is then run against a stub client: a cold link
+ * of its steps is checked as tables (one step as a line, the progress lines;
+ * the card that shows them is tested in song-reference.test.ts). `prepareLink` is then run against a stub client: a cold link
  * polled through queued, running and done; a cache hit that needs no polling; a
  * failed step with its own error; the service's refusals, a service that stops
  * answering and a song it forgot; the audio that has gone, which is asked for
@@ -11,26 +10,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  ADD_AGAIN_LABEL,
-  ADD_AGAIN_TITLE,
   ASKING_LINE,
   AUDIO_MISSING,
-  LOADING_NOTE,
-  PREPARED_LABEL,
-  PREPARED_NOTE,
-  PREPARE_LABEL,
-  READY_NOTE,
-  SERVICE_DOWN_NOTE,
-  SERVICE_DOWN_TITLE,
   SERVICE_STOPPED,
   SONG_FORGOTTEN,
-  WAITING_NOTE,
   canonicalWatchUrl,
   describeFailure,
-  describePrepare,
   describeServiceError,
   describeStep,
-  initialPrepare,
   prepareLink,
   stepLines,
 } from '../src/app/prepare';
@@ -114,85 +101,6 @@ describe('stepLines', () => {
   it('never shows the lyrics step, whatever it is doing', () => {
     const lyrics = steps(step('done', 1), { lyrics: step('running', 0.3) });
     expect(stepLines(lyrics)).toEqual(['Fetching audio: done']);
-  });
-});
-
-describe('describePrepare', () => {
-  const state = (phase: Parameters<typeof describePrepare>[0]['phase'], extra = {}) => ({
-    ...initialPrepare(),
-    phase,
-    ...extra,
-  });
-
-  it('is hidden while no video is the song', () => {
-    expect(describePrepare(initialPrepare()).visible).toBe(false);
-  });
-
-  it('is off while it checks the service, and says so', () => {
-    const view = describePrepare(state('checking'));
-    expect(view).toMatchObject({ visible: true, label: PREPARE_LABEL, disabled: true });
-    expect(view.title).toMatch(/Checking/);
-    expect(view.note).toMatch(/Checking/);
-  });
-
-  it('is off, with the reason in its title and a pointer to the README, when the service is not running', () => {
-    const view = describePrepare(state('unavailable'));
-    expect(view).toMatchObject({ visible: true, label: PREPARE_LABEL, disabled: true, title: SERVICE_DOWN_TITLE });
-    expect(SERVICE_DOWN_TITLE).toMatch(/not running/);
-    expect(SERVICE_DOWN_TITLE).toMatch(/service\/README\.md/);
-    expect(view.note).toBe(SERVICE_DOWN_NOTE);
-    expect(SERVICE_DOWN_NOTE).toMatch(/service\/README\.md/);
-    expect(SERVICE_DOWN_NOTE).toMatch(/plays as before/);
-  });
-
-  it('is on, and says plainly that it downloads, when the service is there', () => {
-    const view = describePrepare(state('ready'));
-    expect(view).toMatchObject({ label: PREPARE_LABEL, disabled: false, note: READY_NOTE, title: READY_NOTE });
-    expect(READY_NOTE).toMatch(/Downloads/);
-    expect(READY_NOTE).toMatch(/service\/README\.md/);
-    expect(view.lines).toEqual([]);
-  });
-
-  it('is off and shows the progress by step while the service works', () => {
-    const view = describePrepare(state('preparing', { steps: steps(step('running', 0.45)) }));
-    expect(view).toMatchObject({ label: PREPARE_LABEL, disabled: true, lines: ['Fetching audio 45%'] });
-    expect(describePrepare(state('preparing')).lines).toEqual([ASKING_LINE]);
-  });
-
-  it('shows the fetch done and that the audio is loading', () => {
-    const view = describePrepare(state('loading', { steps: steps(step('done', 1)) }));
-    expect(view).toMatchObject({ disabled: true, lines: ['Fetching audio: done'], note: LOADING_NOTE });
-  });
-
-  it('says it is waiting for the take to end', () => {
-    const view = describePrepare(state('waiting', { message: WAITING_NOTE }));
-    expect(view).toMatchObject({ disabled: true, note: WAITING_NOTE, lines: [] });
-    expect(WAITING_NOTE).toMatch(/^Prepared; switching after this take/);
-  });
-
-  it('reads Prepared once the app\'s own audio is the song, and says the karaoke track follows', () => {
-    const view = describePrepare(state('prepared', { message: PREPARED_NOTE }));
-    expect(view).toMatchObject({ label: PREPARED_LABEL, disabled: true, note: PREPARED_NOTE });
-    expect(PREPARED_NOTE).toMatch(/karaoke track and the melody follow/);
-  });
-
-  it('offers Add again, with the reason, after a failure', () => {
-    const view = describePrepare(state('failed', { message: 'Download failed: HTTP Error 403' }));
-    expect(view).toEqual({
-      visible: true,
-      label: ADD_AGAIN_LABEL,
-      disabled: false,
-      title: ADD_AGAIN_TITLE,
-      lines: [],
-      note: 'Download failed: HTTP Error 403',
-    });
-    expect(ADD_AGAIN_LABEL).toBe('Add again');
-  });
-
-  it('is only ever on in the two phases that can start a preparation', () => {
-    const on = (['none', 'checking', 'unavailable', 'ready', 'preparing', 'loading', 'waiting', 'prepared', 'failed'] as const)
-      .filter((phase) => !describePrepare(state(phase)).disabled);
-    expect(on).toEqual(['ready', 'failed']);
   });
 });
 

@@ -33,8 +33,10 @@ export interface LibraryEntry {
   lastPlayedAt: number | null;
   /** True once the karaoke stems were made and loaded for it. */
   stems: boolean;
-  /** True once its melody was read. */
+  /** True once a melody was read for it: its own, or an aligned original's. */
   melody: boolean;
+  /** True once the service read a key from the song. */
+  key: boolean;
   favorite: boolean;
   /** Place among the favorites, ascending; meaningful only when favorite. */
   order: number;
@@ -111,6 +113,7 @@ export function sanitiseEntry(raw: unknown): LibraryEntry | null {
     lastPlayedAt: lastPlayed ? (r.lastPlayedAt as number) : null,
     stems: r.stems === true,
     melody: r.melody === true,
+    key: r.key === true,
     favorite: r.favorite === true,
     order: finiteOr(r.order, 0),
   };
@@ -146,6 +149,7 @@ export function entryAfterLoad(existing: LibraryEntry | null, song: LoadedSong, 
     lastPlayedAt: now,
     stems: false,
     melody: false,
+    key: false,
     favorite: false,
     order: 0,
   };

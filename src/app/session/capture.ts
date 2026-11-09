@@ -1,11 +1,12 @@
 /**
- * Capture for learning: the session side. Drives the capture machine
+ * Recording the song's sound: the session side. Drives the capture machine
  * (src/app/capture.ts) from the tab recorder (src/audio/tab-capture.ts): asks
  * for the share, records the video as it plays once, and on its end (or the
  * singer's Stop, with most of it heard) uploads the WAV to the service and
  * then runs the ordinary prepared-link flow, which finds the song the service
  * now holds and brings in its melody and key. Opt-in: nothing here runs until
- * `start` is called by a press of the button. The mic is untouched; the
+ * `start` is called, which the song reference controller does on the Play or
+ * Record press that follows a failed download. The mic is untouched; the
  * capture is the tab's own output.
  */
 import { PcmCapture } from '../../audio/capture';
@@ -114,6 +115,14 @@ export class CaptureController {
   /** Ends the capture early, when most of the video has been heard. */
   async stop(): Promise<void> {
     if (this.run) await this.finish(this.run, 'stop');
+  }
+
+  /**
+   * Clears a finished attempt (the share cancelled, no sound, too little
+   * heard) so its words do not outlast the next try. Leaves a run under way.
+   */
+  clearFinished(): void {
+    if (!this.run && this.phaseNow() === 'failed') this.send({ type: 'reset' });
   }
 
   /** Drops a capture under way, as when the video is replaced. */

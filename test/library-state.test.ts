@@ -12,7 +12,7 @@ import {
   lengthLabel,
   playedLabel,
   playlistPosition,
-  preparedLabel,
+  referenceBadge,
   rowOf,
   serviceOnly,
   takesLabel,
@@ -58,9 +58,23 @@ describe('labels', () => {
     expect(lengthLabel(0)).toBe('');
     expect(takesLabel(1)).toBe('1 take');
     expect(takesLabel(3)).toBe('3 takes');
-    expect(preparedLabel({ stems: false, melody: true })).toBe('');
-    expect(preparedLabel({ stems: true, melody: false })).toBe('Prepared');
-    expect(preparedLabel({ stems: true, melody: true })).toBe('Prepared, with melody');
+  });
+
+  it('badges a song Melody, Key, Backing or nothing, with words that are the same in either mode', () => {
+    expect(referenceBadge({ stems: false, melody: false, key: false })).toBeNull();
+    expect(referenceBadge({ stems: false, melody: true, key: false })?.label).toBe('Melody');
+    expect(referenceBadge({ stems: true, melody: true, key: true })?.label).toBe('Melody');
+    expect(referenceBadge({ stems: true, melody: false, key: false })?.label).toBe('Backing');
+    expect(referenceBadge({ stems: true, melody: false, key: true })?.label).toBe('Key');
+    expect(referenceBadge({ stems: false, melody: false, key: true })?.label).toBe('Key');
+    expect(referenceBadge({ stems: false, melody: false, key: true })?.title).toMatch(/no melody/);
+    for (const entry of [
+      { stems: false, melody: true, key: false },
+      { stems: false, melody: false, key: true },
+      { stems: true, melody: false, key: false },
+    ]) {
+      expect(referenceBadge(entry)?.title).not.toMatch(/learning|score/i);
+    }
   });
 
   it('says when a song was last played', () => {
@@ -78,7 +92,7 @@ describe('rowOf', () => {
   it('puts source, length, last played and takes in the meta line', () => {
     const view = rowOf(entry('a', { lastPlayedAt: 1000, stems: true }), 2, 1000 + 60_000);
     expect(view.meta).toEqual(['Upload', '2:05', '1 min ago', '2 takes']);
-    expect(view.prepared).toBe('Prepared');
+    expect(view.badge?.label).toBe('Backing');
   });
 
   it('leaves out an unknown length and a zero take count', () => {

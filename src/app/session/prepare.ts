@@ -4,7 +4,8 @@
  * the app's own audio once the prepared file is loaded. Owns the attempt, the
  * embed follower that keeps the muted video in step afterwards, and the
  * waiters a prepared song leaves while a take is being recorded. The panel's
- * state machine itself is in src/app/prepare.ts; this is what drives it.
+ * state machine itself is in src/app/prepare.ts; this is what drives it. What a
+ * failed download leads to is the song reference controller's to decide.
  */
 import { EmbedFollower } from '../../audio/embed-follower';
 import type { FollowerHooks } from '../../audio/embed-follower';
@@ -71,8 +72,8 @@ export class PrepareController {
    * Prepares the linked song for scoring: has the service fetch the video's
    * audio, loads that into the audio Player and makes it the song, with the
    * video as a muted picture that follows. This is where a link leaves for the
-   * service, so it runs only when the person presses Prepare for scoring (or
-   * Add again after a failure), or from the automatic setting once a link has
+   * service, so it runs only when the person presses Get the melody (see the
+   * song reference controller), or from the automatic setting once a link has
    * loaded. It does nothing unless the song panel is offering it, and a newer
    * load ends it wherever it has got to.
    */
@@ -287,7 +288,9 @@ export class PrepareController {
   private failPrepare(attempt: PrepareAttempt, message: string): void {
     if (this.attempt === attempt) this.attempt = null;
     this.setPrepare({ phase: 'failed', steps: null, message });
-    this.core.store.setStatus(message, 'error');
+    // The card says it in plain words and arms the recording of the song's
+    // sound; the service's own text stays out of the status line.
+    this.core.songReference.downloadFailed(message);
   }
 
   /** True while a take is being recorded, or is about to be. */

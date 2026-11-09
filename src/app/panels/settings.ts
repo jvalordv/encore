@@ -61,6 +61,7 @@ export interface SettingsPanelDeps {
     | 'setClarity'
     | 'setAutoAdvance'
     | 'setAutoPrepareLinks'
+    | 'setAutoReference'
     | 'setSearchKey'
     | 'setServiceUrl'
     | 'testService'
@@ -331,6 +332,13 @@ export const mountSettingsPanel: MountPanel<SettingsPanelDeps> = (host, deps) =>
     'settings-auto-prepare',
     () => session.settings.autoPrepareLinks,
     (v) => session.setAutoPrepareLinks(v),
+  );
+  kit.check(
+    library,
+    'Get the melody for every song in learning mode (if the download is blocked, it may ask to share the tab audio)',
+    'settings-auto-reference',
+    () => session.settings.autoReference,
+    (v) => session.setAutoReference(v),
   );
 
   // ---- Search ---------------------------------------------------------------

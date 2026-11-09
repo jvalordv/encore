@@ -24,6 +24,15 @@ webcam or USB mic.
 
 ## Current state
 
+- **Last done (2026-11-09): W9, one Song reference card.** Get the
+  melody replaces Prepare for scoring and Capture for learning; learning
+  mode asks once (or the new Settings switch does it for every song); a
+  blocked download arms recording the song's sound during the first take;
+  the Library marks songs Melody, Key or Backing. **Next:** W10 (no
+  download, search first in the left bar, drop several mp3s with one
+  progress bar, takes per song in the Library), W11 (quieter left panel,
+  drag to resize); then the owner tries two singers and a blocked YouTube
+  link in Chrome (Get the melody, Record, share the tab), and W7.
 - **Last done (2026-11-08): W8, singer profiles, Progress in a drawer,
   plain transport labels.** Each singer has a profile (name, colour);
   progress, streak, stars, bests and range are per profile, takes record
@@ -32,9 +41,6 @@ webcam or USB mic.
   naming what goes). Progress is a right-side drawer. The transport and
   status words are plain. W8b adds hover help (with a Settings switch)
   and a keep-or-delete choice for a deleted singer's takes.
-  **Next:** W9 (song reference card), W10 (drop several mp3s, takes
-  per song in the Library, no download), W11 (quieter left panel); then
-  the owner tries two singers and W7.
 - **Last done (2026-11-08): WL4, hear the voice over the song, and
   detailed replay items.** From the owner's take of 2026-11-08 (speakers,
   webcam mic): the tracker caught 19 % of the voice and read the
@@ -1419,6 +1425,27 @@ Tracks inside a wave share no files and may run in parallel.
       `aria-disabled` instead of `disabled` would fix that.
     - Follow-up: with Hover help off, no `aria-describedby` is attached
       either; the aria-labels stay.
+- [x] **W9: One Song reference card, up front in learning mode** (owner,
+  2026-11-08: "what exactly is scoring versus capture? In learning mode,
+  why not download whatever is needed automatically?"; "the library should
+  have some kind of marking that reflects that it has been
+  downloaded/prepped"). The separate Prepare for scoring and Capture for
+  learning controls are one card in the song panel: what Encore has
+  (melody: none / from this video / from the original; key: none / from the
+  song / from your singing), what it means for learning mode, and one
+  button, Get the melody, which downloads first and, when YouTube blocks
+  it, arms the recording of the song's sound for the next Play or Record
+  press (no separate play-through; the service's text sits under Details,
+  never cookie advice). Learning mode opens the card with a prompt for a song
+  with no melody; "Do this for every song" is the new Settings switch (off
+  by default); Not now is kept per song for the session; karaoke mode never
+  prompts. Takes sung without a melody are scored again when it arrives.
+  Library rows show a Melody, Key or Backing badge with hover text.
+  - Follow-up: the recording ends with the video, so a first take that
+    stops early leaves the card saying how much was heard until the video
+    is played on or Stop is pressed at 90 %.
+  - Follow-up: a take recorded while the share prompt is open starts after
+    the prompt, so its first second may be a little later than the press.
 - [ ] **W7: Owner test and one bug sweep.** The owner runs the full list:
   solo with a file, a link, a prepared link; learning mode; duet on one
   mic and on two; speakers and headphones. Then one reviewer reads
@@ -1533,6 +1560,7 @@ were.
 | W6c Settings panel (measured, worktree) | 0.6 | 0.39 M | 5 min |
 | WL4 Voice over the song + replay detail (measured, 2 lanes) | 0.9 | 1.18 M | 15 min |
 | W8 + W8b Profiles, drawer, hover help (measured, worktree) | 1 | 1.13 M | 10 min |
+| W9 Song reference card (measured, worktree) | 1 | 0.87 M | 15 min |
 | **Total** | **about 16 (15-19)** | **about 11.5 M** | **about 5 h** |
 
 The full plan this replaces was about 126 hours and 60 M tokens. The

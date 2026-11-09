@@ -39,6 +39,8 @@ const REPLAY_BACK_S = 6;
 const REPLAY_SLACK_S = 0.05;
 /** Longest wait for a video to start when Record has to press Play for it. */
 const EMBED_START_TIMEOUT_MS = 4000;
+/** Said when a loop blocks a take. */
+const LOOP_BLOCKS_RECORDING = 'Clear the loop (L) to record; looped passes cannot be recorded yet.';
 
 /** A take being replayed: its f0 trace, fed to the lane as the song plays. */
 interface Replay {
@@ -119,7 +121,27 @@ export class TakeController {
       await done;
       return;
     }
-    await this.startRecording();
+    // After a failed download the song's sound is recorded alongside this
+    // take: the share prompt is asked for on this press, and the take begins
+    // once it has been answered.
+    if (this.core.songReference.hasArmed) {
+      if (this.core.songs.active?.loop) {
+        this.core.store.setStatus(LOOP_BLOCKS_RECORDING, 'warn');
+        return;
+      }
+      // The mic comes first: the share starts the video, and a refused mic
+      // would leave it playing with no take to stop it. A mic prompt can
+      // outlast the click's permission to ask for the share, so then the
+      // recording stays armed and the next press asks.
+      if (!(await this.core.input.ensureInput())) return;
+      if (navigator.userActivation && !navigator.userActivation.isActive) {
+        this.core.store.setStatus('Press Record again to share the tab.', 'warn');
+        return;
+      }
+    }
+    const armed = this.core.songReference.takeArmed();
+    if (armed) await armed;
+    await this.startRecording(armed !== null);
   }
 
   /**
@@ -263,7 +285,7 @@ export class TakeController {
     solo.source.disconnect();
   }
 
-  private async startRecording(): Promise<void> {
+  private async startRecording(shareStarted = false): Promise<void> {
     const { parts, store, songs } = this.core;
     const transport = songs.active;
     const state = store.state;
@@ -275,7 +297,7 @@ export class TakeController {
     }
     if (transport.loop) {
       // Looped passes would break the one-anchor timing a take relies on.
-      store.setStatus('Clear the loop (L) to record; looped passes cannot be recorded yet.', 'warn');
+      store.setStatus(LOOP_BLOCKS_RECORDING, 'warn');
       return;
     }
     // A take still replaying would sit under the new one in the headphones and
@@ -289,8 +311,9 @@ export class TakeController {
         return;
       }
       const embed = transport.clock === 'embed';
-      const startedPlayback = transport.state !== 'playing';
-      if (startedPlayback) {
+      // The share's own start of the video counts: Stop on the take pauses it.
+      const startedPlayback = transport.state !== 'playing' || shareStarted;
+      if (transport.state !== 'playing') {
         if (embed) void parts.engine.resume().catch(() => {});
         transport.play();
         // The audio player starts its sources a few milliseconds ahead and the

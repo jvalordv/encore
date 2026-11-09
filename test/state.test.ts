@@ -49,6 +49,7 @@ describe('initialState', () => {
       embedOffsetS: 0,
       prepare: { phase: 'none', steps: null, message: '' },
       capture: { phase: 'idle', coverage: 0, largestGapS: 0, uploadFraction: 0, message: '' },
+      songRef: { armed: false, details: '', declined: false },
       karaoke: { phase: 'none', uploadProgress: 0, steps: null, message: '' },
       mix: { available: false, choice: 'original', guideLevel: 0.5 },
       reference: { phase: 'none', notes: 0, message: '' },

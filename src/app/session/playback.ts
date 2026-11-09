@@ -6,7 +6,7 @@
  */
 import { normaliseLoop } from '../../audio/player';
 import { isRunning } from '../../audio/transport';
-import type { LoopRegion } from '../../audio/transport';
+import type { LoopRegion, Transport } from '../../audio/transport';
 import { formatClock } from '../state';
 import type { SessionCore } from './core';
 import { loopWithPoint } from './helpers';
@@ -17,7 +17,7 @@ export class PlaybackController {
 
   /** Plays, resuming the saved mic first if none is open. */
   play(): void {
-    const { parts, store, takes } = this.core;
+    const { parts, store } = this.core;
     const transport = this.core.songs.active;
     if (!parts || !transport) return;
     if (transport.state === 'empty') {
@@ -27,11 +27,26 @@ export class PlaybackController {
     // The song would drown the chirps; the Play button is already disabled,
     // and this keeps the Space key from starting it anyway.
     if (store.state.calibrating) return;
+    // After a failed download the song's sound is recorded as it plays: the
+    // share prompt is asked for on this press, and the song starts once it
+    // has been answered, not under the dialog.
+    const armed = this.core.songReference.takeArmed();
+    if (armed) {
+      void armed.then(() => {
+        if (this.core.songs.active === transport) this.start(transport);
+      });
+      return;
+    }
+    this.start(transport);
+  }
+
+  private start(transport: Transport): void {
+    const { parts, takes } = this.core;
     // A take playing by itself yields to the song.
     if (takes.solo) takes.stopTake();
     // The audio player starts the context itself; the embed does not touch it,
     // and live pitch needs it running.
-    if (transport.clock === 'embed') void parts.engine.resume().catch(() => {});
+    if (transport.clock === 'embed') void parts?.engine.resume().catch(() => {});
     transport.play();
     this.core.input.reopenSavedInput();
   }

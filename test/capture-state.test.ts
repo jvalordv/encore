@@ -1,22 +1,17 @@
 /**
  * Tests for the capture machine and its words: the path from the button to a
  * prepared song, the gates on Stop and on a video that ended with too little
- * heard, each way it can fail, and what the panel shows in each phase. Pure:
- * events in, a state and a view out.
+ * heard, each way it can fail, and the status line of each phase. Pure: events
+ * in, a state and a line out.
  */
 import { describe, expect, it } from 'vitest';
 import {
-  BUSY_TITLE,
-  CAPTURE_NOTE,
   MIN_END_COVERAGE,
   NO_AUDIO_MESSAGE,
-  UNSUPPORTED_TITLE,
   canStop,
   captureLine,
   captureReducer,
-  describeCapture,
   initialCapture,
-  isCapturing,
   usableAtEnd,
 } from '../src/app/capture';
 import type { CaptureEvent, CaptureState } from '../src/app/capture';
@@ -125,56 +120,5 @@ describe('captureLine', () => {
     expect(captureLine(uploading)).toBe('Uploading the capture: 60%');
     expect(captureLine(captureReducer(uploading, { type: 'uploaded' }))).toContain('Preparing');
     expect(captureLine(run([{ type: 'start' }, { type: 'fail', message: 'No luck.' }]))).toBe('No luck.');
-  });
-});
-
-describe('describeCapture', () => {
-  const ready = { prepare: 'ready', supported: true } as const;
-
-  it('is hidden with no linked song and while a prepared song needs nothing', () => {
-    expect(describeCapture(initialCapture(), { prepare: 'none', supported: true }).visible).toBe(false);
-    expect(describeCapture(initialCapture(), { prepare: 'prepared', supported: true }).visible).toBe(false);
-  });
-
-  it('is on offer, with its one line, for an unprepared video', () => {
-    const view = describeCapture(initialCapture(), ready);
-    expect(view).toMatchObject({ visible: true, disabled: false, showStop: false, note: CAPTURE_NOTE });
-    expect(CAPTURE_NOTE).toMatch(/like Prepare/i);
-  });
-
-  it('is off, and says why, without a share API or while the service is checked', () => {
-    expect(describeCapture(initialCapture(), { prepare: 'ready', supported: false })).toMatchObject({
-      disabled: true,
-      title: UNSUPPORTED_TITLE,
-    });
-    expect(describeCapture(initialCapture(), { prepare: 'checking', supported: true })).toMatchObject({
-      visible: true,
-      disabled: true,
-      title: BUSY_TITLE,
-    });
-  });
-
-  it('shows Stop only while capturing, enabled at 90 percent', () => {
-    const early = describeCapture(run(capturing(0.5)), ready);
-    expect(early).toMatchObject({ showStop: true, stopDisabled: true, disabled: true });
-    const late = describeCapture(run(capturing(0.95)), ready);
-    expect(late.stopDisabled).toBe(false);
-  });
-
-  it('stays visible through the upload and the preparation', () => {
-    const uploading = run([...capturing(1), { type: 'finish', reason: 'ended' }]);
-    expect(isCapturing(uploading)).toBe(true);
-    expect(describeCapture(uploading, ready)).toMatchObject({ visible: true, disabled: true });
-    const preparing = captureReducer(uploading, { type: 'uploaded' });
-    expect(describeCapture(preparing, { prepare: 'preparing', supported: true })).toMatchObject({
-      visible: true,
-      disabled: true,
-    });
-  });
-
-  it('offers another try after a failure, with the reason', () => {
-    const failed = run([{ type: 'start' }, { type: 'stream', hasAudio: false }]);
-    const view = describeCapture(failed, ready);
-    expect(view).toMatchObject({ visible: true, disabled: false, line: NO_AUDIO_MESSAGE, note: '' });
   });
 });

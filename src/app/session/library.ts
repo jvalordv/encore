@@ -51,7 +51,7 @@ export class LibraryController {
       });
     core.store.subscribe((state, changed) => {
       if (changed.has('song')) this.onSongChange(state.song?.hash ?? null);
-      if (changed.has('karaoke') || changed.has('reference')) this.notePrepared();
+      if (changed.has('karaoke') || changed.has('reference') || changed.has('key')) this.notePrepared();
       // Stars and the streak are the active singer's, so a new singer redraws them.
       if (changed.has('takes') || changed.has('profiles')) void this.refreshCounts();
     });
@@ -97,17 +97,23 @@ export class LibraryController {
     });
   }
 
-  /** Marks the song in use as prepared once its stems or melody arrive. */
+  /**
+   * Marks the song in use once its stems, melody or key arrive, which is what
+   * the row's Melody and Key badge says. A flag set stays set.
+   */
   private notePrepared(): void {
-    const { song, karaoke, reference } = this.core.store.state;
+    const { song, karaoke, reference, key: keyState } = this.core.store.state;
     const stems = karaoke.phase === 'ready';
     const melody = reference.phase === 'ready';
+    const key = keyState.phase === 'ready';
     const id = song?.hash;
-    if (!id || !(stems || melody)) return;
+    if (!id || !(stems || melody || key)) return;
     void this.mutate(async (store) => {
       const entry = this.entries.find((e) => e.id === id);
-      if (!entry || ((entry.stems || !stems) && (entry.melody || !melody))) return;
-      await this.save(store, [{ ...entry, stems: entry.stems || stems, melody: entry.melody || melody }]);
+      if (!entry || ((entry.stems || !stems) && (entry.melody || !melody) && (entry.key || !key))) return;
+      await this.save(store, [
+        { ...entry, stems: entry.stems || stems, melody: entry.melody || melody, key: entry.key || key },
+      ]);
     });
   }
 

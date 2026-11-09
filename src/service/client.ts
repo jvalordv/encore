@@ -488,7 +488,7 @@ export class ServiceClient {
 
   /**
    * Sends the audio recorded from a playing YouTube tab as the song for
-   * `videoId` (see "Capture for learning" in docs/ARCHITECTURE.md). Answers
+   * `videoId` (see "Recording the song's sound" in docs/ARCHITECTURE.md). Answers
    * with the status, which the normal prepared-link flow then follows;
    * `alongside` says the song already had audio, which stays the source. A
    * refusal (empty, over the size limit, not usable audio, a bad id) carries

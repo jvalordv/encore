@@ -184,6 +184,40 @@ export class ScoringController {
     await core.takes.refreshTakes();
   }
 
+  /**
+   * Scores the song's earlier takes again once its melody has arrived (from the
+   * download, a recording of its sound, or an aligned original). Only takes
+   * whose report had no melody to compare with are touched, each from its
+   * stored frames in the style it was scored in, so a take already judged
+   * against a melody and a take sung in karaoke mode (which has no report)
+   * stay as they are. Resolves with how many takes got a new report.
+   */
+  async rescoreWithMelody(): Promise<number> {
+    const { core } = this;
+    const hash = core.store.state.song?.hash;
+    if (!hash || this.activeReference() === null) return 0;
+    const takes = await core.takesReady;
+    let count = 0;
+    for (const summary of await takes.list(hash)) {
+      if (summary.kind === 'mic-check' || summary.report?.noMelody !== true) continue;
+      const take = await takes.get(summary.id);
+      // Another song may have taken over while the take was read.
+      if (core.store.state.song?.hash !== hash) break;
+      if (!take?.report || take.report.noMelody !== true) continue;
+      const style = take.report.style ?? 'strict';
+      const shift = take.shiftSemitones ?? 0;
+      if (take.duet) {
+        const both = this.scoreDuet(captureOf(take.duet, take.duetFramesB), take.frames, style, shift);
+        await takes.setReport(take.id, both.report, both.duet);
+      } else {
+        await takes.setReport(take.id, this.scoreIn(take.frames, style, shift));
+      }
+      count += 1;
+    }
+    if (count > 0) await core.takes.refreshTakes();
+    return count;
+  }
+
   /** True while the singing is being measured: learning mode, whatever the song. */
   private isScoring(): boolean {
     const { core } = this;

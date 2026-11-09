@@ -183,9 +183,12 @@ export const mountLibraryPanel: MountPanel<LibraryPanelDeps> = (host, { store, s
       badge.textContent = `${starGlyphs(stars)} ${starsText(stars, activeSkin(doc))}${label}`;
       load.append(badge);
     }
-    if (view.prepared !== '') {
-      const badge = make('span', 'library-prepared', 'search-badge');
-      badge.textContent = view.prepared;
+    if (view.badge !== null) {
+      const badge = make('span', 'library-reference', 'search-badge');
+      badge.textContent = view.badge.label;
+      badge.dataset.help = view.badge.title;
+      badge.setAttribute('aria-label', `${view.badge.label}: ${view.badge.title}`);
+      badge.dataset.badge = view.badge.label.toLowerCase();
       load.append(badge);
     }
     load.addEventListener('click', () => void session.loadLibraryEntry(entry.id));

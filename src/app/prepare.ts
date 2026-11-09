@@ -1,16 +1,17 @@
 /**
  * Preparing a linked song for scoring, apart from the Session that acts on it.
- * Two halves. The first is what the song panel says: `PrepareState` (a phase,
- * the steps the service last reported and one message) and `describePrepare`,
- * which turns it into the button, the progress lines and the note, so the
- * wording is tested without a page. The second is `prepareLink`, the flow from
- * a link to the song's audio bytes: add the link to the service, wait for the
- * fetch step, download the audio, and add the link once more if the service
- * says the audio has gone. It takes the client and an AbortSignal, so a newer
- * load can stop it and a test can run it against a stub.
+ * Two halves. The first is what the song panel knows: `PrepareState` (a phase,
+ * the steps the service last reported and one message) and the wording of its
+ * steps (`stepLines`), which the Song reference card shows
+ * (src/app/song-reference.ts), tested without a page. The second is
+ * `prepareLink`, the flow from a link to the song's audio bytes: add the link
+ * to the service, wait for the fetch step, download the audio, and add the
+ * link once more if the service says the audio has gone. It takes the client
+ * and an AbortSignal, so a newer load can stop it and a test can run it
+ * against a stub.
  *
  * Nothing here decides that a song is prepared. The Session does, on a press
- * of the button or the automatic-prepare setting (both opt-in; see the policy
+ * of Get the melody or the automatic settings (all opt-in; see the policy
  * note in service/README.md), and it alone loads the bytes into the audio
  * engine and switches the clock.
  */
@@ -54,27 +55,8 @@ export function initialPrepare(): PrepareState {
   return { phase: 'none', steps: null, message: '' };
 }
 
-/** The button's label while the link can be sent to the service. */
-export const PREPARE_LABEL = 'Prepare for scoring';
-/** The button's label after a failure, when pressing it asks again. */
-export const ADD_AGAIN_LABEL = 'Add again';
-/** The button's label once the app's own audio is the song. */
-export const PREPARED_LABEL = 'Prepared';
-/** The note, and the button's hover text, while the service is asked. */
+/** The note while the service is asked whether it runs. */
 export const CHECKING_NOTE = 'Checking whether the service is running…';
-/** The button's hover text when the service is not running. */
-export const SERVICE_DOWN_TITLE = 'The service is not running. See service/README.md to start it.';
-/** The note when the service is not running. */
-export const SERVICE_DOWN_NOTE =
-  'The service is not running, so this song cannot be prepared. Start it as ' +
-  'service/README.md describes; this page checks again when you come back to ' +
-  'it. The video plays as before.';
-/** The note, and the button's hover text, while Prepare is on offer. */
-export const READY_NOTE =
-  "Downloads this video's audio through the local service so it can be scored. " +
-  'See service/README.md.';
-/** The hover text of the Add again button. */
-export const ADD_AGAIN_TITLE = 'Ask the service to prepare this song again.';
 /** The progress line before the service has said anything about the steps. */
 export const ASKING_LINE = 'Asking the service…';
 /** The note while the fetched audio is downloaded and decoded. */
@@ -139,57 +121,6 @@ export function stepLines(steps: SongSteps | null): string[] {
   return STEP_NAMES.filter(
     (name) => name !== 'lyrics' && (name === 'fetch' || steps[name].state === 'running'),
   ).map((name) => describeStep(name, steps[name]));
-}
-
-/** What the panel shows for a PrepareState. */
-export interface PrepareView {
-  /** False when there is no linked song, so the panel group is hidden. */
-  visible: boolean;
-  label: string;
-  disabled: boolean;
-  /** The button's hover text; says why it is off when it is. */
-  title: string;
-  /** Progress, one line per step. */
-  lines: string[];
-  note: string;
-}
-
-/** The button, progress lines and note for a PrepareState. */
-export function describePrepare(prepare: PrepareState): PrepareView {
-  const view = (fields: Partial<PrepareView>): PrepareView => ({
-    visible: true,
-    label: PREPARE_LABEL,
-    disabled: true,
-    title: '',
-    lines: [],
-    note: '',
-    ...fields,
-  });
-  switch (prepare.phase) {
-    case 'none':
-      return view({ visible: false });
-    case 'checking':
-      return view({ title: CHECKING_NOTE, note: CHECKING_NOTE });
-    case 'unavailable':
-      return view({ title: SERVICE_DOWN_TITLE, note: SERVICE_DOWN_NOTE });
-    case 'ready':
-      return view({ disabled: false, title: READY_NOTE, note: READY_NOTE });
-    case 'preparing':
-      return view({ lines: stepLines(prepare.steps) });
-    case 'loading':
-      return view({ lines: stepLines(prepare.steps), note: LOADING_NOTE });
-    case 'waiting':
-      return view({ note: prepare.message });
-    case 'prepared':
-      return view({ label: PREPARED_LABEL, note: prepare.message });
-    case 'failed':
-      return view({
-        label: ADD_AGAIN_LABEL,
-        disabled: false,
-        title: ADD_AGAIN_TITLE,
-        note: prepare.message,
-      });
-  }
 }
 
 /** The address the service is given for a video, in the one form it takes. */

@@ -38,6 +38,7 @@ import { SearchController } from './search';
 import { SettingsController } from './settings';
 import type { SearchOptions } from './search';
 import { SongController } from './songs';
+import { SongReferenceController } from './song-reference';
 import { StemsController } from './stems';
 import { TakeController } from './takes';
 import type { LaneSink, SecondParts, SessionParts } from './types';
@@ -84,6 +85,7 @@ export class SessionCore {
   readonly playback: PlaybackController;
   readonly prepare: PrepareController;
   readonly capture: CaptureController;
+  readonly songReference: SongReferenceController;
   readonly input: InputController;
   readonly health: MicHealthController;
   readonly micCheck: MicCheckController;
@@ -118,6 +120,7 @@ export class SessionCore {
     this.playback = new PlaybackController(this);
     this.prepare = new PrepareController(this);
     this.capture = new CaptureController(this);
+    this.songReference = new SongReferenceController(this);
     this.health = new MicHealthController(this);
     this.micCheck = new MicCheckController(this);
     this.input = new InputController(this);

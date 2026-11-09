@@ -6,7 +6,7 @@
  * request to YouTube's hosts, so the run reaches neither. The stand-in serves
  * the song fixture as the "downloaded" audio.
  * Covered: loading a link sends the service nothing but a health check, and
- * nothing at all for the link without a press of Prepare for scoring; a service
+ * nothing at all for the link without a press of Get the melody; a service
  * that is not running disables the button with the reason and a pointer to the
  * README while the video plays, a return to the window finds the service once
  * it is started, and a press that finds it gone says so; Prepare shows the
@@ -38,6 +38,7 @@
  */
 import { expect, test } from '@playwright/test';
 import type { BrowserContext, Page } from '@playwright/test';
+import { BLOCKED_NOTE, DOWNLOAD_ERROR_NOTE } from '../src/app/song-reference';
 import type { AppState } from '../src/app/state';
 import { linkStatus, stepStatus, stubService } from './fake-service';
 import type { FakeService } from './fake-service';
@@ -334,13 +335,13 @@ async function movesOfVideo(): Promise<Array<{ target: number; engine: number }>
   );
 }
 
-const prepareButton = () => page.getByTestId('prepare-button');
-const prepareSteps = () => page.getByTestId('prepare-steps');
-const prepareNote = () => page.getByTestId('prepare-note');
+const prepareButton = () => page.getByTestId('reference-get');
+const prepareSteps = () => page.getByTestId('reference-steps');
+const prepareNote = () => page.getByTestId('reference-note');
 const statusText = () => page.getByTestId('status-text');
 
 test('1. loading a link asks the service only whether it runs; nothing is sent for it without Prepare', async () => {
-  await expect(page.getByTestId('prepare')).toBeHidden();
+  await expect(page.getByTestId('song-reference')).toBeHidden();
   await expect(page.getByTestId('auto-prepare')).not.toBeChecked();
   // Nothing at page load: the first question comes with a link.
   expect(service.requests).toEqual([]);
@@ -353,8 +354,8 @@ test('1. loading a link asks the service only whether it runs; nothing is sent f
   await page.waitForTimeout(1500);
   expect(service.songRequests()).toEqual([]);
 
-  await expect(page.getByTestId('prepare')).toBeVisible();
-  await expect(prepareButton()).toHaveText('Prepare for scoring');
+  await expect(page.getByTestId('song-reference')).toBeVisible();
+  await expect(prepareButton()).toHaveText('Get the melody');
   await expect(prepareButton()).toBeEnabled();
   // The note says what pressing it does.
   await expect(prepareNote()).toContainText('Downloads this video');
@@ -364,7 +365,7 @@ test('1. loading a link asks the service only whether it runs; nothing is sent f
   const state = await appState();
   expect(state.clock).toBe('embed');
   expect(state.song).toEqual({ name: TITLE, durationS: VIDEO_S, hash: SONG_ID });
-  await expect(page.getByTestId('embed-note')).toContainText('Prepare the song');
+  await expect(page.getByTestId('embed-note')).toContainText('Get the melody');
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('encore.settings') ?? '{}'));
   expect(saved.autoPrepareLinks ?? false).toBe(false);
 });
@@ -448,8 +449,7 @@ test('3. Prepare shows the fetch queued, running and done, then the engine takes
   expect(fake.calls).toContain('mute');
   expect(fake.destroyed).toBe(false);
   // The panel and the notes say what this mode is.
-  await expect(prepareButton()).toHaveText('Prepared');
-  await expect(prepareButton()).toBeDisabled();
+  await expect(prepareButton()).toBeHidden();
   await expect(prepareNote()).toContainText("plays this song's audio");
   await expect(statusText()).toContainText('Prepared');
   await expect(page.getByTestId('embed-note')).toBeHidden();
@@ -638,19 +638,29 @@ test('9. a video that stalls falls behind and is caught up, and the sound is nev
   await page.waitForFunction(() => window.encore!.store.state.player === 'paused');
 });
 
-test('10. a failed fetch shows the step\'s error and Add again, which asks the service afresh', async () => {
+test('10. a failed fetch says the download was blocked, keeps the step\'s error under Details, and Get the melody asks again', async () => {
   await freshPage();
   await loadLink();
   service.status = linkStatus(VIDEO, stepStatus('failed', 0.3, FETCH_ERROR));
   await prepareButton().click();
   await waitForPhase('failed');
 
-  await expect(prepareNote()).toHaveText(FETCH_ERROR);
-  await expect(prepareButton()).toHaveText('Add again');
+  // The main text is plain; the service's own words sit under Details.
+  await expect(prepareNote()).toHaveText(BLOCKED_NOTE);
+  await expect(page.getByTestId('reference-details-text')).toHaveText(FETCH_ERROR);
+  await expect(prepareButton()).toHaveText('Get the melody');
   await expect(prepareButton()).toBeEnabled();
-  await expect(statusText()).toHaveText(FETCH_ERROR);
-  expect((await appState()).status.kind).toBe('error');
+  await expect(statusText()).toHaveText(BLOCKED_NOTE);
+  expect((await appState()).status.kind).toBe('warn');
   expect(service.count('POST', '/songs/url')).toBe(1);
+  // The recording of the song's sound is armed for the next Play or Record
+  // (capture.spec.ts follows it). A headless browser cannot answer the share
+  // prompt, so it is put down here and the video's own Play is checked.
+  expect((await appState()).songRef.armed).toBe(true);
+  await page.evaluate(() => {
+    const { store } = window.encore!;
+    store.patch({ songRef: { ...store.state.songRef, armed: false } });
+  });
   // The video carries on as it was.
   const state = await appState();
   expect(state.clock).toBe('embed');
@@ -674,8 +684,9 @@ test('11. a refused link shows the service\'s reason and can be added again', as
   service.create = { status: 422, detail: TOO_LONG };
   await prepareButton().click();
   await waitForPhase('failed');
-  await expect(prepareNote()).toHaveText(TOO_LONG);
-  await expect(prepareButton()).toHaveText('Add again');
+  await expect(prepareNote()).toHaveText(DOWNLOAD_ERROR_NOTE);
+  await expect(page.getByTestId('reference-details-text')).toHaveText(TOO_LONG);
+  await expect(prepareButton()).toHaveText('Get the melody');
   // Refused when added: there was nothing to ask about.
   expect(service.songRequests().map((r) => r.method)).toEqual(['POST']);
   expect((await appState()).clock).toBe('embed');
@@ -699,8 +710,9 @@ test('12. audio the cache lost is asked for again once, and reported if it is st
   service.audio = [409, 409];
   await prepareButton().click();
   await waitForPhase('failed');
-  await expect(prepareNote()).toHaveText(AUDIO_MISSING);
-  await expect(prepareButton()).toHaveText('Add again');
+  await expect(prepareNote()).toHaveText(DOWNLOAD_ERROR_NOTE);
+  await expect(page.getByTestId('reference-details-text')).toHaveText(AUDIO_MISSING);
+  await expect(prepareButton()).toHaveText('Get the melody');
   expect(service.count('POST', '/songs/url')).toBe(2);
   expect(service.count('GET', `/songs/${SONG_ID}/audio`)).toBe(2);
   expect((await appState()).clock).toBe('embed');
@@ -781,7 +793,7 @@ test('14. a new link or a dropped file stops a preparation under way: no more po
   await page.waitForFunction(
     () => window.encore!.store.state.song?.name === 'song.wav' && window.encore!.store.state.clock === 'engine',
   );
-  await expect(page.getByTestId('prepare')).toBeHidden();
+  await expect(page.getByTestId('song-reference')).toBeHidden();
   const stopped = service.count('GET', `/songs/yt-${OTHER_VIDEO}`);
   await page.waitForTimeout(2500);
   expect(service.count('GET', `/songs/yt-${OTHER_VIDEO}`)).toBe(stopped);
@@ -797,7 +809,7 @@ test('15. the automatic setting is off by default, is saved, and sends a link as
   const box = page.getByTestId('auto-prepare');
   await expect(box).not.toBeChecked();
   await expect(page.locator('label[for="auto-prepare"]')).toHaveText(
-    'Prepare YouTube songs automatically (downloads the audio; see service/README.md)',
+    'Download YouTube audio as soon as a link loads, in any mode (this downloads the audio; see service/README.md)',
   );
   await box.check();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('encore.settings') ?? '{}').autoPrepareLinks)).toBe(true);
